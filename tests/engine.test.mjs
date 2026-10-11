@@ -532,6 +532,9 @@ test("all 36 pairs share one face total for caption, hardway, hop, and horn", ()
       assert.equal(cap.d2, d2);
       assert.equal(cap.total, d1 + d2);
       assert.equal(cap.hard, d1 === d2);
+      assert.equal(cap.line, cap.word);
+      assert.doesNotMatch(cap.line, /\d\s*[·+\-–]\s*\d/);
+      assert.match(cap.aria, new RegExp("^" + ["one", "two", "three", "four", "five", "six"][d1 - 1]));
       assert.equal(E.rollPairKey(d1, d2), Math.min(d1, d2) + "-" + Math.max(d1, d2));
     }
   }

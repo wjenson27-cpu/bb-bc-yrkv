@@ -817,6 +817,7 @@ See S1.3 (Place/Buy for all ten numbers) and S1.4 (side bets). Nevada Place pays
 - **No Don't Pass, Don't Come, Lay bets or Lay Odds.** Hide or disable those spots. (Wizard notes an unconfirmed report of crapless lay bets; this app doesn't offer them.)
 - **No Fire Bet** in Crapless. The Fire Bet is never in Bubble Craps at all; it's Table Craps only (A2.2a).
 - **ATS is in Crapless** (rev 13). Low Rolls, High Rolls, and Roll 'Em All use the dice total. Any 7 loses them, including a come-out 7. Pays and edges match Regular. The Oct 10 "ATS stays hidden" rule is superseded.
+- **Roll readouts show pip dice** (rev 13a, S4.2). The result line, roll toast, HUD, bet-panel LED, Last strips, Fair Dice history, and the leaderboard seven-out use the same die faces as the roll. CSV export stays numeric (`die1`, `die2`). The Table Craps turn log is later.
 
 ## A1.4 Billy's Way: DEFINED (App 1 preset, matches the current code)
 

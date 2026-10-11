@@ -52,6 +52,7 @@ export function startSession(prev, total, limits, now) {
     lossHit: false,
     winHit: false,
     rollAfterLoss: false,
+    rollAfterWin: false,
     promptedLoss: false,
     promptedWin: false,
     endedAtLoss: false,
@@ -78,6 +79,7 @@ export function noteRoll(session, hadBet) {
     betRolls: (session.betRolls || 0) + (hadBet ? 1 : 0),
   });
   if (session.lossHit) next.rollAfterLoss = true;
+  if (session.winHit) next.rollAfterWin = true;
   return next;
 }
 

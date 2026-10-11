@@ -31,7 +31,7 @@
   line-height: 1.1;
 }
 .badgetoast.marquee .facts { display: block; margin-top: 2px; font-size: 11px; color: #e4cc8f; }
-.badgetoast.marquee { position: relative; overflow: hidden; }
+.badgetoast.marquee { overflow: hidden; }
 .badgetoast.marquee .burst {
   position: absolute;
   left: 8px;

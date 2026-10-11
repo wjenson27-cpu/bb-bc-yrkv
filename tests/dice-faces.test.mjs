@@ -70,25 +70,35 @@ test("every settled cube shows the engine face on top", async (t) => {
           host.appendChild(cell);
         }
       }
+      const det3 = (m) => {
+        const ax = m.m11, ay = m.m12, az = m.m13;
+        const bx = m.m21, by = m.m22, bz = m.m23;
+        const cx = m.m31, cy = m.m32, cz = m.m33;
+        return ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+      };
       const read = (cube) => {
         const cubeM = new DOMMatrix(getComputedStyle(cube).transform);
         const facing = [];
+        const visible = [];
         cube.querySelectorAll(".f").forEach((face) => {
           const hit = String(face.className).match(/f(\d)/);
           if (!hit) return;
           const world = cubeM.multiply(new DOMMatrix(getComputedStyle(face).transform));
           const y = world.m32;
           const z = world.m33;
+          const n = Number(hit[1]);
+          if (z > 0.15) visible.push(n);
           if (!(y < -0.5 && z > 0.5)) return;
           facing.push({
-            n: Number(hit[1]),
+            n,
             y,
             z,
             upY: -world.m22,
             upZ: -world.m23,
+            det: det3(world),
           });
         });
-        return facing;
+        return { facing, det: det3(cubeM), visible };
       };
       const rows = [];
       host.querySelectorAll("[data-d1]").forEach((cell) => {
@@ -105,24 +115,75 @@ test("every settled cube shows the engine face on top", async (t) => {
     assert.equal(report.length, 36);
     report.forEach((row) => {
       const cap = E.rollCaption(row.d1, row.d2);
-      assert.equal(row.a.length, 1, "one camera-up face on die 1 for " + row.d1 + "+" + row.d2);
-      assert.equal(row.b.length, 1, "one camera-up face on die 2 for " + row.d1 + "+" + row.d2);
-      const a = row.a[0];
-      const b = row.b[0];
+      assert.equal(row.a.facing.length, 1, "one camera-up face on die 1 for " + row.d1 + "+" + row.d2);
+      assert.equal(row.b.facing.length, 1, "one camera-up face on die 2 for " + row.d1 + "+" + row.d2);
+      const a = row.a.facing[0];
+      const b = row.b.facing[0];
       assert.equal(a.n, cap.d1, "die 1 top face for " + row.d1 + "+" + row.d2);
       assert.equal(b.n, cap.d2, "die 2 top face for " + row.d1 + "+" + row.d2);
       assert.ok(a.upY < 0 && b.upY < 0, "pips are upright");
-      assert.ok(a.upZ < 0 && b.upZ < 0, "pips are not mirrored");
+      assert.ok(a.upZ < 0 && b.upZ < 0, "pips tip toward the camera");
+      assert.ok(row.a.det > 0.9 && row.b.det > 0.9, "rest pose is a true rotation");
+      assert.ok(a.det > 0.9 && b.det > 0.9, "top face is not mirrored");
+      [row.a.visible, row.b.visible].forEach((faces) => {
+        for (let i = 0; i < faces.length; i++) {
+          for (let j = i + 1; j < faces.length; j++) {
+            assert.notEqual(faces[i] + faces[j], 7, "visible faces are not opposites");
+          }
+        }
+      });
       assert.equal(cap.total, row.d1 + row.d2);
       assert.equal(cap.hard, row.d1 === row.d2);
     });
-    mkdirSync(root + "docs/qa/compare", { recursive: true });
-    await page.locator("#sweep").screenshot({
-      path: root + "docs/qa/compare/run8-dice-36.jpg",
-      type: "jpeg",
-      quality: 82,
+    const layout = await page.evaluate(() => {
+      const det3 = (m) => {
+        const ax = m.m11, ay = m.m12, az = m.m13;
+        const bx = m.m21, by = m.m22, bz = m.m23;
+        const cx = m.m31, cy = m.m32, cz = m.m33;
+        return ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+      };
+      const host = document.createElement("div");
+      host.className = "cube3d";
+      host.style.setProperty("--s", "64px");
+      const cube = document.createElement("div");
+      cube.className = "cube";
+      cube.style.transform = "none";
+      for (let n = 1; n <= 6; n++) {
+        const face = document.createElement("i");
+        face.className = "f f" + n;
+        cube.appendChild(face);
+      }
+      host.appendChild(cube);
+      document.body.appendChild(host);
+      const normals = {};
+      cube.querySelectorAll(".f").forEach((face) => {
+        const n = Number(String(face.className).match(/f(\d)/)[1]);
+        const m = new DOMMatrix(getComputedStyle(face).transform);
+        normals[n] = { x: m.m31, y: m.m32, z: m.m33, det: det3(m) };
+      });
+      host.remove();
+      return normals;
     });
-    assert.ok(existsSync(root + "docs/qa/compare/run8-dice-36.jpg"));
+    const dot = (p, q) => p.x * q.x + p.y * q.y + p.z * q.z;
+    const cross = (p, q) => ({
+      x: p.y * q.z - p.z * q.y,
+      y: p.z * q.x - p.x * q.z,
+      z: p.x * q.y - p.y * q.x,
+    });
+    assert.ok(dot(layout[1], layout[6]) < -0.9, "1 is opposite 6");
+    assert.ok(dot(layout[2], layout[5]) < -0.9, "2 is opposite 5");
+    assert.ok(dot(layout[3], layout[4]) < -0.9, "3 is opposite 4");
+    assert.ok(dot(layout[1], cross(layout[2], layout[3])) > 0.9, "1-2-3 corner is right-handed");
+    for (let n = 1; n <= 6; n++) assert.ok(layout[n].det > 0.9, "face " + n + " transform is a rotation");
+    if (process.env.BB_SHOTS === "1") {
+      mkdirSync(root + "docs/qa/compare", { recursive: true });
+      await page.locator("#sweep").screenshot({
+        path: root + "docs/qa/compare/run9-dice-36.jpg",
+        type: "jpeg",
+        quality: 82,
+      });
+      assert.ok(existsSync(root + "docs/qa/compare/run9-dice-36.jpg"));
+    }
   } finally {
     await browser.close();
     server.kill();
