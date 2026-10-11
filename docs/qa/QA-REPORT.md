@@ -207,6 +207,20 @@ The BIG WIN bonus line is a centered chip (max 300px, gold border, 10px radius).
 
 93 tests pass. `robots` meta `noindex, nofollow` is still on the page.
 
+## Run 13
+
+Short phones keep the 3D dice in the glass. `placeDice()` no longer hides the host when the die would be under 28px, and the dice no longer shrink to fit a 16px gap. On a viewport 720px tall or shorter the glass is 280px, so each die is 41px. Taller phones are larger: 54px at 390×844 and 67px at 430×932. The settled top face is the engine face (5 and 2 in the check) and both dice sit inside the bowl. Compare: `run13-dome-320x568.jpg`, `run13-dome-360x640.jpg`, `run13-dome-375x667.jpg`, `run13-dome-390x844.jpg`, `run13-dome-430x932.jpg`, `run13-dome-844x390.jpg`.
+
+At 320 the scaled column would draw strip pips at about 12.7px, so that dome uses totals. The strip stays on the dome. The zoomed play column now fills the 568px height, so the old 52px band under the footer is gone. The footer sits about 10px off the bottom, the same as 390 and 430. The felt can scroll. Pass Line comes fully into the board, and ROLL stays on screen. Compare: `run13-felt-320.jpg`.
+
+The Field lists 2, 3, 4, 9, 10, 11, and 12 in both Regular and Crapless. 2 and 12 are gold circles, and the line under the name reads “2 AND 12 PAYS DOUBLE” (2:1, same as the engine). The seven numbers stay inside the spot at 375, 390, 430, and 844×390. Compare: `run13-field-375x667.png`, `run13-field-390x844.png`, `run13-field-430x932.png`, `run13-field-844x390.png`.
+
+The top-left control is the Dealer Billy round SVG, not a stretched crop. Before, a 1px border and `object-fit: fill` drew it at 38×40 (30×32 in landscape). It is now a square: 40×40 in the 44px HUD row at 390, and 32×32 in the 36px landscape row at 844. `object-fit` is `contain`, the gold ring is the 1.5px `#C9A961` shadow, and the hat stays inside the circle. Compare: `run13-avatar-before-390.png`, `run13-avatar-after-390.png`, `run13-avatar-before-844.png`, `run13-avatar-after-844.png`.
+
+A BIG WIN that pays an ATS bonus shows Billie. The bonus chip at 390 is inset (16px to 272px on a 390px screen). If a marquee is actually on screen, Billie on the scrim hides so only the toast mascot shows. The gold marquee odds no longer end with a period before the pay: “1 in 29 Crapless”, then “31 for 1”. Compare: `run13-bigwin-390.jpg`.
+
+95 tests pass. `robots` meta `noindex, nofollow` is still on the page.
+
 Still open: R7-6 (B5 coach edge), R6-7 (badge timing #1–#4), R6-10 (#25 fairness scroll), R6-11 (#26 practice days), R6-14 (test rolls unlocking badges on localhost), P2-11 (tutor rows), P2-18 (long-press preview), P2-19 (the wide layout at 1400px and up; FAIR now fits the phone column, the three-column layout does not), P2-21 (cent flooring), P2-N8 (first-time auto-press card), R5-4 (pinned current-hand row), Premium B-31 Scaled and Custom ladders and a variable table max, and the Table Craps turn log.
 
 ## Still short of the mockups

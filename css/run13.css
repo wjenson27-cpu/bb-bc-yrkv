@@ -106,8 +106,8 @@
     max-height: none;
     aspect-ratio: 860 / 1120;
   }
-  .app.play .dome-screen .rollstrip,
   .app.play .dome-screen .heater { display: none; }
+  .app.play .dome-screen .rollstrip { margin: 0; flex: 0 0 auto; }
   .app.play .dome-cast {
     transform: scale(.55);
     transform-origin: left bottom;
@@ -138,7 +138,6 @@
 .winstamp { min-width: 0; max-width: 100%; }
 .winstamp em {
   box-sizing: border-box;
-  max-width: min(300px, 100%);
   margin-left: auto;
   margin-right: auto;
 }
