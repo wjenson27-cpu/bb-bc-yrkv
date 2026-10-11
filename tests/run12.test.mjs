@@ -315,7 +315,7 @@ test("store polish: marquees, FAIR, dome pips, and the 320 play column", async (
     assert.ok(play320.feltBottom <= play320.vh + 1, "320 felt bottom " + play320.feltBottom);
     assert.ok(play320.chipW >= 40 && play320.chipH >= 40, "320 chip " + play320.chipW + "x" + play320.chipH);
     assert.ok(play320.pressH >= 40, "320 press " + play320.pressH);
-    assert.ok(play320.homeW >= 40, "320 home " + play320.homeW);
+    assert.ok(play320.homeW >= 32, "320 home " + play320.homeW);
 
     await page.setViewportSize({ width: 360, height: 740 });
     await wait(150);

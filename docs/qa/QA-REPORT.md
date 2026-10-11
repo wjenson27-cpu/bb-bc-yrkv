@@ -221,7 +221,23 @@ A BIG WIN that pays an ATS bonus shows Billie. The bonus chip at 390 is inset (1
 
 95 tests pass. `robots` meta `noindex, nofollow` is still on the page.
 
-Still open: R7-6 (B5 coach edge), R6-7 (badge timing #1–#4), R6-10 (#25 fairness scroll), R6-11 (#26 practice days), R6-14 (test rolls unlocking badges on localhost), P2-11 (tutor rows), P2-18 (long-press preview), P2-19 (the wide layout at 1400px and up; FAIR now fits the phone column, the three-column layout does not), P2-21 (cent flooring), P2-N8 (first-time auto-press card), R5-4 (pinned current-hand row), Premium B-31 Scaled and Custom ladders and a variable table max, and the Table Craps turn log.
+Still open after run 13: R7-6 (B5 coach edge), R6-7 (badge timing #1–#4), R6-10 (#25 fairness scroll), R6-11 (#26 practice days), R6-14 (test rolls unlocking badges on localhost), P2-11 (tutor rows), P2-18 (long-press preview), P2-19 (the wide layout at 1400px and up; FAIR now fits the phone column, the three-column layout does not), P2-21 (cent flooring), P2-N8 (first-time auto-press card), R5-4 (pinned current-hand row), Premium B-31 Scaled and Custom ladders and a variable table max, and the Table Craps turn log.
+
+## Run 14
+
+The short-screen glass no longer pins `.machine` at 280px on every viewport under 720px tall. Portrait still caps the bowl at 280px and lets it flex, so the result line and the roll strip stay on the page. Landscape drops that cap. The strip is shown again at 844 and 932. At 320×568, 360×640, 375×667, 390×844, 430×932, 844×390, and 932×430 the dice are at least 40px, and the full HARD TEN line and the roll strip sit inside the viewport. Compare: `run14-dome-320x568.jpg`, `run14-dome-360x640.jpg`, `run14-dome-375x667.jpg`, `run14-dome-390x844.jpg`, `run14-dome-430x932.jpg`, `run14-dome-844x390.jpg`, `run14-dome-932x430.jpg`.
+
+The portrait header keeps the square Dealer Billy avatar (`object-fit: contain`, no second gold ring) at 36px and replaces the floating compact wordmark with `topleft-lockup.svg` (118.5×36), aligned to the HUD’s left edge. At 390 the home button is 20–56, the lockup 64–182, and the mode switch ends at 370. At 375 the lockup is the same 64–182 and the switch ends at 357. Under 360px the lockup is 30px tall. Landscape hides the lockup and uses `topleft-mark-ring-32.svg` as Home, with left padding `max(6px, env(safe-area-inset-left))`. Compare: `run14-top-before-375.png`, `run14-top-after-375.png`, `run14-top-before-390.png`, `run14-top-after-390.png`, `run14-top-before-844.png`, `run14-top-after-844.png`.
+
+Field 2 and 12 are 15px numerals in 26px gold rings. The felt line is “2 AND 12 PAY DOUBLE”. Premium 3:1 copy stays locked to the setting (`2 PAYS DOUBLE · 12 PAYS TRIPLE`, `2 PAYS TRIPLE · 12 PAYS DOUBLE`, `2 AND 12 PAY TRIPLE`) and does not change the live 2:1 payout. The screen-reader label is “Field: 2, 3, 4, 9, 10, 11, 12; 2 and 12 pay 2 to 1”, plus the stake when one is posted. The rings stay at least 8px at 375 and at 844. Compare: `run14-field-375x667.png`, `run14-field-390x844.png`, `run14-field-430x932.png`, `run14-field-844x390.png`.
+
+Tutor “Long shot” is only a prop that wins on fewer than about 1 in 6. Any 7, C&E, and Horn are exactly 6/36, so they are not long shots. “High house edge” starts at 9%, so Big Red is “High house edge.” and a hardway is “Long shot with a high house edge.” Place 4/10 (6.67%) gets neither line. The Field has its own line: “Field: wins on 16 of 36 rolls, but the 5–8 numbers lose. 5.56% edge.”
+
+At 360×640, with a point and the last dice up, FAIR ends at 348 inside a pill that ends at 352. Compare: `run14-fair-360.jpg`.
+
+99 tests pass. `robots` meta `noindex, nofollow` is still on the page.
+
+Still open: the run 13 list above. R13-1 (dome result and strip), R13-2 (tutor long-shot wording), and R13-3 (Field screen-reader label) are closed in this pass.
 
 ## Still short of the mockups
 

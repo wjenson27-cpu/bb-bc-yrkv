@@ -53,7 +53,7 @@ test("a horizontal swipe that starts on a felt button changes the screen and the
     await page.click("button[data-mode='regular']");
     await page.waitForSelector("#stage[data-page='1']");
 
-    const field = page.locator("button[aria-label='Field']");
+    const field = page.locator("button[data-kind='field']");
     const box = await field.boundingBox();
     assert.ok(box, "Field is on the board");
     const y = box.y + box.height / 2;
@@ -87,7 +87,7 @@ test("a horizontal swipe that starts on a felt button changes the screen and the
     await page.mouse.up();
     await page.waitForFunction(() => {
       const stage = document.getElementById("stage");
-      const field = document.querySelector("button[aria-label='Field']");
+      const field = document.querySelector("button[data-kind='field']");
       if (!stage || !field || stage.dataset.page !== "1") return false;
       const rect = field.getBoundingClientRect();
       return rect.x > 8 && rect.right < 390;
@@ -95,7 +95,7 @@ test("a horizontal swipe that starts on a felt button changes the screen and the
     const back = await page.locator(".dot[aria-label='Board']").getAttribute("class");
     assert.match(back, /\bon\b/);
 
-    const fieldAgain = page.locator("button[aria-label='Field']");
+    const fieldAgain = page.locator("button[data-kind='field']");
     const fieldBox = await fieldAgain.boundingBox();
     assert.ok(fieldBox && fieldBox.x > 0, "Field is on screen");
     const fy = fieldBox.y + fieldBox.height / 2;
