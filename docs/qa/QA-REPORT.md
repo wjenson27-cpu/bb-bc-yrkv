@@ -187,7 +187,27 @@ ROLL stays available during BIG WIN. The banner, including its pips, is cleared 
 
 91 tests pass. `robots` meta `noindex, nofollow` is still on the page.
 
-Still open: R7-6 (B5 coach edge), R6-7 (badge timing #1–#4), R6-10 (#25 fairness scroll), R6-11 (#26 practice days), R6-14 (test rolls unlocking badges on localhost), P2-11 (tutor rows), P2-18 (long-press preview), P2-19 (layout at 1400px and up), P2-21 (cent flooring), P2-N8 (first-time auto-press card), R5-4 (pinned current-hand row), Premium B-31 Scaled and Custom ladders and a variable table max, the Table Craps turn log, and Spin the Block’s marquee facts line still appending the Low/High Rolls pay and edge. The spec header still says rev 13b.
+Still open after run 11: R7-6 (B5 coach edge), R6-7 (badge timing #1–#4), R6-10 (#25 fairness scroll), R6-11 (#26 practice days), R6-14 (test rolls unlocking badges on localhost), P2-11 (tutor rows), P2-18 (long-press preview), P2-19 (layout at 1400px and up), P2-21 (cent flooring), P2-N8 (first-time auto-press card), R5-4 (pinned current-hand row), Premium B-31 Scaled and Custom ladders and a variable table max, the Table Craps turn log, and Spin the Block’s marquee facts line still appending the Low/High Rolls pay and edge. The spec header still says rev 13b.
+
+## Run 12
+
+Store-screenshot polish on top of run 11. Measured in Chromium. Compare shots are `docs/qa/compare/run12-*`.
+
+Gold and legendary marquee titles wrap, two lines at most, instead of truncating. At 375, “Spin the Block” is the full string (`white-space: normal`, title box 41px, the text is not clipped). At 390, “Hard Way All Day” is the same. The title stays left of VIEW. Compare: `run12-marquee-375.jpg`, `run12-marquee-390.jpg`.
+
+Spin the Block’s facts line is “About 1 in 523 hands Regular, 1 in 565 Crapless”, then the 31-for-1 pay and the 18.30% edge once. Hard Way All Day’s odds line is “About 1 try in 210.” The toast adds “165 for 1” and “21.43%” once each.
+
+The dome strip measures the dome container. At 390 the container is 374px, so roll 1, roll 5, and roll 10 all show pips, side by side, inside the tile. Compare: `run12-strip-1.jpg`, `run12-strip-5.jpg`, `run12-strip-10.jpg`. The scaled 320px column is 336px in CSS pixels, which is over the 309px cutoff, so that dome shows pips too and the faces stay inside the strip. Fair Dice at 320 still uses totals.
+
+Landscape 844 hides the heat word. FAIR is 635–682 and the dock starts at 688. All four heat segments stay. At 1440 the phone column is 480–960, FAIR is 907–951 inside it, and the word is hidden. Compare: `run12-hud-844.jpg`, `run12-hud-1440.jpg`. At 375, FAIR is 320–364 and the HUD row ends at 367.
+
+The 320×568 play column uses `zoom: 0.909`. ROLL is 241–319 and 78px, the felt is 52–303, and the chip, press, and home controls are 40px. 360 stays at zoom 1, with a 94px ROLL and 44px chips. Compare: `run12-play-320.jpg`.
+
+The BIG WIN bonus line is a centered chip (max 300px, gold border, 10px radius). A legendary marquee queued during that scrim stays hidden until Collect. A direct test show still appears over the scrim, so the one-mascot check is unchanged.
+
+93 tests pass. `robots` meta `noindex, nofollow` is still on the page.
+
+Still open: R7-6 (B5 coach edge), R6-7 (badge timing #1–#4), R6-10 (#25 fairness scroll), R6-11 (#26 practice days), R6-14 (test rolls unlocking badges on localhost), P2-11 (tutor rows), P2-18 (long-press preview), P2-19 (the wide layout at 1400px and up; FAIR now fits the phone column, the three-column layout does not), P2-21 (cent flooring), P2-N8 (first-time auto-press card), R5-4 (pinned current-hand row), Premium B-31 Scaled and Custom ladders and a variable table max, and the Table Craps turn log.
 
 ## Still short of the mockups
 
