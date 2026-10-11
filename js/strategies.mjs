@@ -320,7 +320,7 @@ export function autoBet(state, id, chipCents, opts = {}) {
             data.presses[n] += 1;
             const stake = next.bets.place[n];
             const prefix = mode === "off" ? "PRESS" : "Auto " + (mode === "power" ? "POWER PRESS" : "PRESS");
-            const back = mode === "power" ? ", " + formatMoney(res.back) + " to chips" : "";
+            const back = mode === "power" && res.back > 0 ? ", " + formatMoney(res.back) + " to chips" : "";
             out.message = prefix + " " + n + " +" + formatMoney(res.added) + " → " + formatMoney(stake) + back;
           }
         }
@@ -404,7 +404,7 @@ export function applyAutoPress(state) {
   res.state.autoPress = { mode: cfg.mode, max: cap, counts };
   const stake = res.state.bets[lw.kind][lw.number];
   const verb = cfg.mode === "power" ? "POWER PRESS" : "PRESS";
-  const back = cfg.mode === "power" ? ", " + formatMoney(res.back) + " to chips" : "";
+  const back = cfg.mode === "power" && res.back > 0 ? ", " + formatMoney(res.back) + " to chips" : "";
   return {
     ok: true,
     state: res.state,

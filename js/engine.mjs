@@ -704,6 +704,9 @@ export function removeBet(state, spot, amount, opts = {}) {
   if (s.kind === "place" || s.kind === "buy") {
     setOriginal(next, s);
     if (amountOf(next, s) === 0 && next.billyMark && next.billyMark[s.kind]) next.billyMark[s.kind][s.number] = false;
+    if (amountOf(next, s) === 0 && next.autoPress && next.autoPress.counts) {
+      delete next.autoPress.counts[s.kind + ":" + s.number];
+    }
   }
   next.bankroll += take;
   return { ok: true, state: next, kind: s.kind, dont: DONT_KINDS.has(s.kind) };
@@ -734,6 +737,7 @@ export function resetLayout(state) {
   next.lastWin = null;
   next.pressBlock = "after a hit";
   next.betsOff = false;
+  if (next.autoPress) next.autoPress = { mode: next.autoPress.mode || "off", max: next.autoPress.max || 3, counts: {} };
   return next;
 }
 
@@ -806,6 +810,11 @@ export function placeBillysWay(state, chipCents) {
   placed.forEach((p) => {
     next.billyMark[p.kind][p.number] = true;
   });
+  if (placed.length && next.autoPress) {
+    const counts = { ...(next.autoPress.counts || {}) };
+    placed.forEach((p) => { delete counts[p.kind + ":" + p.number]; });
+    next.autoPress = { mode: next.autoPress.mode || "off", max: next.autoPress.max || 3, counts };
+  }
   return { ok: placed.length > 0, state: next, placed, skipped, buy, place };
 }
 
@@ -1375,6 +1384,7 @@ export function settle(state, d1, d2) {
     next.hand.lastLength = next.hand.rolls + 1;
     next.hand.rolls = 0;
     next.hand.points = 0;
+    if (next.autoPress) next.autoPress = { mode: next.autoPress.mode || "off", max: next.autoPress.max || 3, counts: {} };
   } else {
     next.hand.rolls += 1;
     if (line.result === "point-made") next.hand.points += 1;

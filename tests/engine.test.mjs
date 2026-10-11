@@ -928,6 +928,30 @@ test("auto-press adds to a Billy's Way win and leaves the original bet", () => {
   assert.equal(g.bets.place[6], $(6));
 });
 
+test("auto-press counts reset on seven-out, Billy's Way, reset, and takedown", () => {
+  let g = point(game(), 4);
+  g.autoPress = { mode: "press", max: 3, counts: { "place:8": 2, "buy:4": 1 } };
+  g = roll(g, 7).state;
+  assert.deepEqual(g.autoPress.counts, {});
+
+  g = point(game(), 5);
+  g.autoPress = { mode: "press", max: 1, counts: { "place:8": 1, "place:6": 2 } };
+  g = E.placeBillysWay(g, $(5)).state;
+  assert.equal(g.autoPress.counts["place:8"], undefined);
+  assert.equal(g.autoPress.counts["place:6"], undefined);
+
+  g.autoPress.counts["buy:10"] = 2;
+  g = E.resetLayout(g);
+  assert.deepEqual(g.autoPress.counts, {});
+
+  g = point(game(), 8);
+  g = E.placeBet(g, { kind: "place", number: 8 }, $(6)).state;
+  g.autoPress = { mode: "press", max: 3, counts: { "place:8": 2 } };
+  const cut = E.removeBet(g, { kind: "place", number: 8 }, $(6));
+  assert.equal(cut.state.bets.place[8], 0);
+  assert.equal(cut.state.autoPress.counts["place:8"], undefined);
+});
+
 test("B5 reopens after a seven-out, pauses after three losses, and presses onto the original", () => {
   let g = point(game("regular", $(5000)), 9);
   let res = autoBet(g, "B5", $(5));

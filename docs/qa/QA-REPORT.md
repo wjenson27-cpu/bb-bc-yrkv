@@ -71,17 +71,31 @@ The Play view hides the tab bar. Home is a button in the HUD. There is no second
 
 A seven-out is a toast (`Seven-out · new shooter` when nothing was lost). A small win is the roll toast. A big win overlay stops above the dock, dismisses itself, and does not call the auto-roll stop. Place 6 and 8 post in $6 units.
 
-Landscape phones (500px tall or shorter) put a 132px dock on the right. At 844×390 the stage measured 328px tall. Wide desktop windows still center the phone column.
+Landscape phones (500px tall or shorter) keep the chip and on-table row in the top bar and keep the legal line on its own 26px row. The dock is a right column. Wide desktop windows still center the phone column, now on a felt backdrop.
 
 Side-by-side shots of this pass against the mockups are in `docs/qa/compare/`.
 
+## Run 4
+
+Both reviewers failed the previous build. This pass fixes the failures they could reproduce in the app.
+
+- PRESS and POWER PRESS paint again after the dice settle, so a hit lights the keys. Before the first tap the line is the amount only. After a tap it adds the tap count.
+- A mouse or trackpad click on the felt, a hop, or a repeater places the bet. Pointer capture starts only after a sideways drag passes 12px. Playwright clicks Pass Line and Place 6 with a mouse, then a forced 6, and checks that PRESS 6 is enabled.
+- Auto-press counts reset on a seven-out, on Reset, when Billy's Way posts that number again, and when the bet is taken down. A power-press or auto-press message leaves off a $0 return.
+- A roll that nets zero or a loss is never a BIG WIN, and the amount line is never +$0. ATS, Hard Way All Day, and Repeater wins use their own copy on a real win.
+- The Blazing meter has four segments and no Fire footnote. Hot and Blazing fill different amounts.
+- The bet sheet sits inside the stage, above the chip rack and ROLL, with a handle, a close button, and a tap-outside scrim.
+- The board grows to fill the stage. At 390px the number faces measure 29.6px, SIX and NINE 18px, and BUY/PLACE 8px. The felt "practice" line is dropped because the footer already says it.
+- The dome shows the full hood (glass, base, lights, air-jet floor) with one outline. The dice are CSS cubes from the cube handoff, rendered on `document.body` so the pager transform and the stage overflow do not flatten them. They tumble for about a second and settle on the rolled faces. Reduced motion fades instead.
+- Dealer Billy (hello, tip, live, seven-out, winner) and Bubbles Billie (hello, cheer, winner) are the SVG poses. The home line "Bets down! Air's coming on." is a speech bubble on the hero. Billy calls the point on the dome. Billie cheers wins and hot streaks. Idle motion turns off when reduced motion is on.
+- Landscape shows Chips and On table, and the legal line is fully on screen.
+- Last 20 reads oldest to newest, with the newest chip marked. Fair Dice prints the verdict that matches the test (Need more rolls, Looks fair, A bit unusual, Rare result). The first time auto-press is turned on, a tip explains it. A $500 chip on Place 6 or 8 posts $498, the largest $6 unit under the table max.
+
 ## Still short of the mockups
 
-The felt is the right material and order, and it is still denser than mockup 15. Number faces are smaller than the 29px mockup size so Pass Line stays on a 390×844 screen. Felt cells are under 44px. Dock, chips, and bet-panel steppers are at least 44px.
+The felt is the right material and order. It is still denser than mockup 15, and felt cells are under 44px so the Pass Line fits. Dock, chips, and bet-panel steppers are at least 44px.
 
-Dice use the handoff face art rather than a live CSS cube, because the pager's transform flattens 3D descendants. The 1-pip colour is whatever is in that art.
-
-Wide windows (900px and up) stay a centered phone column. They do not become the spec's side-by-side or three-column layout.
+Wide windows stay a centered phone column with a felt backdrop. They do not become a three-column layout. There is no long-press bet preview. The grey-out line for a Place 6 or 8 win under one unit still says the $6 unit.
 
 ## Rules pass
 
@@ -97,4 +111,4 @@ The rules review found a C&E overpay and a progress-banking hole, plus several m
 - B8 can post a new Buy 4/5/9/10 set after it takes the first one down. B11 pauses after 100 rolls, not 99.
 - PRESS and POWER PRESS show why they are grey, including while the dice are tumbling. The $500 cap toast only shows when the bet lands on the table max.
 
-49 tests pass, including the browser swipe, after the design review as well. `robots` meta `noindex, nofollow` is still on the page.
+51 tests pass, including the browser swipe and the mouse-click PRESS check. `robots` meta `noindex, nofollow` is still on the page.
