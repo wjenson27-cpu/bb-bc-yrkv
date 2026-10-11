@@ -338,10 +338,6 @@ img { max-width: 100%; display: block; }
 .result-line small { display: block; color: var(--ink-dim); font-family: var(--sans); font-size: 12px; }
 .meter { display: flex; gap: 4px; align-items: center; }
 .meter i { flex: 1; height: 8px; border-radius: 99px; background: #123224; }
-.meter i.on-cold { background: #6ea0c8; }
-.meter i.on-warm { background: #e2b34d; }
-.meter i.on-hot { background: #e07a3a; }
-.meter i.on-blazing { background: #ff5a3c; box-shadow: 0 0 8px #ff5a3c; }
 .meter span { font-size: 11px; letter-spacing: .08em; color: var(--gold); min-width: 64px; }
 .rollstrip { display: flex; gap: 4px; overflow: auto; padding-bottom: 4px; }
 .rchip {

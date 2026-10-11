@@ -61,9 +61,10 @@ That runs `node --test tests/*.test.mjs`. The suite covers the chip set, come-ou
 - The roll log keeps 8,000 compact records, not 100,000. A larger log would blow `localStorage`.
 - Fair Dice CSV is locked, as specified. There is no feedback form for a very rare chi-square.
 - Premium shows every B-setting, the presets, and an Edge Preview, and all of them stay locked. It does not edit live payouts.
-- Phones in landscape (500px tall or less) move the dock to a 132px right column so the stage stays on screen. Wider windows still center the phone column.
-- The full A1.8 tutor state table is not wired. The tour, come-out and point tips, press and power tips, a first hop, Place 2/3/11/12, the first swipe to side bets, and the Blazing lesson are.
-- A $500 chip on Billy's Way wants Place 6 and 8 at $600. The $500 table max rejects that part.
+- Phones in landscape (500px tall or less) keep Chips and On table in the top bar, keep the legal line fully visible, and put the dock in a right column.
+- A $500 chip on Place 6 or 8 posts $498, the largest $6 unit that fits under the $500 table max.
+- The dome dice are CSS cubes (tumble, then settle on the rolled faces). They are drawn outside the sliding pager so the 3D is not flattened. Home and the HUD still use the small die art.
+- The full A1.8 tutor state table is not wired. The tour, come-out and point tips, press and power tips, a first hop, Place 2/3/11/12, the first swipe to side bets, the Blazing lesson, and the first time auto-press is turned on are.
 - Horn is $4 units. C&E is $2 units. A $5 chip posts $4 of either and leaves $1 in practice chips. A $25 Horn posts $24. $100 and $500 divide evenly.
 - Any Craps, C&E, and Horn 4-way sit on the felt next to the Horn box. The left screen is Repeaters and hops.
 - Felt cells are shorter than 44px so the Pass Line fits on a 390×844 screen. Dock, chips, tabs, and bet-panel steppers are at least 44px, and those steppers cover the same bets.
@@ -75,10 +76,10 @@ That runs `node --test tests/*.test.mjs`. The suite covers the chip set, come-ou
 
 ## Known bugs
 
-- The felt is dense. Pass Line is the last row. Bets Off, Billy's Way, and Reset stay in the dock. The bet panel opens from BETS.
-- A small win is a roll toast. A seven-out is a toast and never says +$0. A big win (25× the winning wager, or an ATS, Hard Way All Day, or Repeater hit) is an overlay that leaves ROLL free and does not pause auto-roll.
-- A Place 6 or 8 tap posts the chip in $6 units ($5 becomes $6, $25 becomes $30, $100 becomes $120).
-- The layout matches the mockup structure and the brand colors. It is not a pixel-identical recreation of `docs/mockups/`.
+- The felt is dense. Pass Line is the last row. Number faces are about 30px on a 390-wide phone. Bets Off, Billy's Way, and Reset stay in the dock. The bet sheet opens above the dock.
+- A small win is a roll toast. A seven-out is a toast with Dealer Billy and never says +$0. A big win (a positive net of 25× the winning wager, or an ATS, Hard Way All Day, or Repeater hit that actually pays) is an overlay with Bubbles Billie that leaves ROLL free and does not pause auto-roll.
+- A Place 6 or 8 tap posts the chip in $6 units ($5 becomes $6, $25 becomes $30, $100 becomes $120, $500 becomes $498).
+- The layout matches the mockup structure, the mascots, and the brand colors. It is not a pixel-identical recreation of `docs/mockups/`. Wide screens stay one phone column.
 
 ## QA
 

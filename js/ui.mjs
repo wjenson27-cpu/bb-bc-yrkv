@@ -190,14 +190,13 @@ function liveSideCount() {
 function heaterHTML(wide) {
   if (settings.blazing === false) return "";
   const tier = E.blazingTier(E.blazingScore(game.hand), game.hand.points);
-  const filled = tier === "cold" ? 1 : tier === "warm" ? 2 : 3;
+  const filled = tier === "cold" ? 1 : tier === "warm" ? 2 : tier === "hot" ? 3 : 4;
   const note = game.hand.rolls + " rolls · " + game.hand.points + " pt" + (game.hand.points === 1 ? "" : "s");
-  const fire = tier === "blazing" ? "<p class='firenote'>Just for show · no Fire Bet here</p>" : "";
-  return "<div class='heater " + tier + (wide ? " wide" : "") + "' title='Cosmetic meter. It never changes odds or advice.'>" +
+  return "<div class='heater " + tier + (wide ? " wide" : " compact") + "' title='Cosmetic meter. Dice have no memory.'>" +
     "<img src='assets/icons/blazing-flame.svg' alt='' width='15' height='15'><b>" + tier.toUpperCase() + "</b>" +
-    "<small>" + note + "</small><span class='segs'>" +
-    [0, 1, 2].map((i) => "<i" + (i < filled ? " class='on'" : "") + "></i>").join("") +
-    "</span></div>" + fire;
+    (wide ? "<small>" + note + "</small>" : "") + "<span class='segs'>" +
+    [0, 1, 2, 3].map((i) => "<i" + (i < filled ? " class='on'" : "") + "></i>").join("") +
+    "</span></div>";
 }
 function stakeLabel(cents) {
   return cents ? chipStack(cents) + '<span class="amt">' + money(cents) + "</span>" : "";
@@ -208,9 +207,8 @@ function mount() {
     <h1 class="sr">Billy Bubs Bubble Craps</h1>
     <header class="hud" id="hud"></header>
     <div class="toast" id="toast" role="status"></div>
-    <div class="stage" id="stage"><div class="pager" id="pager"></div></div>
+    <div class="stage" id="stage"><div class="pager" id="pager"></div><div id="betsheet"></div></div>
     <div class="dots" id="dots"></div>
-    <div id="betsheet"></div>
     <div class="dock" id="dock"></div>
     <main class="panel hidden" id="panel"></main>
     <nav class="tabs" id="tabs" aria-label="Sections"></nav>
@@ -218,27 +216,41 @@ function mount() {
     <div id="overlay"></div>
   `;
   app.addEventListener("click", onClick);
+  const diceHost = document.createElement("div");
+  diceHost.id = "dice-row";
+  diceHost.className = "dice-live";
+  diceHost.hidden = true;
+  document.body.appendChild(diceHost);
+  window.addEventListener("resize", () => placeDice());
   const stage = document.getElementById("stage");
+  stage.addEventListener("transitionend", (e) => {
+    if (e.target && e.target.id === "pager") placeDice();
+  });
   let sx = 0;
   let sy = 0;
   let dx = 0;
   let dy = 0;
   let tracking = false;
   let fromButton = false;
+  let captured = false;
   stage.addEventListener("pointerdown", (e) => {
     if (e.button != null && e.button !== 0) return;
     tracking = true;
+    captured = false;
     fromButton = !!e.target.closest("button, a, input, [data-act]");
     sx = e.clientX;
     sy = e.clientY;
     dx = 0;
     dy = 0;
-    try { stage.setPointerCapture(e.pointerId); } catch { /* already gone */ }
   });
   stage.addEventListener("pointermove", (e) => {
     if (!tracking) return;
     dx = e.clientX - sx;
     dy = e.clientY - sy;
+    if (!captured && Math.abs(dx) >= 12 && Math.abs(dx) > Math.abs(dy)) {
+      try { stage.setPointerCapture(e.pointerId); } catch { /* already gone */ }
+      captured = true;
+    }
     if (motionOff()) return;
     if (Math.abs(dx) < 12 || Math.abs(dx) <= Math.abs(dy)) return;
     const pager = document.getElementById("pager");
@@ -249,6 +261,7 @@ function mount() {
   stage.addEventListener("pointerup", (e) => {
     if (!tracking) return;
     tracking = false;
+    captured = false;
     try { stage.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
     const next = resolveSwipe(page, dx, dy);
     const moved = next !== page;
@@ -265,7 +278,7 @@ function mount() {
       }
     }
   });
-  stage.addEventListener("pointercancel", () => { tracking = false; snap(); });
+  stage.addEventListener("pointercancel", () => { tracking = false; captured = false; snap(); });
   document.addEventListener("keydown", (e) => {
     if (e.key === "ArrowRight") { page = Math.min(2, page + 1); snap(); paint(); }
     if (e.key === "ArrowLeft") { page = Math.max(0, page - 1); snap(); paint(); }
@@ -351,7 +364,18 @@ function onClick(e) {
   if (act === "gotit") { advanceTutor(); return; }
   if (act === "why") { openSheet(whySheet()); return; }
   if (act === "mute-tip") { mutedTips[currentTip().id] = true; save(); closeOverlay(); return; }
-  if (act === "auto-press") { settings.autoPress = t.dataset.mode; syncAutoPress(); save(); paint(); return; }
+  if (act === "auto-press") {
+    const was = settings.autoPress;
+    settings.autoPress = t.dataset.mode;
+    syncAutoPress();
+    save();
+    paint();
+    if (was === "off" && settings.autoPress !== "off" && !seenTips.autopress) {
+      seenTips.autopress = true;
+      toast("Auto-press is on. After a Billy's Way hit it adds to that number, up to your max. Same odds, more at risk. A seven-out starts the count over.");
+    }
+    return;
+  }
   if (act === "auto-max") {
     settings.autoPressMax = Math.min(5, Math.max(1, (settings.autoPressMax || 3) + Number(t.dataset.dir)));
     syncAutoPress();
@@ -451,7 +475,10 @@ function addBet(ds) {
     const unit = 600;
     let posted = Math.round((amount * 6) / 5 / unit) * unit;
     if (!posted) posted = unit;
-    if (posted !== amount) note = "Place 6 and 8 use $6 units. Posted " + money(posted) + ".";
+    if (posted > E.TABLE_MAX) {
+      posted = Math.floor(E.TABLE_MAX / unit) * unit;
+      note = "Place 6 and 8 stop at " + money(posted) + ", the largest $6 unit under the $500 table max.";
+    } else if (posted !== amount) note = "Place 6 and 8 use $6 units. Posted " + money(posted) + ".";
     amount = posted;
   }
   if (spot.kind === "repeater" || spot.kind === "hop") sideFocus = spot;
@@ -561,7 +588,8 @@ function doPower() {
   game = res.state;
   A.press();
   haptic(16);
-  toast((res.atMax ? "Capped at $500. " : "") + "Power Press +" + money(res.added) + ". " + money(res.back) + " stays in your chips.");
+  const leftover = res.back > 0 ? " " + money(res.back) + " stays in your chips." : "";
+  toast((res.atMax ? "Capped at $500. " : "") + "Power Press +" + money(res.added) + "." + leftover);
   if (settings.tutorOn) openTutor(0, "power");
   save();
   paint();
@@ -599,7 +627,8 @@ async function doRoll() {
     if (maintained.message) toast(maintained.message);
   }
   const handBefore = { rolls: game.hand.rolls, points: game.hand.points };
-  const dice = E.rollDice();
+  const dice = typeof window.__bbRng === "function" ? E.rollDice(window.__bbRng) : E.rollDice();
+  delete window.__bbRng;
   const from = page;
   if (settings.showDice) { returnPage = from; page = 2; }
   paint();
@@ -612,27 +641,29 @@ async function doRoll() {
   game = settled.state;
   lastNet = settled.net;
   syncAutoPress();
+  let pressNote = "";
   if (!(game.strategy && game.strategy.id === "B5")) {
     const pressed = S.applyAutoPress(game);
     if (pressed.ok) {
       game = pressed.state;
-      toast(pressed.message);
+      pressNote = pressed.message || "";
     }
   }
   rememberRoll(settled);
   if (settled.net > 0) { A.win(); haptic([12, 40, 16]); }
   else if (settled.result === "seven-out") { A.seven(); haptic(40); }
   else A.chip();
-  if (settings.showDice) {
-    page = returnPage;
-  }
+  if (settings.showDice) page = returnPage;
+  rolling = false;
   paint();
   snap();
-  if (page !== 2 && settled.result !== "seven-out" && !isBigWin(settled)) showRollToast(settled);
-  celebrate(settled);
+  const big = isBigWin(settled);
+  const quiet = page === 2 || settled.result === "seven-out" || big;
+  if (!quiet) showRollToast(settled, pressNote);
+  else if (pressNote) queueToast(pressNote, "", 1200);
+  celebrate(settled, handBefore);
   noteBlaze(handBefore, settled);
   maybeTutor(settled);
-  rolling = false;
   save();
   startTimer();
 }
@@ -653,39 +684,69 @@ function rememberRoll(settled) {
   if (allRolls.length > 8000) allRolls.splice(0, allRolls.length - 8000);
 }
 
+function cubeMarkup(which) {
+  const faces = [1, 2, 3, 4, 5, 6].map((n) => "<i class='f f" + n + "'></i>").join("");
+  return "<div class='cube3d" + (which === "b" ? " b" : "") + "'><div class='cube' data-face='1'>" + faces + "</div></div>";
+}
 function animateDice(dice) {
   const reduce = motionOff();
-  const ms = reduce ? 180 : 1200;
-  const els = [...document.querySelectorAll("#dice-row .die3d")];
-  if (!els.length) return wait(ms);
-  const start = performance.now();
-  let lastSwap = 0;
-  return new Promise((resolve) => {
-    const tick = (now) => {
-      const t = now - start;
-      if (!reduce && t < ms - 220) {
-        const lift = Math.sin((t / ms) * Math.PI) * 36;
-        els.forEach((el, i) => {
-          const spin = (t / 6) * (i ? -1 : 1);
-          el.style.transform = "translateY(" + (-lift) + "px) rotate(" + spin + "deg)";
-          if (now - lastSwap > 90) paintDie(el, 1 + Math.floor((t / 80 + i * 3) % 6));
-        });
-        if (now - lastSwap > 90) lastSwap = now;
-        requestAnimationFrame(tick);
-      } else {
-        const faces = [dice.d1, dice.d2];
-        els.forEach((el, i) => {
-          paintDie(el, faces[i]);
-          el.style.transform = "";
-          el.classList.remove("settled");
-          void el.offsetWidth;
-          el.classList.add("settled");
-        });
-        resolve();
-      }
-    };
-    requestAnimationFrame(tick);
+  const cubes = [...document.querySelectorAll("#dice-row .cube")];
+  if (!cubes.length) return wait(reduce ? 180 : 1400);
+  const faces = [dice.d1, dice.d2];
+  if (reduce) {
+    cubes.forEach((c, i) => { c.dataset.face = String(faces[i]); c.classList.remove("tumbling"); });
+    return wait(180);
+  }
+  cubes.forEach((c) => c.classList.add("tumbling"));
+  return wait(1040).then(() => {
+    cubes.forEach((c, i) => {
+      c.dataset.face = String(faces[i]);
+      c.classList.remove("tumbling");
+    });
+    return wait(420);
   });
+}
+function syncDice() {
+  const host = document.getElementById("dice-row");
+  if (!host) return;
+  const show = view === "play" && page === 2;
+  host.hidden = !show;
+  if (!show) return;
+  const tier = E.blazingTier(E.blazingScore(game.hand), game.hand.points);
+  const heat = tier === "warm" ? " warm" : tier === "hot" ? " hot" : tier === "blazing" ? " blazing" : "";
+  host.className = "dice-live" + heat;
+  if (host.querySelectorAll(".cube").length !== 2) {
+    host.innerHTML = cubeMarkup("a") + cubeMarkup("b");
+    const cubes = host.querySelectorAll(".cube");
+    const d1 = game.lastDice ? game.lastDice.d1 : 5;
+    const d2 = game.lastDice ? game.lastDice.d2 : 2;
+    cubes[0].dataset.face = String(d1);
+    cubes[1].dataset.face = String(d2);
+  }
+  requestAnimationFrame(placeDice);
+}
+function placeDice() {
+  const host = document.getElementById("dice-row");
+  const bowl = document.querySelector("#pager .machine");
+  const stage = document.getElementById("stage");
+  const pager = document.getElementById("pager");
+  if (!host || !bowl || !stage || !pager || host.hidden || page !== 2) return;
+  const s = stage.getBoundingClientRect();
+  const p = pager.getBoundingClientRect();
+  const r = bowl.getBoundingClientRect();
+  if (r.width < 20 || r.height < 20 || s.width < 20) return;
+  const settledPagerLeft = s.left - page * s.width;
+  const shift = settledPagerLeft - p.left;
+  const w = Math.max(120, Math.min(190, r.width * 0.42));
+  const left = r.left + shift + (r.width - w) / 2;
+  const top = r.top + r.height * 0.28;
+  host.style.position = "fixed";
+  host.style.left = Math.round(left) + "px";
+  host.style.top = Math.round(top) + "px";
+  host.style.width = Math.round(w) + "px";
+  host.style.height = Math.round(r.height * 0.26) + "px";
+  host.style.marginLeft = "0";
+  host.style.setProperty("--s", Math.round(Math.min(w * 0.42, 84)) + "px");
 }
 
 function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -717,6 +778,7 @@ function winningStake(settled) {
   return Math.max.apply(null, wins.map((d) => d.stake));
 }
 function isBigWin(settled) {
+  if (!settled.net || settled.net <= 0) return false;
   const bonus = (settled.decisions || []).some((d) => d.rearmed && d.result === "win");
   if (bonus) return true;
   const stake = winningStake(settled);
@@ -729,16 +791,19 @@ function clearWin() {
 }
 function showBigWin(settled) {
   const el = document.getElementById("overlay");
-  if (!el) return;
-  const amount = (settled.net >= 0 ? "+" : "") + money(settled.net);
+  if (!el || !(settled.net > 0)) return;
+  const amount = "+" + money(settled.net);
   const reduce = motionOff();
+  const lines = (settled.decisions || []).filter((d) => d.rearmed && d.result === "win").map(bonusCopy);
   el.innerHTML = "<div class='winlayer" + (reduce ? " reduce" : "") + "'>" +
+    "<div class='sunburst' aria-hidden='true'></div>" +
     "<div class='spark' aria-hidden='true'>" + [0, 1, 2, 3, 4, 5, 6, 7].map((i) => "<i style='--a:" + i + "'></i>").join("") + "</div>" +
     "<div class='winrow'><img src='assets/mascots/dealer-billy/billy-A-winner.svg' alt='Dealer Billy'>" +
-    "<div class='winstamp'><b>BIG WIN!</b><strong>" + amount + "</strong><p>Practice chips</p></div>" +
-    "<img src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie cheering'></div>" +
+    "<div class='winstamp'><b>BIG WIN!</b><strong>" + amount + "</strong><p>PRACTICE CHIPS</p>" +
+    (lines.length ? "<em>" + lines.join("<br>") + "</em>" : "") + "</div>" +
+    "<img src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'></div>" +
     burstChips(settled.net) +
-    "<div class='actions'><button class='go' data-act='collect'>Collect</button><button data-act='add-win'>Add a chip</button></div></div>";
+    "<div class='actions'><button class='go' data-act='collect'>Collect</button><button class='ghost' data-act='add-win'>Add a chip</button></div></div>";
   clearTimeout(celeTimer);
   celeTimer = setTimeout(clearWin, 3500);
 }
@@ -748,19 +813,26 @@ function addWinningChip() {
   if (!lw) return;
   addBet({ kind: lw.kind, number: lw.number, amount: settings.chip });
 }
-function sevenToast(settled) {
+function sevenToast(settled, extra) {
   const net = settled.net || 0;
-  const line = net === 0 ? "Seven-out · new shooter" : "Seven-out · " + money(net).replace("-", "−");
+  const line = net === 0 ? "Seven out. New shooter." : "Seven out. " + money(net).replace("-", "−");
   const el = document.getElementById("toast");
   if (!el) return;
   el.className = "toast show seven";
-  el.innerHTML = "<img class='toast-billie' src='assets/mascots/billie/small/billie-C-small-sevenout.svg' alt=''><div class='speech'>" + line + "</div><i class='steam' aria-hidden='true'></i>";
+  el.innerHTML = "<img class='toast-billy' src='assets/mascots/dealer-billy/billy-A-sevenout.svg' alt='Dealer Billy'>" +
+    "<div class='speech'><b>" + line + "</b>" + (extra ? "<small>" + extra + "</small>" : "") + "</div>" +
+    "<span class='steams' aria-hidden='true'><i class='steam'></i><i class='steam'></i><i class='steam'></i></span>";
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideToast, 2500);
+  toastTimer = setTimeout(hideToast, 2800);
 }
-function celebrate(settled) {
+function celebrate(settled, before) {
   if (settled.result === "seven-out") {
-    sevenToast(settled);
+    let extra = "";
+    if (settings.blazing !== false && before) {
+      const moment = E.blazeMoment(before, settled.state.hand, settled.result);
+      extra = [moment.text, moment.handNote].filter(Boolean).join(" ");
+    }
+    sevenToast(settled, extra);
     return;
   }
   if (isBigWin(settled)) showBigWin(settled);
@@ -778,11 +850,15 @@ function noteBlaze(before, settled) {
   settings.seenBlaze = settings.seenBlaze || {};
   const first = moment.lessonTier && !settings.seenBlaze[moment.lessonTier];
   const parts = [moment.text, moment.handNote].filter(Boolean);
+  if (settled.result === "seven-out") return;
   if (first && !document.querySelector(".overlay")) {
     settings.seenBlaze[moment.lessonTier] = true;
     save();
+    const cheer = moment.lessonTier === "hot" || moment.lessonTier === "blazing"
+      ? "<img src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>"
+      : "";
     openSheet(
-      "<header><img src='assets/mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'><div><p class='tag'>BLAZING METER</p><h2>" + moment.lessonTier + "</h2></div></header><p>" + (moment.text ? moment.text + " " : "") + blazeLesson(moment.lessonTier) + "</p><div class='actions'><button class='go' data-act='close'>Got it</button></div>"
+      "<header><img src='assets/mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'>" + cheer + "<div><p class='tag'>BLAZING METER</p><h2>" + moment.lessonTier + "</h2></div></header><p>" + (moment.text ? moment.text + " " : "") + blazeLesson(moment.lessonTier) + "</p><div class='actions'><button class='go' data-act='close'>Got it</button></div>"
     );
     return;
   }
@@ -791,7 +867,11 @@ function noteBlaze(before, settled) {
     parts.push("Dice have no memory.");
     save();
   }
-  if (parts.length) toast(parts.join(" "));
+  if (parts.length) {
+    const cheer = moment.tier === "hot" || moment.tier === "blazing";
+    const delay = isBigWin(settled) ? 2600 : 1400;
+    queueToast(parts.join(" "), cheer ? "assets/mascots/billie/billie-C-cheer.svg" : "", delay);
+  }
 }
 
 function maybeTutor(settled) {
@@ -881,12 +961,15 @@ function openTutor(step, force) {
   const edge = tip.edge != null ? edgeChip(tip.edge) : "";
   const el = document.getElementById("overlay");
   if (!el) return;
+  const actions = n
+    ? "<button data-act='why'>Why?</button><button data-act='mute-tip'>Mute this tip</button>"
+    : "<button class='go' data-act='gotit'>Got it</button><button data-act='why'>Why?</button><button data-act='mute-tip'>Mute this tip</button>";
   el.innerHTML = "<div class='coach' role='dialog'>" +
-    "<img class='coach-billie' src='assets/mascots/billie/billie-C-cheer.svg' alt=''>" +
+    "<img class='coach-billie' src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>" +
     "<div class='coach-top'><img src='assets/mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy, the tutor'><div><p class='kicker'>TUTOR · " + (game.phase === "point" ? "POINT IS ON" : "COME-OUT") + "</p><h2>" + tip.title + "</h2></div>" +
     "<div class='seg trackseg'><button class='" + (settings.tutorTrack === "beginner" ? "on" : "") + "' data-act='track' data-track='beginner'>Beginner</button><button class='" + (settings.tutorTrack === "experienced" ? "on" : "") + "' data-act='track' data-track='experienced'>Experienced</button></div></div>" +
     dots + "<p>" + tip.body + "</p>" + edge +
-    "<div class='actions'><button class='go' data-act='gotit'>Got it</button><button data-act='why'>Why?</button><button data-act='mute-tip'>Mute this tip</button></div>" +
+    "<div class='actions'>" + actions + "</div>" +
     (n ? "<div class='tourbar'><button data-act='close'>Skip tour</button><button class='go' data-act='gotit'>Next ›</button></div>" : "") +
     "</div>";
   markSpotlight();
@@ -933,33 +1016,40 @@ function closeOverlay() {
   if (view === "play") startTimer();
 }
 
-function toast(text) {
+function toast(text, mascot) {
   const el = document.getElementById("toast");
   if (!el) return;
   el.className = "toast show info";
-  el.innerHTML = "<div>" + text + "</div>";
+  const img = mascot ? "<img class='toast-billie' src='" + mascot + "' alt='Bubbles Billie'>" : "";
+  el.innerHTML = img + "<div>" + text + "</div>";
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, 2500);
+}
+function queueToast(text, mascot, delay) {
+  if (!text) return;
+  setTimeout(() => { if (view === "play") toast(text, mascot); }, delay == null ? 1200 : delay);
 }
 function hideToast() {
   const el = document.getElementById("toast");
   if (el) el.className = "toast";
 }
-function showRollToast(settled) {
+function showRollToast(settled, extra) {
   const el = document.getElementById("toast");
   if (!el) return;
   const net = settled.net || 0;
   const netHtml = net === 0 ? "" : "<b class='" + (net > 0 ? "up" : "down") + "'>" + money(net) + "</b>";
   const billie = net > 0 && !isBigWin(settled)
-    ? "<img class='toast-billie' src='assets/mascots/billie/small/billie-C-small-win.svg' alt=''>"
+    ? "<img class='toast-billie' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'>"
     : "";
+  const note = extra ? "<span class='extranote'>" + extra + "</span>" : "";
   el.className = "toast show roll";
   el.innerHTML = billie + "<button data-act='toast-go' aria-label='Open the dice'>" +
     "<span class='faces'>" + miniDie(settled.dice.d1) + miniDie(settled.dice.d2) + "</span>" +
     "<b>" + settled.dice.line + "</b>" + netHtml + "<span class='tap'>TAP FOR DOME ›</span></button>" +
+    note +
     "<button class='autoswipe" + (settings.showDice ? " on" : "") + "' data-act='autoswipe' aria-pressed='" + settings.showDice + "'>AUTO-SWIPE</button>";
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideToast, 2500);
+  toastTimer = setTimeout(hideToast, extra ? 3200 : 2500);
 }
 
 function startTimer() {
@@ -1006,12 +1096,16 @@ function paint() {
   if (sheet) sheet.innerHTML = play && betsOpen ? betPanelHTML() : "";
   if (play) {
     document.getElementById("pager").innerHTML = pageHTML(0) + pageHTML(1) + pageHTML(2);
+    syncDice();
     document.getElementById("dots").innerHTML = dotsHTML();
     document.getElementById("dock").innerHTML = dockHTML();
     snap();
     document.querySelectorAll(".page").forEach((p, i) => { if (scrolls[i]) p.scrollTop = scrolls[i]; });
     if (coachOn) markSpotlight();
+    requestAnimationFrame(placeDice);
   } else {
+    const diceHost = document.getElementById("dice-row");
+    if (diceHost) { diceHost.hidden = true; }
     document.getElementById("panel").innerHTML = panelHTML();
   }
 }
@@ -1030,7 +1124,7 @@ function hudHTML() {
     "<img src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt=''></button>" +
     "<img class='lockup' src='assets/logos/billybubs-bubble-craps-compact-color-dark.svg' alt='Billy Bubs Bubble Craps'>" +
     mode + "</div>" +
-    "<div class='hud-row2'><div class='hud-bank'><small>Practice chips</small><strong>" + money(game.bankroll) + "</strong></div>" +
+    "<div class='hud-row2'><div class='hud-bank'><small>Chips</small><strong>" + money(game.bankroll) + "</strong></div>" +
     "<div class='hud-bank'><small>On table</small><strong>" + money(on) + "</strong></div>" +
     "<div class='hud-puck'>" + puck + "</div>" + dice + heaterHTML(false) +
     "<button class='fairchip' data-act='view' data-view='fair' aria-label='Fair Dice'>FAIR</button></div>";
@@ -1176,7 +1270,9 @@ function betPanelHTML() {
     rows = layRows();
   }
   const tabLabel = (id) => id === "repeaters" ? "REPEATERS ›" : id === "lay" ? "LAY" : id.toUpperCase();
-  return "<section class='betpanel'><div class='led ledglass'><div><span>POINT</span><b>" + (game.point || "OFF") + "</b></div><div><span>LAST ROLL</span><b>" + ledLast + "</b></div><div><span>BALANCE</span><b>" + money(game.bankroll) + "</b></div></div>" +
+  return "<div class='betscrim' data-act='bets'></div><section class='betpanel'>" +
+    "<div class='sheetbar'><i class='sheethandle' data-act='bets'></i><button class='sheetx' data-act='bets' aria-label='Close bets'>×</button></div>" +
+    "<div class='led ledglass'><div><span>POINT</span><b>" + (game.point || "OFF") + "</b></div><div><span>LAST ROLL</span><b>" + ledLast + "</b></div><div><span>BALANCE</span><b>" + money(game.bankroll) + "</b></div></div>" +
     "<div class='btabs'>" + tabs.map((id) => "<button class='btab" + (betTab === id ? " on" : "") + "' data-act='tab' data-tab='" + id + "'>" + tabLabel(id) + "</button>").join("") + "</div>" +
     "<div class='betlist'>" + rows + layoutExtras() + "</div></section>";
 }
@@ -1275,7 +1371,7 @@ function sideHTML() {
     const on = sideFocus && sideFocus.kind === "repeater" && sideFocus.number === n ? " on" : "";
     return "<button class='rep" + (stake ? " has" : "") + on + "' data-act='bet' data-kind='repeater' data-number='" + n + "' aria-label='Repeater " + n + "'>" +
       edgeChip(E.REPEATER_EDGE[n]) + "<b>" + n + "</b><small>" + E.REPEATER_FOR[n] + " FOR 1</small>" +
-      "<span class='rlamps'>" + lamps + "</span><em>" + have + "/" + need + "</em>" +
+      "<span class='rlamps'>" + lamps + "</span><em>" + have + "/" + need + "</em><small class='needlab'>needs " + need + "×</small>" +
       (stake ? chipStack(stake) : "") + "</button>";
   }).join("");
   const hornKeys = { "1-1": 1, "1-2": 1, "5-6": 1, "6-6": 1 };
@@ -1290,7 +1386,7 @@ function sideHTML() {
       tag + (stake ? "<em>" + money(stake) + "</em>" : "") + "</button>";
   }).join("");
   const live = liveSideCount();
-  return "<header class='sidehead'><b>REPEATERS · BEFORE ANY 7</b><span>STANDARD PAYS (FOR 1)</span><button data-act='for'>For 1?</button></header>" +
+  return "<header class='sidehead'><b>REPEATERS · BEFORE ANY 7</b><span>STANDARD PAYS (FOR 1)</span><button data-act='for'>What's FOR 1?</button></header>" +
     "<p class='sub'>Hard hops 13.89% · easy hops 11.11%. Any 7 loses a repeater. Add only while the tally is 0.</p>" +
     "<div class='reps'>" + reps + "</div>" +
     "<header class='sidehead'><b>HOPS · ONE ROLL</b></header><div class='hops'>" + hops + "</div>" +
@@ -1298,29 +1394,47 @@ function sideHTML() {
     "<p class='billytip'><img src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt=''><span>A hard hop is one roll. A hardway waits for a 7.</span></p>";
 }
 
+function domeCall() {
+  if (rolling) return "Dice are out!";
+  if (game.point === 6 || game.point === 9) return "Come on, " + (game.point === 6 ? "six" : "nine") + "!";
+  if (game.point) return "Come on, " + game.point + "!";
+  return "Coming out!";
+}
+function historyChips(list, markLatest) {
+  const arr = (list || []).slice(0, 20).reverse();
+  return arr.map((h, i) => {
+    const total = h && h.total != null ? h.total : h;
+    const last = markLatest && i === arr.length - 1;
+    return "<span class='rchip" + (total === 7 ? " seven" : "") + (last ? " latest" : "") + "'>" + total + "</span>";
+  }).join("");
+}
 function domeHTML() {
-  const d1 = game.lastDice ? game.lastDice.d1 : 5;
-  const d2 = game.lastDice ? game.lastDice.d2 : 2;
   const tier = E.blazingTier(E.blazingScore(game.hand), game.hand.points);
   const hood = tier === "hot" ? "hot" : tier === "blazing" ? "blazing" : "cold-warm";
   const heat = tier === "warm" ? " warm" : tier === "hot" ? " hot" : tier === "blazing" ? " blazing" : "";
   const jets = [18, 38, 62, 82].map((left, i) => "<i class='jet' style='left:" + left + "%;animation-delay:" + (i * 0.15) + "s'></i>").join("");
-  const bubbles = [14, 28, 46, 62, 74, 36, 54].map((left, i) =>
-    "<i class='bubble' style='left:" + left + "%;width:" + (8 + (i % 4) * 4) + "px;height:" + (8 + (i % 4) * 4) + "px;animation-delay:" + (i * 0.45) + "s'></i>").join("");
+  const bubbles = [12, 24, 40, 55, 70, 82, 33].map((left, i) =>
+    "<i class='bubble' style='left:" + left + "%;width:" + (8 + (i % 4) * 5) + "px;height:" + (8 + (i % 4) * 5) + "px;animation-delay:" + (i * 0.35) + "s'></i>").join("");
   const line = rolling
     ? "<div class='ledglass'>AIR ON · DICE OUT</div>"
     : "<div class='result-line'>" + (game.lastDice ? game.lastDice.line : "READY") + "</div>";
   const win = !rolling && game.lastWin
-    ? "<p class='hitline'>WIN · " + (game.lastWin.kind === "buy" ? "Buy " : "Place ") + game.lastWin.number + " +" + money(game.lastWin.profit) + "</p><p class='muted'>PRESS / POWER PRESS below act on " + (game.lastWin.kind === "buy" ? "Buy " : "Place ") + game.lastWin.number + "</p>"
+    ? "<p class='hitline'>WIN · " + (game.lastWin.kind === "buy" ? "Buy " : "Place ") + game.lastWin.number + " +" + money(game.lastWin.profit) + "</p>"
     : "";
-  const hist = game.history.slice(-20).map((h) => "<span class='rchip" + (h.total === 7 ? " seven" : "") + "'>" + h.total + "</span>").join("");
+  const hot = tier === "hot" || tier === "blazing";
+  const billie = hot
+    ? "<img class='dome-billie' src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>"
+    : "";
+  const billyPose = rolling ? "billy-A-live.svg" : (game.phase === "point" ? "billy-A-live.svg" : "billy-A-hello.svg");
   return "<div class='dome-screen'><div class='machine hood-" + hood + heat + "'>" +
-    "<img class='hood' src='assets/dome/dome-hood-" + hood + "@2x.webp' alt=''>" +
+    "<img class='hood' src='assets/dome/dome-hood-" + hood + "@2x.webp' alt='Bubble craps dome'>" +
     "<div class='jets' aria-hidden='true'>" + jets + bubbles + "</div>" +
-    "<div class='dice-row' id='dice-row'>" + dieImg(d1, "die-a") + dieImg(d2, "die-b") + "</div>" +
-    "<div class='glass' aria-hidden='true'></div></div>" +
+    "<div class='shine' aria-hidden='true'></div></div>" +
+    "<div class='dome-cast'>" +
+    "<img class='dome-billy' src='assets/mascots/dealer-billy/" + billyPose + "' alt='Dealer Billy'>" +
+    "<p class='speech'>" + domeCall() + "</p>" + billie + "</div>" +
     line + win + heaterHTML(true) +
-    "<div class='rollstrip' aria-label='Last rolls'>" + hist + "</div></div>";
+    "<div class='rollstrip' aria-label='Last rolls'>" + historyChips(game.history, true) + "</div></div>";
 }
 
 function dockHTML() {
@@ -1328,7 +1442,7 @@ function dockHTML() {
   const chips = E.CHIPS.map((c) => "<button class='chip-btn" + (settings.chip === c ? " on" : "") + "' data-act='chip' data-cents='" + c + "' aria-label='$" + (c / 100) + " chip'>" + chipHTML(c) + "</button>").join("");
   const taps = game.pressStack.length;
   const pressLine = rolling ? "PRESS" : (st.pressOk ? "PRESS " + st.number + " <em>+" + money(st.original) + "</em>" : "PRESS");
-  const pressSub = rolling ? "after a hit" : (st.pressOk ? "→ " + money((st.stake || 0) + (st.original || 0)) + " · " + Math.max(taps, 1) + " tap" + (Math.max(taps, 1) === 1 ? "" : "s") : (st.pressReason || "after a hit"));
+  const pressSub = rolling ? "after a hit" : (st.pressOk ? "→ " + money((st.stake || 0) + (st.original || 0)) + (taps > 0 ? " · " + taps + " tap" + (taps === 1 ? "" : "s") : "") : (st.pressReason || "after a hit"));
   const powerLine = rolling ? "POWER PRESS" : (st.powerOk ? "POWER PRESS " + st.number : "POWER PRESS");
   const powerSub = rolling ? "after a hit" : (st.powerOk ? "+" + money(st.powerAdd) + " → " + money((st.stake || 0) + (st.powerAdd || 0)) + " · whole win" : (st.powerReason || "after a hit"));
   const undo = taps ? "<button class='undodisc' data-act='undo'" + (rolling ? " disabled" : "") + " aria-label='Undo press'>↺</button>" : "";
@@ -1338,10 +1452,7 @@ function dockHTML() {
   if (page === 0) {
     context = "<div class='context leftkeys'><button class='key' data-act='same'>SAME BET</button><button class='key' data-act='addchip'>ADD A CHIP</button><button class='key' data-act='takedown'>TAKE DOWN</button></div>";
   } else if (page === 2) {
-    const hist = game.history.slice(-20).map((h, i, arr) => {
-      const last = i === arr.length - 1;
-      return "<span class='rchip" + (h.total === 7 ? " seven" : "") + (last ? " latest" : "") + "'>" + h.total + "</span>";
-    }).join("");
+    const hist = historyChips(game.history, true);
     context = "<div class='context last20'><b>LAST 20</b>" + hist + "</div>";
   } else {
     const way = E.billysWayAmounts(settings.chip);
@@ -1371,11 +1482,11 @@ function homeHTML() {
   return "<section class='home'><div class='hometop'><span class='chippill'><img src='assets/chips/chip-brand-Bb.svg' alt=''>$1,000</span>" +
     "<button class='pill" + (settings.tutorOn ? " on" : "") + "' data-act='tips' aria-pressed='" + settings.tutorOn + "'>BILLY TIPS " + (settings.tutorOn ? "ON" : "OFF") + "</button></div>" +
     "<img class='logo' src='assets/logos/billybubs-bubble-craps-color-dark.svg' alt='Billy Bubs Bubble Craps'>" +
-    "<div class='home-hero' aria-hidden='true'><img class='hood' src='assets/dome/dome-hood-cold-warm@2x.webp' alt=''>" +
+    "<div class='home-hero'><img class='hood' src='assets/dome/dome-hood-cold-warm@2x.webp' alt=''>" +
     dieImg(5, "home-d1") + dieImg(2, "home-d2") +
-    "<img class='hello billy' src='assets/mascots/dealer-billy/billy-A-hello.svg' alt=''>" +
-    "<img class='hello billie' src='assets/mascots/billie/billie-C-hello.svg' alt=''></div>" +
-    "<p class='speech'>Bets down! Air's coming on.</p>" +
+    "<img class='hello billy' src='assets/mascots/dealer-billy/billy-A-hello.svg' alt='Dealer Billy'>" +
+    "<img class='hello billie' src='assets/mascots/billie/billie-C-hello.svg' alt='Bubbles Billie'>" +
+    "<p class='speech'>Bets down! Air's coming on.</p></div>" +
     "<p class='choose'>CHOOSE YOUR RULES</p>" +
     "<div class='modes'><button class='mode-card on' data-act='play' data-mode='regular'><i class='starttag'>START HERE</i><b>Regular</b><span>Pass, Don't, odds 3-4-5x.</span>" + edgeChip(0.37) + "<small>Pass + odds</small></button>" +
     "<button class='mode-card' data-act='play' data-mode='crapless'><b>Crapless</b><span>Only a come-out 7 wins. No Don't. No ATS.</span>" + edgeChip(1.26) + "<small>Pass + odds</small></button></div>" +
@@ -1456,10 +1567,10 @@ function settingsHTML() {
     row("workingComeOut", "Place and Buy working on come-out", "Off is Standard") +
     row("blazing", "Blazing meter", "Cosmetic only. Dice have no memory. It never changes odds or bets.") +
     row("showDice", "Show the dice on each roll", "Jumps to the dome, then back") +
-    "<div class='setting'><div><b>Auto-press after each hit</b><div class='muted'>Billy's Way and the B5 coach. Off, PRESS, or POWER PRESS. Same odds, more at risk.</div></div><div class='seg'>" +
+    "<div class='setting stackpress'><div><b>Auto-press after each hit</b><div class='muted'>Billy's Way and the B5 coach. Off, PRESS, or POWER PRESS. Same odds, more at risk.</div></div><div class='seg'>" +
     ["off", "press", "power"].map((mode) => "<button class='" + (settings.autoPress === mode ? "on" : "") + "' data-act='auto-press' data-mode='" + mode + "'>" + (mode === "off" ? "Off" : mode === "press" ? "PRESS" : "POWER") + "</button>").join("") +
     "</div></div>" +
-    "<div class='setting'><div><b>Auto-press max per number</b><div class='muted'>1 to 5. Default follows the coach at 3 when auto-press is Off.</div></div><div class='row'><button class='step' data-act='auto-max' data-dir='-1' aria-label='Lower auto-press max'>−</button><b>" + (settings.autoPressMax || 3) + "</b><button class='step' data-act='auto-max' data-dir='1' aria-label='Raise auto-press max'>+</button></div></div>" +
+    "<div class='setting stackpress'><div><b>Auto-press max per number</b><div class='muted'>1 to 5. Default follows the coach at 3 when auto-press is Off.</div></div><div class='stepper'><button class='step' data-act='auto-max' data-dir='-1' aria-label='Lower auto-press max'>−</button><b>" + (settings.autoPressMax || 3) + "</b><button class='step' data-act='auto-max' data-dir='1' aria-label='Raise auto-press max'>+</button></div></div>" +
     row("reduced", "Reduced motion", "Cross-fade instead of sliding and tumbling") +
     "<div class='setting stacked'><div><b>Tutor track</b><div class='muted'>Beginner or experienced</div></div></div><div class='seg trackseg'><button class='" + (settings.tutorTrack === "beginner" ? "on" : "") + "' data-act='track' data-track='beginner'>Beginner</button><button class='" + (settings.tutorTrack === "experienced" ? "on" : "") + "' data-act='track' data-track='experienced'>Experienced</button></div>" +
     "<button class='cta' data-act='bank-reset'>Reset bankroll to $1,000</button>" +
@@ -1486,16 +1597,21 @@ function fairHTML() {
   let peak = 1;
   for (let t = 2; t <= 12; t++) peak = Math.max(peak, test.counts[t] || 0, rolls.length * F.expectedRate(t));
   const cols = [];
-  const curve = [];
   for (let t = 2; t <= 12; t++) {
     const got = test.counts[t] || 0;
     const h = Math.round((got / peak) * 100);
     const eh = Math.round((rolls.length * F.expectedRate(t) / peak) * 100);
     const ways = [0, 0, 1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1][t];
     cols.push("<div class='vcol'><span>" + got + "</span><div class='vtrack'><i class='" + (t === 7 ? "seven" : "") + "' style='height:" + h + "%'></i><em style='bottom:" + eh + "%'></em></div><b>" + t + "</b><small>" + ways + "/36</small></div>");
-    curve.push((8 + (t - 2) * 9) + "," + (100 - eh));
   }
   const readout = test.readout;
+  const verdicts = {
+    "Within normal range": "LOOKS FAIR",
+    "A bit unusual": "A BIT UNUSUAL",
+    "Rare result": "RARE RESULT",
+    "Need more rolls": "NEED MORE ROLLS",
+  };
+  const verdict = verdicts[readout.badge] || readout.badge.toUpperCase();
   const hardCounts = { 4: 0, 6: 0, 8: 0, 10: 0 };
   rolls.forEach((r) => {
     if (r.d1 === r.d2 && hardCounts[r.total] != null) hardCounts[r.total] += 1;
@@ -1505,13 +1621,14 @@ function fairHTML() {
     ? "Most times one number repeated in a hand: " + F.streakStats(rolls).mostRepeatTotal + " × " + F.streakStats(rolls).mostRepeats + "."
     : "Roll a hand to see how often one number repeats.";
   const fairLine = rolls.length < 180
-    ? "Now " + rolls.length + " rolls. 180 is the fair-test mark."
+    ? ""
     : "χ² " + test.chi2.toFixed(2) + " · 10 df · p = " + test.p.toFixed(2);
-  return "<h2 class='fairtitle'>FAIR DICE</h2><p class='shield'>" + readout.badge.toUpperCase() + "</p><p>" + readout.words + "</p>" +
+  const lastFair = rolls.slice(-20);
+  return "<section class='fair'><h2 class='fairtitle'>FAIR DICE</h2><p class='shield'>" + verdict + "</p><p>" + readout.words + "</p>" +
     "<div class='filters'>" + [["session", "This session"], ["last", "Last 100"], ["all", "All time"]].map(([id, label]) => "<button class='" + (fairScope === id ? "on" : "") + "' data-act='fair-scope' data-scope='" + id + "'>" + label + "</button>").join("") + "</div>" +
-    "<article class='card'><h3>Totals vs expected</h3><div class='vchart'>" + cols.join("") + "<svg viewBox='0 0 100 100' preserveAspectRatio='none'><polyline points='" + curve.join(" ") + "'/></svg></div><p class='muted'>Dashed marks are the fair share. 7 is 6/36.</p></article>" +
+    "<article class='card'><h3>Totals vs expected</h3><div class='vchart'>" + cols.join("") + "</div><p class='muted'>Dashed marks are the fair share. 7 is 6/36.</p></article>" +
     "<article class='card seven-card'><h3>Sevens</h3><p class='bigpct'>" + (rolls.length ? (sevenPct * 100).toFixed(1) : "0.0") + "%</p><p>vs 16.67% (1 in 6). Normal band " + (band.low * 100).toFixed(1) + "%–" + (band.high * 100).toFixed(1) + "%.</p></article>" +
-    "<article class='card'><h3>Fairness test</h3><p>" + fairLine + "</p>" + (rolls.length >= 180 ? "<p class='lock'>LOOKS FAIR</p>" : "") + "</article>" +
+    "<article class='card'><h3>Fairness test</h3>" + (fairLine ? "<p>" + fairLine + "</p>" : "") + "<p class='verdict'>" + verdict + "</p></article>" +
     "<article class='card'><h3>Each die</h3><p>Die 1 faces: " + faces.counts.join(" · ") + "</p><p>Die 1 χ² " + faces.chi2.toFixed(2) + " · df 5 · p " + faces.p.toFixed(3) + "</p><p>Die 2 faces: " + faces2.counts.join(" · ") + "</p><p>Die 2 χ² " + faces2.chi2.toFixed(2) + " · df 5 · p " + faces2.p.toFixed(3) + "</p><p class='muted'>Each face should be near 16.67%.</p></article>" +
     "<article class='card'><h3>Hard vs easy</h3><p>Doubles " + doubles + " of " + rolls.length + " (fair 16.67%).</p><p>Hard 4/6/8/10 vs 1/36 each. " + hardLine + "</p></article>" +
     "<article class='card'><h3>Above and below expected</h3><p>" + (rolls.length ? hi.t + ": " + (hi.d >= 0 ? "+" : "") + hi.d.toFixed(1) + " vs expected · " + lo.t + ": " + lo.d.toFixed(1) : "Roll to fill this in.") + "</p></article>" +
@@ -1521,10 +1638,10 @@ function fairHTML() {
     })() +
     "<p>Every roll uses your device's secure random generator. Each die is a fair 1 to 6, and the two dice are independent. Nothing on this screen, not your bets, your streak, or the Blazing meter, can change the next roll.</p>" +
     "<p class='muted'>RNG: " + (E.getRngSource() === "fallback" ? "basic (fallback)" : "secure") + ".</p>" +
-    "<article class='card'><h3>Last 20</h3><div class='rollstrip'>" + rolls.slice(-20).map((r) => "<span class='rchip" + (r.total === 7 ? " seven" : "") + "'>" + r.total + "</span>").join("") + "</div></article>" +
-    "<p class='billytip'><img src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt=''><span>Every roll is random, from a secure generator. A seven is always 1 in 6.</span></p>" +
+    "<article class='card'><h3>Last 20</h3><div class='rollstrip'>" + lastFair.map((r, i) => "<span class='rchip" + (r.total === 7 ? " seven" : "") + (i === lastFair.length - 1 ? " latest" : "") + "'>" + r.total + "</span>").join("") + "</div></article>" +
+    "<p class='billytip'><img src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt='Dealer Billy'><span>Every roll is random, from a secure generator. A seven is always 1 in 6.</span></p>" +
     "<button class='ghost' data-act='export'>Export CSV <span class='prembadge'>PREMIUM</span></button>" +
-    "<button class='cta' data-act='view' data-view='play'>BACK TO DOME</button>";
+    "<button class='cta' data-act='view' data-view='play'>BACK TO DOME</button></section>";
 }
 
 load();
