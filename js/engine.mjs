@@ -1658,6 +1658,104 @@ export function edgeClass(edge) {
   return "edge-bad";
 }
 
+function fieldPayTo(pay) {
+  return pay === 3 ? 3 : 2;
+}
+
+function fieldPayWord(pay) {
+  return fieldPayTo(pay) === 3 ? "TRIPLE" : "DOUBLE";
+}
+
+function fieldPayOdds(pay) {
+  return fieldPayTo(pay) === 3 ? "3 to 1" : "2 to 1";
+}
+
+/** Felt line, rings, and screen-reader label for the active Field pays. */
+export function fieldPresentation(pay2, pay12) {
+  const a = fieldPayTo(pay2);
+  const b = fieldPayTo(pay12);
+  let felt;
+  if (a === 2 && b === 2) felt = "2 AND 12 PAY DOUBLE";
+  else if (a === 3 && b === 3) felt = "2 AND 12 PAY TRIPLE";
+  else felt = "2 PAYS " + fieldPayWord(a) + " · 12 PAYS " + fieldPayWord(b);
+  let aria = "Field: 2, 3, 4, 9, 10, 11, 12; ";
+  if (a === b) aria += "2 and 12 pay " + fieldPayOdds(a);
+  else aria += "2 pays " + fieldPayOdds(a) + ", 12 pays " + fieldPayOdds(b);
+  return {
+    felt,
+    aria,
+    ring2: a === 3 ? "triple" : "single",
+    ring12: b === 3 ? "triple" : "single",
+  };
+}
+
+/** Props that win on fewer than 1 in 6 decisions. Line, odds, Come, and Place/Buy never qualify. */
+export function isLongShot(spot) {
+  const kind = spot && spot.kind;
+  if (!kind) return false;
+  if (kind === "pass" || kind === "passOdds" || kind === "dontPass" || kind === "dontPassOdds" ||
+      kind === "come" || kind === "comeOdds" || kind === "dontCome" || kind === "dontComeOdds" ||
+      kind === "place" || kind === "buy" || kind === "field") return false;
+  if (kind === "any7" || kind === "ce" || kind === "horn") return false;
+  return kind === "anyCraps" || kind === "hop" || kind === "hardway" || kind === "small" ||
+    kind === "tall" || kind === "all" || kind === "hardAllDay" || kind === "repeater";
+}
+
+function tutorChance(spot) {
+  if (spot.kind === "any7" || spot.kind === "ce" || spot.kind === "horn") return "Wins 6 of 36";
+  if (spot.kind === "anyCraps") return "Wins 4 of 36";
+  if (spot.kind === "hop") return "Wins 1 or 2 of 36";
+  if (spot.kind === "hardway") return spot.number === 6 || spot.number === 8 ? "About 1 in 11" : "About 1 in 9";
+  if (spot.kind === "small" || spot.kind === "tall") return "About 1 in 38";
+  if (spot.kind === "all") return "About 1 try in 190";
+  if (spot.kind === "hardAllDay") return "About 1 in 210";
+  if (spot.kind === "repeater") return "About 1 in 31 to 1 in 81";
+  return "";
+}
+
+function tutorPay(spot) {
+  if (spot.kind === "any7") return "Pays 4 to 1";
+  if (spot.kind === "anyCraps") return "Pays 7 to 1";
+  if (spot.kind === "ce") return "Pays 3 to 1 on craps and 7 to 1 on 11";
+  if (spot.kind === "horn") return "Pays 30 to 1 and 15 to 1";
+  if (spot.kind === "hop") return "Pays 15 to 1 easy and 30 to 1 hard";
+  if (spot.kind === "hardway") return spot.number === 6 || spot.number === 8 ? "Pays 9 to 1" : "Pays 7 to 1";
+  if (spot.kind === "small" || spot.kind === "tall") return "Pays 31 for 1";
+  if (spot.kind === "all") return "Pays 156 for 1";
+  if (spot.kind === "hardAllDay") return "Pays 165 for 1";
+  if (spot.kind === "repeater") return "Pays the repeater table";
+  return "";
+}
+
+/**
+ * Tutor line for a tapped bet. Empty means no edge warning.
+ * Field has its own line. "Long shot" is only a prop under about 1 in 6.
+ * "High house edge" starts at 9%.
+ */
+export function tutorEdgeNote(spot, mode, experienced) {
+  if (!spot) return "";
+  if (spot.kind === "field") {
+    return "Field: wins on 16 of 36 rolls, but the 5–8 numbers lose. 5.56% edge.";
+  }
+  const edge = edgeFor(spot, mode);
+  const longShot = isLongShot(spot);
+  const high = edge != null && edge >= 9;
+  if (!longShot && !high) return "";
+  let line = longShot && high
+    ? "Long shot with a high house edge."
+    : longShot ? "Long shot." : "High house edge.";
+  if (experienced) {
+    const bits = [];
+    if (edge != null) bits.push(edge + "% edge");
+    const chance = tutorChance(spot);
+    if (chance) bits.push(chance);
+    const pay = tutorPay(spot);
+    if (pay) bits.push(pay);
+    if (bits.length) line += " " + bits.join(". ") + ".";
+  }
+  return line;
+}
+
 export const EDGES = {
   place68: 1.52,
   buy410: 1.67,

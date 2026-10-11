@@ -696,10 +696,10 @@ function addBet(ds) {
   game = res.state;
   A.chip();
   haptic(10);
-  const edge = E.edgeFor(spot, game.mode);
+  const edgeNote = E.tutorEdgeNote(spot, game.mode, settings.tutorTrack === "experienced");
   if (note) toast(note);
-  else if (settings.tutorOn && edge > 5 && !mutedTips["edge-" + spot.kind]) {
-    toast(E.describeSpot(spot) + " · " + edge + "% house edge. Long shot with a high house edge.");
+  else if (settings.tutorOn && edgeNote && !mutedTips["edge-" + spot.kind]) {
+    toast(spot.kind === "field" ? edgeNote : E.describeSpot(spot) + ". " + edgeNote);
   }
   if (settings.tutorOn && spot.kind === "hop" && !seenTips.hop && !mutedTips.hop) {
     seenTips.hop = true;
@@ -2291,8 +2291,9 @@ function hudHTML() {
     "<button class='" + (game.mode === "regular" ? "on" : "") + "' data-act='mode' data-mode='regular'>Regular</button>" +
     "<button class='" + (game.mode === "crapless" ? "on" : "") + "' data-act='mode' data-mode='crapless'>Crapless</button></div>";
   return "<div class='hud-row1'><button class='homebtn' data-act='view' data-view='home' aria-label='Home'>" +
-    "<img src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt=''></button>" +
-    "<img class='lockup' src='assets/logos/billybubs-bubble-craps-compact-color-dark.svg' alt='Billy Bubs Bubble Craps'>" +
+    "<img class='home-avatar' src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt=''>" +
+    "<img class='home-mark' src='assets/logos/topleft-mark-ring-32.svg' alt=''></button>" +
+    "<img class='lockup' src='assets/logos/topleft-lockup.svg' alt='Billy Bubs Bubble Craps'>" +
     mode + "</div>" +
     "<div class='hud-row2'><div class='hud-money'><div class='hud-bank'><small>Chips</small><strong>" + money(game.bankroll) + "</strong></div>" +
     "<div class='hud-bank'><small>On table</small><strong>" + money(on) + "</strong></div></div>" +
@@ -2349,15 +2350,25 @@ function pageHTML(i) {
   return "<section class='page'>" + domeHTML() + "</section>";
 }
 
+function activeFieldPays() {
+  return {
+    two: settings.field2 === 3 ? 3 : 2,
+    twelve: settings.field12 === 3 ? 3 : 2,
+  };
+}
+
 function fieldSpot(stake) {
+  const pays = activeFieldPays();
+  const pres = E.fieldPresentation(pays.two, pays.twelve);
   const nums = [2, 3, 4, 9, 10, 11, 12].map((n) => {
-    const dbl = n === 2 || n === 12;
-    return "<i class='fn" + (dbl ? " dbl" : "") + "'>" + n + "</i>";
+    const ring = n === 2 ? pres.ring2 : n === 12 ? pres.ring12 : "";
+    const cls = ring ? " dbl" + (ring === "triple" ? " triple" : "") : "";
+    return "<i class='fn" + cls + "'>" + n + "</i>";
   }).join("");
-  return "<button class='spot field" + (stake ? " has" : "") + "' data-act='bet' data-kind='field' aria-label='Field" +
-    (stake ? ", " + money(stake) : "") + "'>" +
+  const aria = pres.aria + (stake ? ". Your bet: " + money(stake) : "");
+  return "<button class='spot field" + (stake ? " has" : "") + "' data-act='bet' data-kind='field' aria-label='" + aria + "'>" +
     "<span class='fieldnums' aria-hidden='true'>" + nums + "</span>" +
-    "<b>FIELD</b><small>2 AND 12 PAYS DOUBLE</small>" + stakeLabel(stake) + "</button>";
+    "<b>FIELD</b><small>" + pres.felt + "</small>" + stakeLabel(stake) + "</button>";
 }
 
 function spotButton(opts) {

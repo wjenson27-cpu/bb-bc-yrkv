@@ -137,7 +137,7 @@ test("short screens keep the dice, the Field, and the avatar", async (t) => {
     function assertField(field, label) {
       assert.deepEqual(field.nums.map((n) => n.t), ["2", "3", "4", "9", "10", "11", "12"], label);
       assert.equal(field.nums.filter((n) => n.dbl).map((n) => n.t).join(","), "2,12", label + " doubles");
-      assert.match(field.pay, /PAYS DOUBLE/, label);
+      assert.match(field.pay, /PAY DOUBLE/, label);
       assert.match(field.label, /^Field/, label);
       field.nums.forEach((n) => {
         assert.ok(n.h >= 10 && n.w >= 8, label + " " + n.t + " " + n.w.toFixed(1) + "x" + n.h.toFixed(1));
@@ -198,7 +198,7 @@ test("short screens keep the dice, the Field, and the avatar", async (t) => {
       if (w === 390 || (w === 844 && h === 390)) {
         const avatar = await page.evaluate(() => {
           const btn = document.querySelector(".homebtn");
-          const img = btn.querySelector("img");
+          const img = [...btn.querySelectorAll("img")].find((el) => getComputedStyle(el).display !== "none");
           const row = document.querySelector(".hud-row1").getBoundingClientRect();
           const br = btn.getBoundingClientRect();
           const ir = img.getBoundingClientRect();
@@ -217,12 +217,13 @@ test("short screens keep the dice, the Field, and the avatar", async (t) => {
             bottom: br.bottom,
           };
         });
-        assert.match(avatar.src, /billy-A-avatar-round\.svg$/, tag);
+        if (w === 844) assert.match(avatar.src, /topleft-mark-ring-32\.svg$/, tag);
+        else assert.match(avatar.src, /billy-A-avatar-round\.svg$/, tag);
         assert.ok(Math.abs(avatar.bw - avatar.bh) < 0.6, tag + " avatar box " + avatar.bw + "x" + avatar.bh);
         assert.ok(Math.abs(avatar.iw - avatar.ih) < 0.6, tag + " avatar image " + avatar.iw + "x" + avatar.ih);
         assert.ok(Math.abs(avatar.iw - avatar.bw) < 1 && Math.abs(avatar.ih - avatar.bh) < 1, tag + " image fills the circle");
         assert.equal(avatar.fit, "contain", tag);
-        assert.match(avatar.shadow, /rgba\(0,\s*0,\s*0/, tag);
+        assert.equal(avatar.shadow, "none", tag);
         assert.ok(avatar.bh <= avatar.rowH + 0.6, tag + " avatar " + avatar.bh + " row " + avatar.rowH);
         assert.ok(avatar.bh >= avatar.rowH - 8, tag + " avatar sits with the HUD");
         assert.ok(avatar.top >= avatar.rowTop - 1 && avatar.bottom <= avatar.rowBottom + 1, tag + " avatar stays in the row");
