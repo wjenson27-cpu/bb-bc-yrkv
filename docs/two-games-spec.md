@@ -142,7 +142,7 @@ Place and Buy bets are OFF on the come-out by default and can be taken down any 
 | C&E | One roll | C 7:1, E 15:1 | 11.11% | An 11 pays C&E even though it's a point for the line |
 | Hard 4/10 / Hard 6/8 | Multi-roll | 7:1 / 9:1 | 11.11% / 9.09% (2.78% per roll) | |
 | Hop easy / hard (all 21 hops) | One roll | 15 to 1 / 30 to 1 | 11.11% / 13.89% | Left screen. S1.4a |
-| Low Rolls / High Rolls / Roll 'Em All (ATS) | Multi-roll | 31 / 31 / 156 FOR 1 | 18.30% / 18.30% / 17.98% | **Not in Crapless.** Regular only. Stays up after a hit. S1.6 |
+| Low Rolls / High Rolls / Roll 'Em All (ATS) | Multi-roll | 31 / 31 / 156 FOR 1 | 18.30% / 18.30% / 17.98% | **Regular and Crapless** (rev 13). Any 7 loses, including a come-out 7. Stays up after a hit. S1.6 |
 | **Hard Way All Day** | Multi-roll | **165 FOR 1** (Standard) | **21.43%** | Stays up after a win. S1.5 |
 | **Fire Bet** (Table Craps only) | Per shooter | 4 / 5 / 6 different points: 24 / 249 / 999 **to 1** | **20.76%** | Never in Bubble Craps or Crapless. A2.2a |
 | **Repeaters** 2–12 | Multi-roll | 40 / 50 / 65 / 80 / 90 **FOR 1** (2&12 / 3&11 / 4&10 / 5&9 / 6&8) | **18.37% / 21.88% / 19.75% / 18.08% / 20.62%** | Both apps, Regular and Crapless (Bill). Works every roll; any 7 loses. Stays up after a hit. S1.7 |
@@ -815,9 +815,8 @@ See S1.3 (Place/Buy for all ten numbers) and S1.4 (side bets). Nevada Place pays
 
 ### A1.3.4 Not in Crapless mode
 - **No Don't Pass, Don't Come, Lay bets or Lay Odds.** Hide or disable those spots. (Wizard notes an unconfirmed report of crapless lay bets; this app doesn't offer them.)
-- **No Fire Bet, and no All / Tall / Small (ATS)** in Crapless (Bill's rule). The Fire Bet is never in Bubble Craps at all; it's Table Craps only (A2.2a).
-  - **Decision (Bill, Oct 10): ATS stays hidden in Crapless.** In Regular it's offered (S1.6).
-  - **Code conflict (needs a code change):** the current Bubble code shows Low Rolls / High Rolls / Roll 'Em All in both modes, with no crapless restriction. Spots are at `index.html:114, 128, 138`, validation at `js/engine.js:506-516`, and the sets at `js/engine.js:19-21` (Roll 'Em All includes 2, 3, 11, 12).
+- **No Fire Bet** in Crapless. The Fire Bet is never in Bubble Craps at all; it's Table Craps only (A2.2a).
+- **ATS is in Crapless** (rev 13). Low Rolls, High Rolls, and Roll 'Em All use the dice total. Any 7 loses them, including a come-out 7. Pays and edges match Regular. The Oct 10 "ATS stays hidden" rule is superseded.
 
 ## A1.4 Billy's Way: DEFINED (App 1 preset, matches the current code)
 
