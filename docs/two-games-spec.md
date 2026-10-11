@@ -818,6 +818,7 @@ See S1.3 (Place/Buy for all ten numbers) and S1.4 (side bets). Nevada Place pays
 - **No Fire Bet** in Crapless. The Fire Bet is never in Bubble Craps at all; it's Table Craps only (A2.2a).
 - **ATS is in Crapless** (rev 13). Low Rolls, High Rolls, and Roll 'Em All use the dice total. Any 7 loses them, including a come-out 7. Pays and edges match Regular. The Oct 10 "ATS stays hidden" rule is superseded.
 - **Roll readouts show pip dice** (rev 13a, S4.2). The result line, roll toast, HUD, bet-panel LED, Last strips, Fair Dice history, and the leaderboard seven-out use the same die faces as the roll. CSV export stays numeric (`die1`, `die2`). The Table Craps turn log is later.
+- **B13 bankroll** (rev 13c). Continuous Come stop-loss is 40% with a +30% win goal (the library card used to say 30%). Crapless guides 400 units. Table Craps T11 uses the same 40% stop-loss.
 
 ## A1.4 Billy's Way: DEFINED (App 1 preset, matches the current code)
 

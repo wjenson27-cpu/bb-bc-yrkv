@@ -173,8 +173,80 @@ test("every settled cube shows the engine face on top", async (t) => {
     assert.ok(dot(layout[1], layout[6]) < -0.9, "1 is opposite 6");
     assert.ok(dot(layout[2], layout[5]) < -0.9, "2 is opposite 5");
     assert.ok(dot(layout[3], layout[4]) < -0.9, "3 is opposite 4");
-    assert.ok(dot(layout[1], cross(layout[2], layout[3])) > 0.9, "1-2-3 corner is right-handed");
+    assert.ok(layout[3].x < -0.9, "at identity, 3 is on the left");
+    assert.ok(layout[4].x > 0.9, "at identity, 4 is on the right");
     for (let n = 1; n <= 6; n++) assert.ok(layout[n].det > 0.9, "face " + n + " transform is a rotation");
+    const hand = await page.evaluate(() => {
+      const cross = (p, q) => ({
+        x: p.y * q.z - p.z * q.y,
+        y: p.z * q.x - p.x * q.z,
+        z: p.x * q.y - p.y * q.x,
+      });
+      const dot = (p, q) => p.x * q.x + p.y * q.y + p.z * q.z;
+      const host = document.createElement("div");
+      host.className = "cube3d";
+      host.style.setProperty("--s", "80px");
+      const cube = document.createElement("div");
+      cube.className = "cube";
+      cube.style.transition = "none";
+      for (let n = 1; n <= 6; n++) {
+        const face = document.createElement("i");
+        face.className = "f f" + n;
+        cube.appendChild(face);
+      }
+      host.appendChild(cube);
+      document.body.appendChild(host);
+      const normalOf = (n) => {
+        const face = cube.querySelector(".f" + n);
+        const m = new DOMMatrix(getComputedStyle(face).transform);
+        return { x: m.m31, y: m.m32, z: m.m33 };
+      };
+      cube.style.transform = "none";
+      const id = {};
+      for (let n = 1; n <= 6; n++) id[n] = normalOf(n);
+      const n1 = id[1];
+      const n2 = id[2];
+      const n1xn2 = cross(n1, n2);
+      const up = { x: 0, y: -1, z: 0 };
+      const front = { x: 0, y: 0, z: 1 };
+      const cols = (a, b, c) => new DOMMatrix([
+        a.x, a.y, a.z, 0,
+        b.x, b.y, b.z, 0,
+        c.x, c.y, c.z, 0,
+        0, 0, 0, 1,
+      ]);
+      const R = cols(up, front, cross(up, front)).multiply(cols(n1, n2, n1xn2).inverse());
+      cube.style.transform = R.toString();
+      const world = {};
+      const cubeM = new DOMMatrix(getComputedStyle(cube).transform);
+      for (let n = 1; n <= 6; n++) {
+        const face = cube.querySelector(".f" + n);
+        const m = cubeM.multiply(new DOMMatrix(getComputedStyle(face).transform));
+        world[n] = { x: m.m31, y: m.m32, z: m.m33 };
+      }
+      const triples = [];
+      for (let face = 1; face <= 6; face++) {
+        cube.dataset.face = String(face);
+        cube.style.transform = "";
+        const settled = new DOMMatrix(getComputedStyle(cube).transform);
+        const normals = {};
+        cube.querySelectorAll(".f").forEach((el) => {
+          const num = Number(String(el.className).match(/f(\d)/)[1]);
+          const w = settled.multiply(new DOMMatrix(getComputedStyle(el).transform));
+          normals[num] = { x: w.m31, y: w.m32, z: w.m33 };
+        });
+        triples.push(dot(normals[1], cross(normals[2], normals[3])));
+      }
+      host.remove();
+      return { world, triples, chirality: dot(world[1], cross(world[2], world[3])) };
+    });
+    assert.ok(hand.world[1].y < -0.8, "with the corner pose, 1 is on top");
+    assert.ok(hand.world[2].z > 0.8, "with the corner pose, 2 is in front");
+    assert.ok(hand.world[3].x > 0.8, "1 on top and 2 in front puts 3 on the right");
+    assert.ok(hand.world[4].x < -0.8, "4 is on the left of that corner");
+    hand.triples.forEach((t, i) => {
+      assert.ok(Math.sign(t) === Math.sign(hand.chirality) && Math.abs(t) > 0.9, "rest pose " + (i + 1) + " keeps the right-hand corner");
+    });
     if (process.env.BB_SHOTS === "1") {
       mkdirSync(root + "docs/qa/compare", { recursive: true });
       await page.locator("#sweep").screenshot({

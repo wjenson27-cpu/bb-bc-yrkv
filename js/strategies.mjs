@@ -144,7 +144,7 @@ export const STRATEGIES = [
     filter: ["all", "regular", "crapless"],
     edge: "0.37% Regular with max odds · 1.26% Crapless",
     risk: "High in Regular · Very High in Crapless",
-    bankroll: "About 250 units Regular at max odds. Stop-loss 30%.",
+    bankroll: "About 250 units Regular at max odds, 400 units Crapless. Stop-loss 40%. Win goal +30%.",
     how: "Pass plus odds, then a new Come bet with odds on every point roll. Uncapped unless you set a cap. Each Come bet is a new Pass Line. A new one every roll means about one flat bet per roll.",
   },
   {

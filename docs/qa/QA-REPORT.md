@@ -157,6 +157,20 @@ Roll readouts use the face art instead of `n·m = total`: the dome result, the r
 
 A coach card hides the dome Billy. Sheets sit above the dice. The felt ON puck sits inset so it does not cover the number word. The HUD roll counter uses Cinzel, and the two money labels have a 14px gap. The landscape DOME pill stays on one line.
 
+## Run 10
+
+An open coach card no longer blocks the table. The full-screen overlay ignores pointer events, and only the card itself receives them. With a PRESS card open, ROLL advanced the hand from 2 to 3, UNDO cleared the press, and the $1 chip still selected. Compare: `docs/qa/compare/run10-coach-roll.jpg`.
+
+One mascot shows at a time, in this order: badge marquee, big win, heat cheer, tutor. A seven-out toast hides the dome Billy. A coach card hides the place-win cheer. A marquee hides the BIG WIN Billie. A Hot or Blazing cheer hides the dome Billy. Each of those cases measured one visible mascot.
+
+The cubes are Western right-handed. Face 3 sits on the left at identity and face 4 on the right, and the rest poses for 3 and 4 were swapped with them. With 1 on top and 2 in front, 3 points to the right. All 36 settled top faces still match the engine. Compare: `docs/qa/compare/run10-handedness.jpg`.
+
+The dome roll strip stays open. It measured 34px tall at 375, 390, and 430, with pip tiles rather than the totals fallback. Fair Dice Last 20 is two rows of 10 pip tiles at 375 (321px) and 390 (336px). Totals remain for a short landscape, a root font of 130% or more, and a strip under 300px.
+
+The ON puck sits on the corner of the number box, clear of the numeral. The Blazing meter keeps 8px before FAIR and shows 3 pips under 400px. Two-digit HUD totals have 6px of trailing padding. The marquee VIEW button stays inside the card. "· seven out" stays on the Ended-on line. A come-out 7 is not announced as a seven-out. An easy number is read "five and three, easy eight". The seven-out toast and the BIG WIN banner show the pip dice, with a SEVEN OUT tag on a seven-out. The B13 library card says stop-loss 40% and a +30% win goal. A tutor line that cites a roll uses pip dice.
+
+89 tests pass. `robots` meta `noindex, nofollow` is still on the page.
+
 Still later: Premium scaled and custom ladders, the rest of the tutor rows, long-press bet preview, the wide layout, cent flooring, the fairness-card scroll for #25, practice-day counting for #26, and the Table Craps turn log.
 
 Still later: Premium scaled and custom Power Press ladders, the rest of the tutor state table, long-press bet preview, the wide layout, and the fairness-card scroll for badge #25.

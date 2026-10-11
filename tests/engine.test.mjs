@@ -535,6 +535,10 @@ test("all 36 pairs share one face total for caption, hardway, hop, and horn", ()
       assert.equal(cap.line, cap.word);
       assert.doesNotMatch(cap.line, /\d\s*[·+\-–]\s*\d/);
       assert.match(cap.aria, new RegExp("^" + ["one", "two", "three", "four", "five", "six"][d1 - 1]));
+      if (!cap.hard && (cap.total === 4 || cap.total === 6 || cap.total === 8 || cap.total === 10)) {
+        assert.match(cap.aria, /, easy /);
+        assert.doesNotMatch(cap.aria, /, (four|six|eight|ten), easy /);
+      }
       assert.equal(E.rollPairKey(d1, d2), Math.min(d1, d2) + "-" + Math.max(d1, d2));
     }
   }
@@ -1100,10 +1104,25 @@ test("swipe resolution uses a horizontal threshold", () => {
   assert.equal(resolveSwipe(2, -80, 0), 2);
 });
 
+test("a come-out 7 is a natural and a point 7 is a seven-out", () => {
+  let g = E.placeBet(game(), { kind: "pass" }, $(5)).state;
+  const natural = E.settle(g, 3, 4);
+  assert.equal(natural.result, "natural");
+  assert.equal(natural.state.history[0].result, "natural");
+  assert.equal(E.rollCaption(5, 3).aria, "five and three, easy eight");
+  g = E.settle(E.placeBet(game(), { kind: "pass" }, $(5)).state, 4, 2).state;
+  const out = E.settle(g, 3, 4);
+  assert.equal(out.result, "seven-out");
+  assert.equal(out.state.history[0].result, "seven-out");
+  assert.equal(out.state.history[1].result, "point-set");
+});
+
 test("strategy names keep the spec subtitles", () => {
   assert.match(STRATEGIES.find((s) => s.id === "B6").name, /Make the line pay/);
   assert.match(STRATEGIES.find((s) => s.id === "B7").name, /Avoid 2\/3\/11\/12/);
   assert.match(STRATEGIES.find((s) => s.id === "B13").name, /Continuous Come/);
+  assert.match(STRATEGIES.find((s) => s.id === "B13").bankroll, /40%/);
+  assert.match(STRATEGIES.find((s) => s.id === "B13").bankroll, /\+30%/);
   assert.match(STRATEGIES.find((s) => s.id === "B14").name, /Hit and Split/);
 });
 
