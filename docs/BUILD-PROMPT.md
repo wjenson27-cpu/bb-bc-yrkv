@@ -52,6 +52,23 @@ Build a playable, phone-first, static web app of **Billy Bubs · Bubble Craps** 
 14. **SEO/privacy**: keep `robots.txt` (`Disallow: /`), `.nojekyll`, and `<meta name="robots" content="noindex, nofollow">` in the `<head>` of **every** HTML page you create. No analytics, no external trackers, no external CDNs required at runtime (fonts may be system fonts or self-hosted). Do not add links to this site from anywhere.
 15. Keep the repo lean (< ~25 MB total). Prefer SVG assets; don't add large binaries.
 
+## Quality bar (Bill: PROFESSIONAL, POLISHED, App Store quality, clearly better than competitors)
+- **Match the mockups pixel-close**: felt texture, gold rails, typography, chips, LED panel, dome, mascots, HUD, dock. Compare your screenshots side by side with `docs/mockups/*.jpg` at 390x844 and iterate until they match.
+- **Smooth 60 fps animations** (transform/opacity only, `requestAnimationFrame`, no layout thrash): the dome bubble + dice tumble with a physics feel (air-pop, bounce, settle), chip placement (chip flies from rack to spot), win payouts sliding from the house to the bet and back to the bankroll, losing chips swept away, the Bubbles Billie cheer, swipe page transitions.
+- **Crisp vector assets** from `assets/` (SVG). **No placeholders, no emoji, no lorem ipsum, no default browser-looking controls.**
+- **Responsive safe areas**: `env(safe-area-inset-*)` for the iPhone notch/Dynamic Island and home bar; no content under the home indicator; works from 360 to 430 px wide.
+- **Polished sound design** (WebAudio-synthesized or tiny compressed files: dome air pop, dice rattle, chip click, win chime, seven-out, press) with a **mute toggle**; **vibration haptics** where supported, with a toggle. Audio must start only after a user gesture.
+- **Zero console errors or warnings** on load and during play.
+- **Fast load**: initial transfer under ~2 MB; lazy-load secondary screens/assets (Tutor poses, strategy library, Fair Dice charts, premium screens).
+- **Accessibility**: tap targets at least 44x44 px, readable contrast (WCAG AA for text), `aria-label`s on icon buttons, focus-visible styles, reduced-motion support.
+
+## QA pass before you report (required)
+After the build works, do a **separate critical design + rules review** (act as a demanding App Store design reviewer and a craps rules auditor):
+1. Take Playwright screenshots at 390x844 of every screen (home, middle board Regular, middle board Crapless, left Repeaters/Hops, right dome mid-roll and settled, Bet Panel each tab, Tutor overlay, win celebration, strategy picker, Fair Dice, Settings, Premium locked) and save them as **before** shots in `docs/qa/before/`.
+2. Compare each against the matching mockup and the spec; write `docs/qa/QA-REPORT.md` listing every defect (visual mismatch, jank, rule/payout error, missing feature, a11y, console error, load size) with severity.
+3. Fix the defects, re-run all tests, re-take the same screenshots as **after** shots in `docs/qa/after/`, and update the report with what was fixed and what remains. Keep screenshots compressed (JPG/WebP, small) so the repo stays lean.
+4. Do not call it done until it would pass a demanding design review.
+
 ## Tests (required)
 - Put the rules engine in plain ES modules (or UMD) that run in Node without a browser.
 - Write automated tests (Node's built-in `node:test`, no heavy deps; a `package.json` with `npm test` is fine) covering **every bet type** against the spec tables: line bets in Regular and Crapless (including Crapless points 2/3/11/12), come/don't come, odds and lay odds at max multiples for every point (Regular and Crapless), place and buy for every number (buy vig on wins only, rounding per spec), Field 2/12 at 2:1, hardways, horn singles, Any 7, Any Craps and other side bets, Hard Way All Day 165 for 1, ATS 31/31/156 for 1 (and hidden/rejected in Crapless), all 10 Repeater pays, all 21 hops, PRESS (stacking, undo/clear) and POWER PRESS (rounding), Billy's Way placement in both modes, table limits, chip set (no $10), Don't Pass bar-12, Blazing meter tier thresholds, and RNG distribution sanity (dice uniform, uses crypto.getRandomValues).
@@ -61,4 +78,4 @@ Build a playable, phone-first, static web app of **Billy Bubs · Bubble Craps** 
 ## Delivery
 - Commit to a branch, then merge to `main` (or open a PR and merge it yourself). GitHub Pages serves `main` at the repo root, so the app must be at `/index.html` (replace the placeholder). Relative asset paths only (site is under `/bb-bc-yrkv/`).
 - Update `README.md` with: how to run locally, how to run tests, and a section "**Spec coverage**" listing what is implemented vs simplified vs missing relative to the spec, plus known bugs.
-- Final message: summarize implemented vs missing/simplified, test results (counts passed/failed), known bugs, and the commit SHA on main.
+- Final message: summarize QA findings (before/after shot paths in docs/qa/),  implemented vs missing/simplified, test results (counts passed/failed), known bugs, and the commit SHA on main.
