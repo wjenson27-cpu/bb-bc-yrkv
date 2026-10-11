@@ -6,7 +6,7 @@
   left: max(12px, calc(50% - 228px));
   right: max(12px, calc(50% - 228px));
   bottom: auto;
-  top: calc(var(--dock-top, 72%) - 8px);
+  top: calc(var(--dots-top, var(--dock-top, 72%)) - 8px);
   transform: translateY(-100%);
   z-index: 35;
   pointer-events: auto;
@@ -100,15 +100,40 @@ body:has(.recordcard) #badge-toast { visibility: hidden; pointer-events: none; }
 .initactions { display: flex; gap: 8px; flex-wrap: wrap; }
 .initactions button { min-height: 44px; border-radius: 999px; }
 .setinits { justify-content: flex-end; }
+.setinits .init {
+  width: 48px;
+  height: 52px;
+  font-family: "VT323", monospace;
+  font-size: 24px;
+  background: #140F08;
+  border: 1px solid #C9A961;
+  color: #FFD36A;
+}
 
 @media (max-height: 500px) and (orientation: landscape) {
   .app.play { grid-template-columns: 1fr 156px; }
+  .app.play .hud { overflow: hidden; gap: 8px; }
+  .app.play .hud-row1 {
+    flex: 0 0 auto;
+    width: auto;
+    max-width: none;
+    height: 36px;
+    gap: 4px;
+    overflow: visible;
+  }
+  .app.play .lockup { display: none; }
+  .app.play .homebtn,
+  .app.play .homebtn img { width: 32px; height: 32px; }
+  .app.play .modeseg { flex: 0 0 auto; margin-left: 0; }
   .app.play .modeseg button {
     min-height: 28px;
     height: 28px;
     font-size: 10px;
-    padding: 0 6px;
+    letter-spacing: .04em;
+    padding: 0 7px;
   }
+  .app.play .hud-row2 { flex: 1 1 auto; min-width: 0; overflow: hidden; height: 36px; }
+  .app.play .hud-bank small { letter-spacing: .06em; }
   .app.play .hud-bank strong { font-size: 12px; }
   .app.play .clearchip { display: none; }
   .app.play .context .key small { display: none; }

@@ -1239,6 +1239,10 @@ function measureChrome() {
     document.documentElement.style.setProperty("--dock-h", dock.offsetHeight + "px");
     document.documentElement.style.setProperty("--dock-top", dock.getBoundingClientRect().top + "px");
   }
+  const dots = document.getElementById("dots");
+  if (dots && dots.offsetHeight) {
+    document.documentElement.style.setProperty("--dots-top", dots.getBoundingClientRect().top + "px");
+  }
 }
 function noteFair() {
   const scope = fairScope === "last" ? "last" : fairScope === "all" ? "all" : "session";
