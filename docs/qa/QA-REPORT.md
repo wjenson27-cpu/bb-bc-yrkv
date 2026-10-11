@@ -106,6 +106,25 @@ Both reviewers failed runs 4 and 5. This pass follows the re-review specs and sp
 
 69 tests pass. `robots` meta `noindex, nofollow` is still on the page. Compare shots for this pass are `docs/qa/compare/run6-*`.
 
+## Run 7
+
+Both reviewers failed run 6 (`b2c56bc`). This pass follows the re-review specs, the rules notes, and spec rev 12a.
+
+Measured in Chromium at 390×844 and 844×390 (`shot-run7.mjs`). Compare shots are `docs/qa/compare/run7-*`.
+
+- Badge toasts auto-hide (3.0s, 4.5s for gold, legendary, and marquee). A tap or swipe on the card dismisses it. The card stays inside the phone column (left 12, right 378 at 390) and sits above the page dots and the chip rack. It does not cover those hit targets.
+- One mascot at a time. Hot and Blazing show Dealer Billy only. A gold or legendary toast, and BIG WIN, hide the dome Billy while Billie is on the card.
+- The felt scale follows the stage and the dock (`--felt-k = min(stageW/390, stageH/505)`, floor 0.78). At 390 with Continuous Come option chips up, k is 0.922 and the strategy chips are one 36px scrolling row. Place hit area is 44px.
+- Gallery bars are 4px blocks. The gallery reads "Badges N / 30 earned", with tier bars 7 / 9 / 9 / 5 and the category headers.
+- Landscape (844×390): Regular and Crapless are 28px pills and do not overlap Chips or On table (Crapless ends at 190px, Chips starts at 200px). The dock column is 156px, chips are 36px, and the undo disc sits inside the dock (808–840 inside 688–844).
+- Settings initials are three VT323 24px boxes (`#140F08`, gold border). Typing a letter focuses the next box.
+- Point badges count only a paid Pass Line. A limit set or lowered mid-session applies on the next roll; the badge snapshot stays at session start. Session chips are captured before the first roll. B14 collects a side hit and, after two collected hits, waits for the next point before re-placing. The initials blocklist allows BJ. A 30-minute idle end counts toward the session badges. Press Once Then Collect waits for the next roll. A Field bet keeps that hand out of the Under 2% Club. RESUME paints as soon as auto-roll pauses. A pending record card survives reload.
+- POWER PRESS uses Bill's rev 12a ladder. Standard table max is $1,000. The key reads `POWER PRESS 6 → $18 (add $5)` and takes the add from chips. Off-ladder jumps to the highest step inside one unit, then falls back to round-down. Premium B-31 shows Standard as live and Scaled and Custom as locked.
+
+79 tests pass. `robots` meta `noindex, nofollow` is still on the page.
+
+Still open, from the non-blocking polish list: blazing ember trail, badge detail "THE RULE" card, dome roll-history overflow, empty ROLL kicker, one-line limit chip, roll-toast spacing, coach "WARM", the Crapless-extension chip on a Regular B14, a right-aligned LED roll count, the landscape felt rail, long-press bet preview, and the wide three-column layout.
+
 ## Still short of the mockups
 
 The felt is the right material and order. It is still denser than mockup 15, and felt cells are under 44px so the Pass Line fits. Dock, chips, and bet-panel steppers are at least 44px.

@@ -258,11 +258,19 @@ function mount() {
     if (document.hidden && settings.autoRoll) {
       autoPause = "away";
       stopTimer();
+      paint();
     }
   });
   window.addEventListener("pagehide", () => {
     if (settings.autoRoll) { autoPause = "away"; stopTimer(); }
   });
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => { fitFelt(); measureChrome(); });
+    const stageEl = document.getElementById("stage");
+    const dockEl = document.getElementById("dock");
+    if (stageEl) ro.observe(stageEl);
+    if (dockEl) ro.observe(dockEl);
+  }
   const stage = document.getElementById("stage");
   stage.addEventListener("transitionend", (e) => {
     if (e.target && e.target.id === "pager") placeDice();
@@ -334,7 +342,7 @@ function mount() {
     }
     if (e.key === "Enter" && pendingRecord && e.target.closest(".recordcard")) { e.preventDefault(); savePending(false); }
   });
-  app.addEventListener("input", (e) => {
+  document.addEventListener("input", (e) => {
     const el = e.target;
     if (!el.classList || !el.classList.contains("init")) return;
     el.value = el.value.replace(/[^A-Za-z]/g, "").slice(-1).toUpperCase();
@@ -598,8 +606,13 @@ function addBet(ds) {
     if (!posted) posted = unit;
     if (posted > E.TABLE_MAX) {
       posted = Math.floor(E.TABLE_MAX / unit) * unit;
-      note = "Place 6 and 8 stop at " + money(posted) + ", the largest $6 unit under the $500 table max.";
+      note = "Place 6 and 8 stop at " + money(posted) + ", the largest $6 unit under the $1,000 table max.";
     } else if (posted !== amount) note = "Place 6 and 8 use $6 units. Posted " + money(posted) + ".";
+    const have = game.bets.place[spot.number] || 0;
+    if (have + posted > E.TABLE_MAX) {
+      toast("6 and 8 skipped: at table max");
+      return;
+    }
     amount = posted;
   }
   if (spot.kind === "repeater" || spot.kind === "hop") sideFocus = spot;
@@ -717,8 +730,8 @@ function doPower() {
   game = res.state;
   A.press();
   haptic(16);
-  const leftover = res.back > 0 ? " " + money(res.back) + " stays in your chips." : "";
-  toast((res.atMax ? "Capped at $500. " : "") + "Power Press +" + money(res.added) + "." + leftover);
+  const cap = res.atMax ? "Capped at $1,000. " : "";
+  toast(cap + (res.label || ("Power Press +" + money(res.added) + ".")));
   if (settings.tutorOn) openTutor(0, "power");
   save();
   paint();
@@ -779,6 +792,7 @@ async function doRoll(source) {
   const hadBetNow = E.hadWorkingBet(game);
   const onTable = E.tableTotal(game);
   const totalBefore = E.netWorth(game);
+  ensureSession(Date.now(), totalBefore);
   const edgeCap = maxWorkingEdge(game);
   const handBefore = { rolls: game.hand.rolls, points: game.hand.points };
   ensureHand(handBefore.rolls);
@@ -830,6 +844,7 @@ async function doRoll(source) {
   if (emptyFelt >= 3 && settings.autoRoll && !autoPause) {
     autoPause = "empty";
     toast("Auto-roll paused · nothing on the felt");
+    paint();
   }
   save();
   saveBoard();
@@ -934,10 +949,11 @@ function noteHandRoll(before, settled, dice, hadBet, pointBefore, source, totalB
     tier,
     total: settled.dice.total,
     decisions: settled.decisions || [],
-    passPoint: settled.result === "point-made" ? pointBefore : 0,
+    passPoint: B.paidPassPoint(settled.decisions || [], settled.result === "point-made" ? pointBefore : 0),
     billyHit: billyNumbers.length > 0,
     billyNumbers,
     collectNumber,
+    autoPressed: !!autoPressed,
     maxEdge,
     edgeBroken: maxEdge != null && maxEdge > 2,
     totalBefore,
@@ -963,45 +979,129 @@ function queueUnlocks(ids) {
   ids.forEach((id) => { if (badgeQueue.indexOf(id) < 0) badgeQueue.push(id); });
   if (!badgeTimer) pumpBadges();
 }
-function pumpBadges() {
-  if (!settings.badgeToasts || !badgeQueue.length || rolling) {
-    badgeTimer = badgeQueue.length ? setTimeout(pumpBadges, 400) : 0;
-    return;
-  }
-  const id = badgeQueue.shift();
-  const def = B.badgeById(id);
-  if (!def) { pumpBadges(); return; }
-  showBadgeToast(def);
-  badgeTimer = setTimeout(() => { badgeTimer = 0; pumpBadges(); }, def.marquee ? 4500 : 3000);
+function badgeBlocked() {
+  return rolling || !!document.querySelector(".winlayer") || !!document.querySelector(".recordcard");
 }
-function showBadgeToast(def) {
+function badgeHost() {
   let host = document.getElementById("badge-toast");
   if (!host) {
     host = document.createElement("div");
     host.id = "badge-toast";
     document.body.appendChild(host);
   }
-  const gold = def.tier === "gold" || def.tier === "legendary";
-  host.innerHTML = "<div class='badgetoast' data-act='badge' data-id='" + def.id + "'>" +
-    "<img class='art' src='" + B.artFile(def.id, "open") + "' alt=''>" +
-    (gold ? "<img class='billie' src='assets/mascots/billie/billie-C-" + (def.tier === "legendary" ? "winner" : "cheer") + ".svg' alt='Bubbles Billie'>" : "") +
-    "<div><b>Badge: " + esc(def.name) + "</b><div>" + esc(def.desc) + "</div>" +
-    (def.odds ? "<small>" + esc(def.odds) + "</small>" : "") + "</div></div>";
-  host.onclick = () => openBadge(def.id);
+  return host;
 }
-function ensureSession(now) {
-  let s = Sess.closeIfIdle(boardData.session, now);
-  if (!s || s.ended) {
-    s = Sess.startSession(boardData.session, E.netWorth(game), {
+function dismissBadgeToast() {
+  const host = badgeHost();
+  clearTimeout(badgeTimer);
+  badgeTimer = 0;
+  document.body.classList.remove("mascot-toast");
+  if (!host.innerHTML) {
+    if (badgeQueue.length) badgeTimer = setTimeout(pumpBadges, 240);
+    return;
+  }
+  host.classList.add("out");
+  setTimeout(() => { host.innerHTML = ""; host.classList.remove("out"); }, 220);
+  if (badgeQueue.length) badgeTimer = setTimeout(() => { badgeTimer = 0; pumpBadges(); }, 260);
+}
+function pumpBadges() {
+  const host = document.getElementById("badge-toast");
+  if (!badgeQueue.length) {
+    if (host && host.innerHTML && !host.classList.contains("out")) {
+      host.classList.add("out");
+      document.body.classList.remove("mascot-toast");
+      setTimeout(() => { host.innerHTML = ""; host.classList.remove("out"); }, 220);
+    }
+    badgeTimer = 0;
+    return;
+  }
+  if (!settings.badgeToasts || badgeBlocked()) {
+    badgeTimer = setTimeout(pumpBadges, 400);
+    return;
+  }
+  const id = badgeQueue.shift();
+  const def = B.badgeById(id);
+  if (!def) { pumpBadges(); return; }
+  showBadgeToast(def);
+  const ms = (def.marquee || def.tier === "gold" || def.tier === "legendary") ? 4500 : 3000;
+  badgeTimer = setTimeout(() => { badgeTimer = 0; pumpBadges(); }, ms);
+}
+function showBadgeToast(def) {
+  const host = badgeHost();
+  host.classList.remove("out");
+  const marquee = def.tier === "gold" || def.tier === "legendary" || def.marquee;
+  document.body.classList.toggle("mascot-toast", !!marquee);
+  const line = def.tier === "legendary" ? "Spin it to win it!" : "That's a keeper.";
+  if (marquee) {
+    host.innerHTML = "<div class='badgetoast marquee " + def.tier + "' data-id='" + def.id + "'>" +
+      "<i class='burst' aria-hidden='true'></i>" +
+      "<img class='art' src='" + B.artFile(def.id, "open") + "' alt=''>" +
+      "<img class='billie' src='assets/mascots/billie/billie-C-" + (def.tier === "legendary" ? "winner" : "cheer") + ".svg' alt='Bubbles Billie'>" +
+      "<div><em class='tierpill'>" + def.tier + "</em><b>" + esc(def.name) + "</b><div>" + esc(def.desc) + "</div>" +
+      "<p class='billieline'>" + line + "</p></div>" +
+      "<button type='button' data-act='badge-view' data-id='" + def.id + "'>VIEW</button></div>";
+  } else {
+    host.innerHTML = "<div class='badgetoast' data-id='" + def.id + "'>" +
+      "<img class='art' src='" + B.artFile(def.id, "open") + "' alt=''>" +
+      "<div><b>Badge: " + esc(def.name) + "</b><div>" + esc(def.desc) + "</div>" +
+      (def.odds ? "<small>" + esc(def.odds) + "</small>" : "") + "</div></div>";
+  }
+  const card = host.querySelector(".badgetoast");
+  if (!card) return;
+  let y0 = 0;
+  card.addEventListener("pointerdown", (e) => { y0 = e.clientY; });
+  card.addEventListener("pointerup", (e) => {
+    if (e.target.closest("[data-act='badge-view']")) {
+      openBadge(def.id);
+      dismissBadgeToast();
+      return;
+    }
+    dismissBadgeToast();
+  });
+  card.addEventListener("click", (e) => e.stopPropagation());
+}
+function awardSession(session, reason) {
+  if (!session) return;
+  const now = Date.now();
+  const ev = B.evaluateSession(boardData, {
+    sessionId: session.id,
+    betRolls: session.betRolls,
+    loosened: session.loosened,
+    endReason: reason || session.endReason,
+    lossCents: session.badgeLossCents != null ? session.badgeLossCents : session.lossCents,
+    winCents: session.badgeWinCents != null ? session.badgeWinCents : session.winCents,
+    winPromptAfter20: !!session.promptedWin && session.betRolls >= 20,
+    lossPromptAfter20: !!session.promptedLoss && session.betRolls >= 20,
+    endedAtWin: reason === "win",
+    endedAtLoss: reason === "loss",
+    endedBeforeNextRoll: reason === "win" || reason === "loss",
+    rollAfterLoss: !!session.rollAfterLoss,
+    now,
+    mode: game.mode,
+  });
+  boardData.badges = ev.store.badges;
+  boardData.progress = ev.store.progress;
+  boardData.sessions = ev.store.sessions;
+  if (ev.unlocked.length) queueUnlocks(ev.unlocked);
+}
+function absorbIdle(session, now) {
+  if (!session || session.ended) return session;
+  const closed = Sess.closeIfIdle(session, now);
+  if (closed && closed.ended && !session.ended) awardSession(closed, "idle");
+  return closed;
+}
+function ensureSession(now, total) {
+  boardData.session = absorbIdle(boardData.session, now);
+  if (!boardData.session || boardData.session.ended) {
+    boardData.session = Sess.startSession(boardData.session, total, {
       loss: settings.lossLimit,
       win: settings.winGoal,
     }, now);
   }
-  boardData.session = s;
 }
 function noteSession(hadBet, settled) {
   const now = Date.now();
-  ensureSession(now);
+  if (!boardData.session || boardData.session.ended) ensureSession(now, E.netWorth(game));
   let s = Sess.noteRoll(boardData.session, hadBet);
   if (settled.result === "seven-out") s = Sess.noteHand(s);
   s = Sess.noteActivity(s, now);
@@ -1037,27 +1137,7 @@ function finishSession(reason) {
   autoPause = "end";
   if (boardData.session && !boardData.session.ended) {
     boardData.session = Sess.endSession(boardData.session, reason, now);
-    const s = boardData.session;
-    const ev = B.evaluateSession(boardData, {
-      sessionId: s.id,
-      betRolls: s.betRolls,
-      loosened: s.loosened,
-      endReason: s.endReason,
-      lossCents: s.lossCents,
-      winCents: s.winCents,
-      winPromptAfter20: !!s.promptedWin && s.betRolls >= 20,
-      lossPromptAfter20: !!s.promptedLoss && s.betRolls >= 20,
-      endedAtWin: reason === "win",
-      endedAtLoss: reason === "loss",
-      endedBeforeNextRoll: reason === "win" || reason === "loss",
-      rollAfterLoss: !!s.rollAfterLoss,
-      now,
-      mode: game.mode,
-    });
-    boardData.badges = ev.store.badges;
-    boardData.progress = ev.store.progress;
-    boardData.sessions = ev.store.sessions;
-    if (ev.unlocked.length) queueUnlocks(ev.unlocked);
+    awardSession(boardData.session, reason);
   }
   saveBoard();
   const s = boardData.session;
@@ -1088,8 +1168,11 @@ function setLimitKind(which, kind) {
   const before = { loss: settings.lossLimit, win: settings.winGoal };
   spec.kind = kind === "amount" || kind === "pct" ? kind : "off";
   const after = { loss: settings.lossLimit, win: settings.winGoal };
-  if (boardData.session && Sess.limitsLoosened(before, after, boardData.session)) {
-    boardData.session = Sess.markLoosened(boardData.session);
+  if (boardData.session && !boardData.session.ended) {
+    if (Sess.limitsLoosened(before, after, boardData.session)) {
+      boardData.session = Sess.markLoosened(boardData.session);
+    }
+    boardData.session = Sess.applyLiveLimits(boardData.session, after);
     saveBoard();
   }
   save();
@@ -1107,15 +1190,23 @@ function stepLimit(which, field, dir) {
     spec.amount = Sess.clampAmount((spec.amount || 2500) + dir * Sess.LIMIT_STEP);
   }
   const after = { loss: settings.lossLimit, win: settings.winGoal };
-  if (boardData.session && Sess.limitsLoosened(before, after, boardData.session)) {
-    boardData.session = Sess.markLoosened(boardData.session);
+  if (boardData.session && !boardData.session.ended) {
+    if (Sess.limitsLoosened(before, after, boardData.session)) {
+      boardData.session = Sess.markLoosened(boardData.session);
+    }
+    boardData.session = Sess.applyLiveLimits(boardData.session, after);
     saveBoard();
   }
   save();
   paint();
 }
+function initialsFromSettings() {
+  const boxes = [...document.querySelectorAll(".setinits .init")];
+  if (boxes.length) return boxes.map((el) => el.value).join("");
+  return (document.getElementById("settings-initials") || {}).value || "";
+}
 function saveInitials(applyExisting) {
-  const raw = (document.getElementById("settings-initials") || {}).value || "";
+  const raw = initialsFromSettings();
   const res = L.setInitials(boardData, raw, applyExisting);
   const err = document.querySelector(".initerr");
   if (!res.ok) {
@@ -1144,7 +1235,14 @@ function measureChrome() {
   const hud = document.getElementById("hud");
   const dock = document.getElementById("dock");
   if (hud && hud.offsetHeight) document.documentElement.style.setProperty("--hud-h", hud.offsetHeight + "px");
-  if (dock && dock.offsetHeight) document.documentElement.style.setProperty("--dock-h", dock.offsetHeight + "px");
+  if (dock && dock.offsetHeight) {
+    document.documentElement.style.setProperty("--dock-h", dock.offsetHeight + "px");
+    document.documentElement.style.setProperty("--dock-top", dock.getBoundingClientRect().top + "px");
+  }
+  const dots = document.getElementById("dots");
+  if (dots && dots.offsetHeight) {
+    document.documentElement.style.setProperty("--dots-top", dots.getBoundingClientRect().top + "px");
+  }
 }
 function noteFair() {
   const scope = fairScope === "last" ? "last" : fairScope === "all" ? "all" : "session";
@@ -1156,19 +1254,15 @@ function noteFair() {
 function fitFelt() {
   const stage = document.getElementById("stage");
   if (!stage || view !== "play") return;
-  const short = window.innerHeight <= 700 || window.innerWidth > window.innerHeight;
   const felts = stage.querySelectorAll(".felt");
-  if (!short) {
-    felts.forEach((f) => f.classList.remove("scaled"));
-    return;
-  }
   const s = stage.getBoundingClientRect();
-  let k = Math.min(s.width / 354, Math.max(160, s.height) / 471);
+  let k = Math.min(s.width / 390, Math.max(160, s.height) / 505);
   if (!(k > 0)) k = 0.78;
   if (k < 0.78) k = 0.78;
   if (k > 1) k = 1;
   document.documentElement.style.setProperty("--felt-k", k.toFixed(3));
   felts.forEach((f) => f.classList.add("scaled"));
+  measureChrome();
 }
 function cubeMarkup(which) {
   const faces = [1, 2, 3, 4, 5, 6].map((n) => "<i class='f f" + n + "'></i>").join("");
@@ -1299,14 +1393,17 @@ function isBigWin(settled) {
 }
 function clearWin() {
   clearTimeout(celeTimer);
+  document.body.classList.remove("bigwin");
   const el = document.getElementById("overlay");
   if (el && el.querySelector(".winlayer")) el.innerHTML = "";
+  if (badgeQueue.length && !badgeTimer) pumpBadges();
 }
 function showBigWin(settled) {
   const el = document.getElementById("overlay");
   if (!el || !(settled.net > 0)) return;
   const amount = "+" + money(settled.net);
   const reduce = motionOff();
+  document.body.classList.add("bigwin");
   const lines = (settled.decisions || []).filter((d) => d.rearmed && d.result === "win").map(bonusCopy);
   el.innerHTML = "<div class='winlayer" + (reduce ? " reduce" : "") + "'>" +
     "<div class='sunburst' aria-hidden='true'></div>" +
@@ -1531,36 +1628,58 @@ function leaderHTML() {
     badgeGallery() +
     "<button class='cta' data-act='view' data-view='play'>BACK TO THE TABLE</button></section>";
 }
+function badgeTile(b) {
+  const on = boardData.badges && boardData.badges[b.id];
+  const hidden = b.hidden && !on;
+  const state = hidden ? "hidden" : on ? "open" : "locked";
+  let prog = B.progressOf(boardData.progress, b.id);
+  if (b.id === "five_sessions_within_limits") {
+    const have = (boardData.sessions && boardData.sessions.withinLimits) || 0;
+    prog = { have, need: 5, text: have + " / 5" };
+  }
+  if (b.id === "daily_practice_3") {
+    const have = (boardData.daily && boardData.daily.streak) || 0;
+    prog = { have: Math.min(3, have), need: 3, text: have + " / 3" };
+  }
+  const bar = !on && !hidden && prog ? "<span class='badgebar'><i style='width:" + Math.round(100 * prog.have / prog.need) + "%'></i></span><small>" + esc(prog.text) + "</small>" : "";
+  const label = hidden ? "Hidden badge" : b.name;
+  return "<button class='badgetile' data-act='badge' data-id='" + b.id + "' aria-label='" + esc(label) + ", " + b.tier + ", " + (on ? "unlocked" : "locked") + "'>" +
+    "<img src='" + B.artFile(b.id, state) + "' alt=''><small>" + esc(label) + "</small>" + bar + "</button>";
+}
 function badgeGallery() {
   const filters = ["all", "regular", "crapless", "unlocked", "locked"];
   const chips = "<div class='filters'>" + filters.map((f) => "<button class='" + (badgeFilter === f ? "on" : "") + "' data-act='badge-filter' data-filter='" + f + "'>" + f[0].toUpperCase() + f.slice(1) + "</button>").join("") + "</div>";
   const unlocked = Object.keys(boardData.badges || {}).length;
-  const tiles = B.BADGES.filter((b) => {
+  const keep = (b) => {
     const on = !!(boardData.badges && boardData.badges[b.id]);
     if (badgeFilter === "regular") return b.mode !== "crapless";
     if (badgeFilter === "crapless") return b.mode !== "regular";
     if (badgeFilter === "unlocked") return on;
     if (badgeFilter === "locked") return !on;
     return true;
-  }).map((b) => {
-    const on = boardData.badges && boardData.badges[b.id];
-    const hidden = b.hidden && !on;
-    const state = hidden ? "hidden" : on ? "open" : "locked";
-    let prog = B.progressOf(boardData.progress, b.id);
-    if (b.id === "five_sessions_within_limits") {
-      const have = (boardData.sessions && boardData.sessions.withinLimits) || 0;
-      prog = { have, need: 5, text: have + " / 5" };
-    }
-    if (b.id === "daily_practice_3") {
-      const have = (boardData.daily && boardData.daily.streak) || 0;
-      prog = { have: Math.min(3, have), need: 3, text: have + " / 3" };
-    }
-    const bar = !on && !hidden && prog ? "<span class='badgebar'><i style='width:" + Math.round(100 * prog.have / prog.need) + "%'></i></span><small>" + esc(prog.text) + "</small>" : "";
-    const label = hidden ? "Hidden badge" : b.name;
-    return "<button class='badgetile' data-act='badge' data-id='" + b.id + "' aria-label='" + esc(label) + ", " + b.tier + ", " + (on ? "unlocked" : "locked") + "'>" +
-      "<img src='" + B.artFile(b.id, state) + "' alt=''><small>" + esc(label) + "</small>" + bar + "</button>";
+  };
+  const tiers = ["bronze", "silver", "gold", "legendary"];
+  const tierCounts = { bronze: 7, silver: 9, gold: 9, legendary: 5 };
+  const bars = "<div class='tierbars'>" + tiers.map((tier) => {
+    const have = B.BADGES.filter((b) => b.tier === tier && boardData.badges && boardData.badges[b.id]).length;
+    const need = tierCounts[tier];
+    return "<div class='tierbar " + tier + "'><b>" + have + " / " + need + "</b><span class='badgebar'><i style='width:" + Math.round(100 * have / need) + "%'></i></span><small>" + tier + "</small></div>";
+  }).join("") + "</div>";
+  const sections = [
+    ["Hand length & Blazing", ["hand_10_rolls", "hand_20_rolls", "hand_40_rolls", "blazing_reached"]],
+    ["Points", ["points_all_six_lifetime", "points_six_one_hand"]],
+    ["ATS", ["ats_low_rolls", "ats_high_rolls", "ats_roll_em_all", "ats_sweep_one_hand", "spin_the_block"]],
+    ["Press & bets", ["billys_way_first_hit", "billys_way_full_circle", "press_undo", "press_then_collect", "hard_hat_trick", "hwad_win", "repeaters_all_ten"]],
+    ["Discipline", ["low_edge_three_hands", "steady_up_1000", "limits_set_session", "win_goal_banked", "loss_limit_kept", "five_sessions_within_limits"]],
+    ["Crapless", ["crapless_points_all_ten_lifetime", "crapless_six_points_one_hand", "crapless_corner_point"]],
+    ["Practice", ["tutor_tour_complete", "fair_dice_explorer", "daily_practice_3"]],
+  ];
+  const body = sections.map(([title, ids]) => {
+    const tiles = ids.map((id) => B.badgeById(id)).filter((b) => b && keep(b)).map(badgeTile).join("");
+    if (!tiles) return "";
+    return "<h3 class='badgesec'>" + title + "</h3><div class='badgegrid'>" + tiles + "</div>";
   }).join("");
-  return "<h2>Badges " + unlocked + " / " + B.BADGES.length + "</h2>" + chips + "<div class='badgegrid'>" + tiles + "</div>";
+  return "<h2>Badges " + unlocked + " / " + B.BADGES.length + " earned</h2>" + bars + chips + body;
 }
 function openBadge(id) {
   const b = B.badgeById(id);
@@ -1595,11 +1714,8 @@ function noteBlaze(before, settled) {
   if (first && !document.querySelector(".overlay")) {
     settings.seenBlaze[moment.lessonTier] = true;
     save();
-    const cheer = moment.lessonTier === "hot" || moment.lessonTier === "blazing"
-      ? "<img src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>"
-      : "";
     openSheet(
-      "<header><img src='assets/mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'>" + cheer + "<div><p class='tag'>BLAZING METER</p><h2>" + moment.lessonTier + "</h2></div></header><p>" + (moment.text ? moment.text + " " : "") + blazeLesson(moment.lessonTier) + "</p><div class='actions'><button class='go' data-act='close'>Got it</button></div>"
+      "<header><img src='assets/mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'><div><p class='tag'>BLAZING METER</p><h2>" + moment.lessonTier + "</h2></div></header><p>" + (moment.text ? moment.text + " " : "") + blazeLesson(moment.lessonTier) + "</p><div class='actions'><button class='go' data-act='close'>Got it</button></div>"
     );
     return;
   }
@@ -1609,9 +1725,8 @@ function noteBlaze(before, settled) {
     save();
   }
   if (parts.length) {
-    const cheer = moment.tier === "hot" || moment.tier === "blazing";
     const delay = isBigWin(settled) ? 2600 : 1400;
-    queueToast(parts.join(" "), cheer ? "assets/mascots/billie/billie-C-cheer.svg" : "", delay);
+    queueToast(parts.join(" "), "", delay);
   }
 }
 
@@ -1761,6 +1876,7 @@ function closeOverlay() {
   const el = document.getElementById("overlay");
   coachOn = false;
   currentCoachTip = null;
+  document.body.classList.remove("bigwin");
   if (el) el.innerHTML = "";
   window.__take = null;
   if (view === "play") startTimer();
@@ -2190,10 +2306,6 @@ function domeHTML() {
   const win = !rolling && game.lastWin
     ? "<p class='hitline'>WIN · " + (game.lastWin.kind === "buy" ? "Buy " : "Place ") + game.lastWin.number + " +" + money(game.lastWin.profit) + "</p>"
     : "";
-  const hot = tier === "hot" || tier === "blazing";
-  const billie = hot
-    ? "<img class='dome-billie' src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>"
-    : "";
   const billyPose = rolling ? "billy-A-live.svg" : (game.phase === "point" ? "billy-A-live.svg" : "billy-A-hello.svg");
   return "<div class='dome-screen'><div class='machine hood-" + hood + heat + "'>" +
     "<img class='hood' src='assets/dome/dome-hood-" + hood + "@2x.webp' alt='Bubble craps dome'>" +
@@ -2201,7 +2313,7 @@ function domeHTML() {
     "<div class='shine' aria-hidden='true'></div></div>" +
     "<div class='dome-cast'>" +
     "<img class='dome-billy' src='assets/mascots/dealer-billy/" + billyPose + "' alt='Dealer Billy'>" +
-    "<p class='speech'>" + domeCall() + "</p>" + billie + "</div>" +
+    "<p class='speech'>" + domeCall() + "</p></div>" +
     line + win + heaterHTML(true) +
     "<div class='rollstrip' aria-label='Last rolls'>" + historyChips(game.history, true) + "</div></div>";
 }
@@ -2212,11 +2324,11 @@ function dockHTML() {
   const taps = game.pressStack.length;
   const pressLine = rolling ? "PRESS" : (st.pressOk ? "PRESS " + st.number + " <em>+" + money(st.original) + "</em>" : "PRESS");
   const pressSub = rolling ? "after a hit" : (st.pressOk ? "→ " + money((st.stake || 0) + (st.original || 0)) + (taps > 0 ? " · " + taps + " tap" + (taps === 1 ? "" : "s") : "") : (st.pressReason || "after a hit"));
-  const powerLine = rolling ? "POWER PRESS" : (st.powerOk ? "POWER PRESS " + st.number : "POWER PRESS");
-  const powerSub = rolling ? "after a hit" : (st.powerOk ? "+" + money(st.powerAdd) + " → " + money((st.stake || 0) + (st.powerAdd || 0)) + " · whole win" : (st.powerReason || "after a hit"));
+  const powerLine = rolling ? "POWER PRESS" : (st.powerOk ? st.powerLabel : "POWER PRESS");
+  const powerSub = rolling ? "after a hit" : (st.powerOk ? (st.powerGive > 0 ? "add " + money(st.powerGive) + " from chips" : (st.powerBack > 0 ? "get " + money(st.powerBack) : "even")) : (st.powerReason || "after a hit"));
   const undo = taps ? "<button class='undodisc' data-act='undo'" + (rolling ? " disabled" : "") + " aria-label='Undo press'>↺</button>" : "";
   const clear = taps ? "<button class='clearchip' data-act='clear'" + (rolling ? " disabled" : "") + " aria-label='Clear presses'>×</button>" : "";
-  const secs = !settings.autoRoll ? "MANUAL" : autoPause ? "PAUSED" : "AUTO " + (settings.autoInterval || 15) + "s";
+  const secs = !settings.autoRoll ? "" : autoPause ? "PAUSED" : "AUTO " + (settings.autoInterval || 15) + "s";
   let context = "";
   if (page === 0) {
     context = "<div class='context leftkeys'><button class='key' data-act='same'>SAME BET</button><button class='key' data-act='addchip'>ADD A CHIP</button><button class='key' data-act='takedown'>TAKE DOWN</button></div>";
@@ -2230,7 +2342,9 @@ function dockHTML() {
       "<button class='key' data-act='reset'>RESET</button>" +
       "<button class='key betskey' data-act='bets'>BETS ▴</button></div>";
   }
-  const stop = game.strategy ? stratOpts() + "<button class='key stopkey' data-act='stop-strategy'>Stop " + game.strategy.id + "</button>" : "";
+  const stop = game.strategy && game.strategy.id !== "B13" && game.strategy.id !== "B14"
+    ? stratOpts() + "<button class='key stopkey' data-act='stop-strategy'>Stop " + game.strategy.id + "</button>"
+    : stratOpts();
   const pauseNote = autoPause === "empty" ? "Auto-roll paused · nothing on the felt"
     : autoPause === "short" ? "Auto-roll paused · not enough practice chips for your bets"
       : autoPause === "away" ? "Auto-roll paused while you were away"
@@ -2255,15 +2369,18 @@ function stratOpts() {
       "<button class='" + (odds === id ? "on" : "") + "' data-act='strat-odds' data-level='" + id + "'>" + label + "</button>").join("");
     const capBtns = [0, 1, 2, 3, 4, 5].map((n) =>
       "<button class='" + (cap === n ? "on" : "") + "' data-act='strat-cap' data-cap='" + n + "'>" + (n ? "Cap " + n : "Uncapped") + "</button>").join("");
-    return "<div class='stropts'>" + oddsBtns + capBtns + "</div>";
+    return "<div class='stropts'>" + oddsBtns + capBtns + "<button data-act='stop-strategy'>STOP B13</button></div>";
   }
   if (s.id === "B14") {
     const start = data.start === 8 ? 8 : 6;
     const ext = !!data.extend;
+    const extBtn = game.mode === "crapless"
+      ? "<button class='" + (ext ? "on" : "") + "' data-act='strat-extend' data-on='" + (ext ? "0" : "1") + "'>" + (ext ? "Extension on" : "Extension off") + "</button>"
+      : "";
     return "<div class='stropts'>" +
       "<button class='" + (start === 6 ? "on" : "") + "' data-act='strat-start' data-start='6'>Start 6</button>" +
       "<button class='" + (start === 8 ? "on" : "") + "' data-act='strat-start' data-start='8'>Start 8</button>" +
-      "<button class='" + (ext ? "on" : "") + "' data-act='strat-extend' data-on='" + (ext ? "0" : "1") + "'>" + (ext ? "Crapless extension on" : "Crapless extension off") + "</button></div>";
+      extBtn + "<button data-act='stop-strategy'>STOP B14</button></div>";
   }
   return "";
 }
@@ -2330,7 +2447,8 @@ function premiumHTML() {
     ["B-10", "Hardways working on come-out", "On"],
     ["B-11", "Don't Pass bar", regular ? "Bar 12" : "Not in Crapless"],
     ["B-12", "Table minimum", "$5"],
-    ["B-13", "Table maximum", "$500"],
+    ["B-13", "Table maximum", "$1,000"],
+    ["B-31", "Power Press ladder", "Standard"],
     ["B-14", "Starting practice bankroll", "$1,000"],
     ["B-15", "Horn payouts", "30:1 / 15:1"],
     ["B-16", "Any 7 / Big Red", "4:1"],
@@ -2355,7 +2473,13 @@ function premiumHTML() {
     "<div class='filters'>" + presets.map((name) => "<button class='" + (premiumPreset === name ? "on" : "") + "' data-act='preset' data-preset='" + name + "'>" + name + "</button>").join("") + "</div>" +
     "<article class='card'><h3>Edge Preview</h3><p class='lock'>Locked</p><p>" + preview[premiumPreset] + "</p><p class='muted'>A Premium unlock would animate the old edge to the new one. Example: Field 5.56% → 2.78%.</p></article>" +
     rows.map(([id, label, value]) => "<div class='setting'><div><b>" + id + " " + label + "</b><div class='muted'>" + (regular ? "Regular" : "Crapless") + " · Standard</div></div><span class='lock'>" + value + "</span></div>").join("") +
-    "<article class='card'><h3>With Premium you could preview</h3><p>Your casino's odds and payouts. Live house-edge preview. Presets. Fair Dice CSV export. Hard Way All Day 150–200 for 1. Repeater pay tables.</p><p class='muted'>Table-style dice setting is not in Bubble Craps.</p></article>";
+    "<article class='card'><h3>Power Press ladder</h3><p class='lock'>Standard is live. Scaled and Custom stay locked.</p>" +
+    "<p>6/8 Place: 6 → 18 → 42 → 90 → 210 → 450</p>" +
+    "<p>4/10: 5 → 15 → 40 → 100 → 300 → 900 · Buy from $40</p>" +
+    "<p>5/9: 5 → 15 → 36 → 86 → 200 → 500 · Buy from $36</p>" +
+    "<p>Crapless Buy 2/12: 5 → 35 → 250 · 3/11: 5 → 20 → 80 → 320</p>" +
+    "<p class='muted'>B-31 Scaled ×2, ×3, ×5, ×10, or Auto, and a custom ladder, do not change this table. B-13 range is $100–$5,000. Standard here is $1,000.</p></article>" +
+    "<article class='card'><h3>With Premium you could preview</h3><p>Your casino's odds and payouts. Live house-edge preview. Presets. Fair Dice CSV export. Hard Way All Day 150–200 for 1. Repeater pay tables. A scaled or custom Power Press ladder.</p><p class='muted'>Table-style dice setting is not in Bubble Craps.</p></article>";
 }
 
 function limitSetting(which, label) {
@@ -2385,8 +2509,12 @@ function settingsHTML() {
     "</div></div>" +
     limitSetting("loss", "Loss limit") +
     limitSetting("win", "Win goal") +
-    "<div class='setting stackpress'><div><b>Leaderboard initials</b><div class='muted'>1 to 3 letters, A to Z. Stays on this device.</div></div><input id='settings-initials' maxlength='3' value='" + esc((boardData.initials && boardData.initials.default) || "") + "' aria-label='Leaderboard initials'></div>" +
-    "<p class='initerr'></p><div class='actions'><button class='go' data-act='initials-save'>Save initials</button><button data-act='initials-apply'>Apply to my existing entries</button></div>" +
+    "<div class='setting stackpress'><div><b>Leaderboard initials</b><div class='muted'>1 to 3 letters, A to Z. Stays on this device.</div></div>" +
+    "<div class='inits setinits'>" + [0, 1, 2].map((i) => {
+      const ch = ((boardData.initials && boardData.initials.default) || "")[i] || "";
+      return "<input class='init' maxlength='1' value='" + esc(ch) + "' aria-label='Initial " + (i + 1) + "' autocomplete='off' autocapitalize='characters'>";
+    }).join("") + "</div></div>" +
+    "<p class='initerr'></p><div class='actions initactions'><button class='go' data-act='initials-save'>Save initials</button><button data-act='initials-apply'>Apply to my existing entries</button></div>" +
     row("workingComeOut", "Place and Buy working on come-out", "Off is Standard") +
     row("blazing", "Blazing meter", "Cosmetic only. Dice have no memory. It never changes odds or bets.") +
     row("showDice", "Show the dice on each roll", "Jumps to the dome, then back") +
@@ -2473,7 +2601,7 @@ load();
 boardData = L.readStore(boardStore);
 if (!settings.lossLimit) settings.lossLimit = { kind: "off", amount: 2500, pct: 25 };
 if (!settings.winGoal) settings.winGoal = { kind: "off", amount: 2500, pct: 25 };
-if (boardData.session) boardData.session = Sess.closeIfIdle(boardData.session, Date.now());
+if (boardData.session) boardData.session = absorbIdle(boardData.session, Date.now());
 game.placeWorkingOnComeOut = !!settings.workingComeOut;
 A.setMuted(!settings.sound);
 mount();

@@ -230,6 +230,9 @@ test("initials are 1 to 3 letters, blank is allowed, and the blocklist refuses a
   assert.equal(L.normalizeName(""), "");
   assert.equal(L.normalizeName("!!!"), "");
   assert.equal(L.normalizeInitials("FUK").blocked, true);
+  assert.equal(L.normalizeInitials("BJ").ok, true);
+  assert.equal(L.normalizeInitials("BJ").value, "BJ");
+  assert.equal(L.normalizeInitials("NIG").blocked, true);
   const now = atLocal(2026, 10, 11, 12);
   const skipped = L.commitRoll(L.emptyData(), {
     throws: 12, points: 1, mode: "regular", at: now, initials: "",
@@ -251,4 +254,15 @@ test("initials are 1 to 3 letters, blank is allowed, and the blocklist refuses a
     throws: 12, points: 1, mode: "regular", at: now, initials: "BIL", rngSource: "test",
   });
   assert.equal(testRoll.ok, false);
+});
+
+test("a pending record card survives a reload", () => {
+  const store = L.memoryStore();
+  const pending = { throws: 8, points: 1, rolls: 8, pointsMade: 1, mode: "regular", at: Date.now() };
+  const data = Object.assign(L.emptyData(), { pending });
+  L.writeStore(store, data);
+  const back = L.readStore(store);
+  assert.equal(back.pending.throws, 8);
+  assert.equal(back.pending.mode, "regular");
+  assert.equal(back.initials.asked, false);
 });

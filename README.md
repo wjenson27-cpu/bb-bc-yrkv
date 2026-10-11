@@ -31,7 +31,7 @@ That runs `node --test tests/*.test.mjs`. The suite covers the chip set, come-ou
 ### Implemented
 
 - Regular and Crapless bubble craps, one bankroll, practice chips labeled on every balance.
-- Chips $1, $5, $25, $100, $500. Table $5–$500. Starting bankroll $1,000. No negative bankroll. No $10 chip. No Fire Bet.
+- Chips $1, $5, $25, $100, $500. Table $5–$1,000. Starting bankroll $1,000. No negative bankroll. No $10 chip. No Fire Bet.
 - Field: 2 and 12 pay 2:1; 3, 4, 9, 10, 11 pay 1:1.
 - Pass odds 3-4-5x in Regular. Crapless odds 3x on 2/3/4/10/11/12, 4x on 5/9, 5x on 6/8. True odds 6:1, 3:1, 2:1, 3:2, 6:5.
 - Lay odds on Don't Pass and Don't Come, Regular only, up to 6x, paid at 3x/4x/5x. No number lays.
@@ -43,7 +43,7 @@ That runs `node --test tests/*.test.mjs`. The suite covers the chip set, come-ou
 - Any 7 at 4 to 1, Any Craps at 7 to 1. C&E is a split bet: 3 to 1 on 2, 3, or 12 and 7 to 1 on 11, on the whole stake, posted in $2 units. One-roll bets stay up on a win.
 - Place and Buy off on the come-out unless the setting is on. Hardways work on the come-out (that switch is in the locked Premium list). Come odds are off on the come-out. The flat Come still works. Bets Off parks Place and Buy only.
 - Pass cannot be taken down after a point. Come-point flats cannot be taken down. Don't Pass and Don't Come can, with a Tutor warning. Regular and Crapless can switch only before a hand's first roll. Reset bankroll is the way out of a hand in progress, and that hand is not posted.
-- PRESS and POWER PRESS, including the rounding examples in the build prompt. Undo and Clear before the next roll. Both keys show their grey-out reason and stay off while the dice are tumbling. "Capped at $500" only appears when the bet actually lands on the table max.
+- PRESS adds one original-bet unit. POWER PRESS follows Bill's ladder (6/8, 4/10, 5/9, and Crapless Buy 2/12 and 3/11), with an off-ladder jump and a round-down fallback. Undo restores the amount and the bet type. Both keys show their grey-out reason and stay off while the dice are tumbling. "Capped at $1,000" only appears when the bet actually lands on the table max.
 - Auto-press (B-28) is a free Settings control: Off, PRESS, or POWER PRESS, max 1–5 per number. It presses the Billy's Way spot that won and does not change that bet's original amount. Off still lets the B5 coach press up to 3 times.
 - Billy's Way: Regular Buy 4/5/9/10 and Place 6/8; Crapless also buys 2/3/11/12. A $5 chip is $32 Regular and $52 Crapless. Take down Billy's Way clears those spots.
 - Strategies B1–B14 with All / Regular / Crapless / Lessons. B9 is a lesson. Auto-bet maintains the set. B5 reopens after a seven-out and pauses after three lost opening spreads. B5 presses add to the bet. B8 can post a new outside set after it takes the first one down. B11 rolls 100 times, then pauses. B13 Continuous Come is uncapped by default, with an optional cap of 1–5 and odds of max, 2x, 1x, or flat. B14 Hit and Split starts Place 6 or 8 at $12, spends the win on the next step, and suspends auto-press. Its crapless extension is off by default.
@@ -65,7 +65,7 @@ That runs `node --test tests/*.test.mjs`. The suite covers the chip set, come-ou
 - Fair Dice CSV is locked, as specified. There is no feedback form for a very rare chi-square.
 - Premium shows every B-setting, the presets, and an Edge Preview, and all of them stay locked. It does not edit live payouts.
 - Phones in landscape (500px tall or less) keep Chips and On table in the top bar, keep the legal line fully visible, and put the dock in a right column.
-- A $500 chip on Place 6 or 8 posts $498, the largest $6 unit that fits under the $500 table max.
+- A $500 chip on Place 6 or 8 posts $600. A second $500 chip that would pass $1,000 is skipped.
 - The dome dice are CSS cubes (tumble, then settle on the rolled faces). They are drawn outside the sliding pager so the 3D is not flattened. Home and the HUD still use the small die art.
 - The full A1.8 tutor state table is not wired. The tour, come-out and point tips, press and power tips, a first hop, Place 2/3/11/12, the first swipe to side bets, the Blazing lesson, and the first time auto-press is turned on are.
 - Horn is $4 units. C&E is $2 units. A $5 chip posts $4 of either and leaves $1 in practice chips. A $25 Horn posts $24. $100 and $500 divide evenly.
@@ -81,7 +81,7 @@ That runs `node --test tests/*.test.mjs`. The suite covers the chip set, come-ou
 
 - The felt is dense. Pass Line is the last row. Number faces are about 30px on a 390-wide phone. Bets Off, Billy's Way, and Reset stay in the dock. The bet sheet opens above the dock.
 - A small win is a roll toast. A seven-out is a toast with Dealer Billy ("Seven out.") and never says +$0. A big win uses Bubbles Billie only. The initials card waits until that toast has finished.
-- A Place 6 or 8 tap posts the chip in $6 units ($5 becomes $6, $25 becomes $30, $100 becomes $120, $500 becomes $498).
+- A Place 6 or 8 tap posts the chip in $6 units ($5 becomes $6, $25 becomes $30, $100 becomes $120, $500 becomes $600).
 - The layout matches the mockup structure, the mascots, and the brand colors. It is not a pixel-identical recreation of `docs/mockups/`. Wide screens stay one phone column.
 
 ## QA

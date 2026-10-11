@@ -310,16 +310,15 @@ function b14OnHits(state, data, wins, out) {
       if (!n || n === start) return;
       const kind = String(d.bet).indexOf("Buy") === 0 ? "buy" : "place";
       if ((state.bets[kind][n] || 0) > 0) {
-        const res = removeBet(state, { kind, number: n });
-        if (res.ok) state = res.state;
         data.collected = (data.collected || 0) + 1;
+        out.message = "Collected " + n + ". The bet stays up.";
       }
     });
     if ((data.collected || 0) >= 2) {
       state = b14TakeAll(state);
       b14Reset(data);
       data.down = true;
-      data.sawComeOut = state.phase === "come-out";
+      data.sawComeOut = false;
       out.message = "Two collected hits. The ladder comes down and starts again on the next point.";
     }
     return state;
@@ -376,6 +375,7 @@ function maintainB14(state, strat, out) {
     const wins = (state.lastDecisions || []).filter((d) => d.result === "win" && /^(Place|Buy) \d+$/.test(d.bet || ""));
     if (wins.length) state = b14OnHits(state, data, wins, out);
   }
+  if (data.down) return state;
   if (state.phase === "point" && (data.step || 0) === 0 && !data.across && !data.partial && !(state.bets.place[data.start] > 0)) {
     state = fillExact(state, { kind: "place", number: data.start }, 1200, out);
   }
@@ -494,9 +494,13 @@ export function autoBet(state, id, chipCents, opts = {}) {
             next = res.state;
             data.presses[n] += 1;
             const stake = next.bets.place[n];
-            const prefix = mode === "off" ? "PRESS" : "Auto " + (mode === "power" ? "POWER PRESS" : "PRESS");
-            const back = mode === "power" && res.back > 0 ? ", " + formatMoney(res.back) + " to chips" : "";
-            out.message = prefix + " " + n + " +" + formatMoney(res.added) + " → " + formatMoney(stake) + back;
+            if (mode === "power") {
+              const extra = res.give > 0 ? " (added " + formatMoney(res.give) + " from chips)" : (res.back > 0 ? " (get " + formatMoney(res.back) + ")" : " (even)");
+              out.message = "Auto POWER PRESS " + n + " → " + formatMoney(stake) + extra;
+            } else {
+              const prefix = mode === "off" ? "PRESS" : "Auto PRESS";
+              out.message = prefix + " " + n + " +" + formatMoney(res.added) + " → " + formatMoney(stake);
+            }
           }
         }
       }
@@ -587,19 +591,31 @@ export function applyAutoPress(state) {
   const cap = Math.min(5, Math.max(1, Number(cfg.max) || 3));
   if ((counts[key] || 0) >= cap) return { ok: false, state, error: "auto-press cap" };
   const res = cfg.mode === "power" ? powerPress(state) : press(state);
-  if (!res.ok) return { ok: false, state, error: res.error };
+  if (!res.ok) {
+    if (cfg.mode === "power" && res.error === "not enough chips") {
+      return { ok: false, state, error: res.error, message: "Collected: not enough chips for the next step" };
+    }
+    return { ok: false, state, error: res.error };
+  }
   counts[key] = (counts[key] || 0) + 1;
   res.state.autoPress = { mode: cfg.mode, max: cap, counts };
-  const stake = res.state.bets[lw.kind][lw.number];
-  const verb = cfg.mode === "power" ? "POWER PRESS" : "PRESS";
-  const back = cfg.mode === "power" && res.back > 0 ? ", " + formatMoney(res.back) + " to chips" : "";
+  const kind = res.toKind || lw.kind;
+  const stake = res.state.bets[kind][lw.number];
+  let message;
+  if (cfg.mode === "power") {
+    const extra = res.give > 0 ? " (added " + formatMoney(res.give) + " from chips)" : (res.back > 0 ? " (get " + formatMoney(res.back) + ")" : " (even)");
+    message = "Auto POWER PRESS " + lw.number + " → " + formatMoney(stake) + extra;
+  } else {
+    message = "Auto PRESS " + lw.number + " +" + formatMoney(res.added) + " → " + formatMoney(stake);
+  }
   return {
     ok: true,
     state: res.state,
     added: res.added,
     back: res.back,
+    give: res.give,
     atMax: !!res.atMax,
-    message: "Auto " + verb + " " + lw.number + " +" + formatMoney(res.added) + " → " + formatMoney(stake) + back,
+    message,
   };
 }
 

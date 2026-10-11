@@ -6,7 +6,7 @@
 
 export const STARTING_BANKROLL = 100_000;
 export const TABLE_MIN = 500;
-export const TABLE_MAX = 50_000;
+export const TABLE_MAX = 100_000;
 export const REPEATER_MIN = 100;
 export const REPEATER_MAX = 2_500;
 export const HOP_MIN = 100;
@@ -883,7 +883,156 @@ function setPressContext(state, total, decisions, working) {
   state.pressBlock = "no bet on " + total;
 }
 
-export function pressStatus(state) {
+/** Bill's POWER PRESS ladder, dollars in cents. Rev 12a. Standard table only. */
+export const POWER_LADDERS = {
+  "6/8": [600, 1800, 4200, 9000, 21000, 45000],
+  "4/10": [500, 1500, 4000, 10000, 30000, 90000],
+  "5/9": [500, 1500, 3600, 8600, 20000, 50000],
+  "2/12": [500, 3500, 25000],
+  "3/11": [500, 2000, 8000, 32000],
+};
+
+function ladderGroup(number) {
+  if (number === 6 || number === 8) return "6/8";
+  if (number === 4 || number === 10) return "4/10";
+  if (number === 5 || number === 9) return "5/9";
+  if (number === 2 || number === 12) return "2/12";
+  if (number === 3 || number === 11) return "3/11";
+  return "";
+}
+
+function ladderSteps(number) {
+  return POWER_LADDERS[ladderGroup(number)] || [];
+}
+
+/** Buy from $40 on 4/10, from $36 on 5/9, and on every Crapless 2/3/11/12 step. 6/8 stays Place. */
+function ladderKind(number, amount, fromKind) {
+  const group = ladderGroup(number);
+  if (group === "6/8") return fromKind === "buy" ? "buy" : "place";
+  if (group === "4/10") return amount >= 4000 ? "buy" : fromKind;
+  if (group === "5/9") return amount >= 3600 ? "buy" : fromKind;
+  return "buy";
+}
+
+function onLadderStep(kind, number, stake) {
+  const steps = ladderSteps(number);
+  const i = steps.indexOf(stake);
+  if (i < 0) return -1;
+  const group = ladderGroup(number);
+  if (group === "6/8" && kind !== "place") return -1;
+  if ((group === "2/12" || group === "3/11") && kind !== "buy") return -1;
+  if (group === "4/10" && stake >= 4000 && kind !== "buy") return -1;
+  if (group === "5/9" && stake >= 3600 && kind !== "buy") return -1;
+  return i;
+}
+
+function rangeUnitFor(kind, number) {
+  if ((number === 6 || number === 8) && kind === "place") return 600;
+  return 500;
+}
+
+function giveGetPhrase(debit, profit) {
+  const delta = debit - profit;
+  if (delta === 0) return "even";
+  if (delta > 0) return "add " + formatMoney(delta);
+  return "get " + formatMoney(-delta);
+}
+
+function setSpotAmount(state, kind, number, amount) {
+  const cur = amountOf(state, { kind, number });
+  addAmount(state, { kind, number }, amount - cur);
+}
+
+/**
+ * Plan one POWER PRESS. `maxCents` defaults to the Standard $1,000 max.
+ * Premium can pass a lower max to exercise the cap rule; the live table does not.
+ */
+export function powerPlan(state, opts) {
+  const max = (opts && opts.maxCents) || TABLE_MAX;
+  const lw = state.lastWin;
+  const empty = { ok: false, reason: state.pressBlock || "after a hit" };
+  if (!lw) return empty;
+  const stake = amountOf(state, { kind: lw.kind, number: lw.number });
+  if (!stake) return { ok: false, reason: "no bet on " + lw.number };
+  if (lw.powerUsed) return { ok: false, reason: "used", label: "POWER PRESS · used" };
+  const profit = lw.profit || 0;
+  const fromKind = lw.kind;
+  const number = lw.number;
+  const steps = ladderSteps(number);
+  const unit = pressUnit(fromKind, number);
+  const idx = onLadderStep(fromKind, number, stake);
+
+  const finish = (toAmount, toKind, mode) => {
+    const debit = toAmount - stake;
+    if (debit <= 0) return { ok: false, reason: "at table max" };
+    const give = debit - profit;
+    if (debit > state.bankroll) return { ok: false, reason: "not enough chips" };
+    const phrase = giveGetPhrase(debit, profit);
+    let label = "POWER PRESS " + number + " → " + (toKind !== fromKind ? "Buy " : "") + formatMoney(toAmount) + " (" + phrase + ")";
+    if (mode === "max") label = "POWER PRESS " + number + " → " + formatMoney(toAmount) + " (max) · " + phrase;
+    if (mode === "round" || mode === "round-capped") label = "POWER PRESS " + number + " +" + formatMoney(debit) + " (round-down)";
+    return {
+      ok: true,
+      reason: null,
+      label,
+      debit,
+      back: Math.max(0, profit - debit),
+      give: Math.max(0, give),
+      toAmount,
+      toKind,
+      fromKind,
+      fromAmount: stake,
+      number,
+      capped: mode === "max" || mode === "round-capped",
+      atMax: mode === "max" || toAmount >= max,
+      mode: mode || "ladder",
+    };
+  };
+
+  const capLand = (wantedKind) => {
+    const unitKind = wantedKind || fromKind;
+    const landed = Math.floor(max / pressUnit(unitKind, number)) * pressUnit(unitKind, number);
+    if (landed <= stake) return { ok: false, reason: "at table max" };
+    const kind = ladderKind(number, landed, fromKind);
+    return finish(landed, kind === "buy" || unitKind === "buy" ? kind : unitKind, "max");
+  };
+
+  if (idx >= 0) {
+    const next = steps[idx + 1];
+    if (!next) return { ok: false, reason: "top of the ladder · collect" };
+    const kind = ladderKind(number, next, fromKind);
+    if (next > max) return capLand(kind);
+    return finish(next, kind, "ladder");
+  }
+
+  const group = ladderGroup(number);
+  const joinLadder = !!group && !(group === "6/8" && fromKind === "buy");
+  if (joinLadder) {
+    const ceiling = stake + profit + rangeUnitFor(fromKind, number);
+    let best = 0;
+    steps.forEach((s) => {
+      if (s > stake && s <= ceiling && s <= max && s > best) best = s;
+    });
+    if (best) return finish(best, ladderKind(number, best, fromKind), "off");
+    const higher = steps.some((s) => s > stake && s > max && s <= ceiling);
+    if (higher) return capLand(ladderKind(number, max, fromKind));
+  }
+
+  let add = Math.floor(profit / unit) * unit;
+  const room = max - stake;
+  let capped = false;
+  if (add > room) {
+    add = Math.floor(Math.max(0, room) / unit) * unit;
+    capped = true;
+  }
+  if (add > state.bankroll) add = Math.floor(state.bankroll / unit) * unit;
+  if (add <= 0) {
+    return { ok: false, reason: profit < 500 || profit < unit ? "win under $5" : "at table max" };
+  }
+  return finish(stake + add, fromKind, capped ? "round-capped" : "round");
+}
+
+export function pressStatus(state, opts) {
   const lw = state.lastWin;
   const base = {
     pressOk: false,
@@ -897,7 +1046,6 @@ export function pressStatus(state) {
   const stake = amountOf(state, { kind: lw.kind, number: lw.number });
   const original = state.originals[lw.kind][lw.number] || stake;
   const unit = pressUnit(lw.kind, lw.number);
-  const name = (lw.kind === "buy" ? "Buy " : "Place ") + lw.number;
   base.original = original;
   base.unit = unit;
   base.stake = stake;
@@ -908,35 +1056,32 @@ export function pressStatus(state) {
     base.powerReason = "no bet on " + lw.number;
     return base;
   }
+  const max = (opts && opts.maxCents) || TABLE_MAX;
   const nextPress = stake + original;
   if (original <= 0 || original > state.bankroll) {
     base.pressReason = "not enough chips";
-  } else if (nextPress > TABLE_MAX) {
+  } else if (nextPress > max) {
     base.pressReason = "at table max";
   } else {
     base.pressOk = true;
     base.pressReason = null;
     base.label = "PRESS " + lw.number + " +" + formatMoney(original) + " → " + formatMoney(nextPress);
   }
-  if (lw.powerUsed) {
-    base.powerReason = "used";
-    base.powerLabel = "POWER PRESS · used";
+  const plan = powerPlan(state, opts);
+  base.powerAdd = plan.debit || 0;
+  base.powerBack = plan.back || 0;
+  base.powerGive = plan.give || 0;
+  base.powerTo = plan.toAmount || 0;
+  base.powerKind = plan.toKind || lw.kind;
+  base.capped = !!plan.capped;
+  base.atMax = !!plan.atMax;
+  if (plan.ok) {
+    base.powerOk = true;
+    base.powerReason = null;
+    base.powerLabel = plan.label;
   } else {
-    let add = Math.floor(lw.profit / unit) * unit;
-    const room = TABLE_MAX - stake;
-    if (add > room) add = Math.floor(Math.max(0, room) / unit) * unit;
-    if (add > state.bankroll) add = Math.floor(state.bankroll / unit) * unit;
-    base.powerAdd = add;
-    if (add <= 0) {
-      base.powerReason = lw.profit < unit ? "win under " + formatMoney(unit) : "at table max";
-    } else {
-      base.powerOk = true;
-      base.powerReason = null;
-      const back = lw.profit - add;
-      base.powerLabel = "POWER PRESS " + lw.number + " +" + formatMoney(add);
-      base.powerBack = back;
-      base.powerName = name;
-    }
+    base.powerReason = plan.reason || "after a hit";
+    base.powerLabel = plan.label || "POWER PRESS";
   }
   return base;
 }
@@ -956,23 +1101,40 @@ export function press(state) {
   return { ok: true, state: next, label: pressStatus(next).label, added: st.original };
 }
 
-export function powerPress(state) {
-  const st = pressStatus(state);
-  if (!st.powerOk) return { ok: false, error: st.powerReason || "Can't power press", state };
+export function powerPress(state, opts) {
+  const plan = powerPlan(state, opts);
+  if (!plan.ok) return { ok: false, error: plan.reason || "Can't power press", state };
   const next = clone(state);
-  applyPressAdd(next, st.kind, st.number, st.powerAdd, "power");
+  const fromKind = plan.fromKind;
+  const toKind = plan.toKind;
+  setSpotAmount(next, fromKind, plan.number, 0);
+  setSpotAmount(next, toKind, plan.number, plan.toAmount);
+  next.bankroll -= plan.debit;
+  if (next.bankroll < 0) next.bankroll = 0;
+  next.pressStack.push({
+    type: "power",
+    kind: toKind,
+    number: plan.number,
+    amount: plan.debit,
+    fromKind,
+    fromAmount: plan.fromAmount,
+    toKind,
+    toAmount: plan.toAmount,
+    converted: fromKind !== toKind,
+  });
   next.lastWin.powerUsed = true;
-  const full = Math.floor(next.lastWin.profit / st.unit) * st.unit;
-  const capped = st.powerAdd < full;
-  const landed = amountOf(next, { kind: st.kind, number: st.number });
+  if (toKind !== fromKind) next.lastWin.kind = toKind;
   return {
     ok: true,
     state: next,
-    added: st.powerAdd,
-    back: st.powerBack,
-    capped,
-    atMax: landed >= TABLE_MAX,
-    label: pressStatus(next).powerLabel,
+    added: plan.debit,
+    back: plan.back,
+    give: plan.give,
+    capped: plan.capped,
+    atMax: plan.atMax,
+    toAmount: plan.toAmount,
+    toKind,
+    label: plan.label,
   };
 }
 
@@ -980,9 +1142,19 @@ export function undoPress(state) {
   if (!state.pressStack.length) return { ok: false, error: "Nothing to undo.", state };
   const next = clone(state);
   const last = next.pressStack.pop();
-  addAmount(next, { kind: last.kind, number: last.number }, -last.amount);
-  next.bankroll += last.amount;
-  if (last.type === "power" && next.lastWin) next.lastWin.powerUsed = false;
+  if (last.toAmount != null && last.fromAmount != null && last.fromKind) {
+    setSpotAmount(next, last.toKind || last.kind, last.number, 0);
+    setSpotAmount(next, last.fromKind, last.number, last.fromAmount);
+    next.bankroll += last.amount;
+    if (next.lastWin) {
+      next.lastWin.kind = last.fromKind;
+      next.lastWin.powerUsed = false;
+    }
+  } else {
+    addAmount(next, { kind: last.kind, number: last.number }, -last.amount);
+    next.bankroll += last.amount;
+    if (last.type === "power" && next.lastWin) next.lastWin.powerUsed = false;
+  }
   return { ok: true, state: next };
 }
 
