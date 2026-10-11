@@ -313,12 +313,14 @@ function mount() {
     if (settings.autoRoll) { autoPause = "away"; stopTimer(); }
   });
   if (window.ResizeObserver) {
-    const ro = new ResizeObserver(() => { fitFelt(); measureChrome(); });
+    const ro = new ResizeObserver(() => { fitFelt(); measureChrome(); placeDice(); });
     const stageEl = document.getElementById("stage");
     const dockEl = document.getElementById("dock");
     if (stageEl) ro.observe(stageEl);
     if (dockEl) ro.observe(dockEl);
   }
+  const stageEl = document.getElementById("stage");
+  if (stageEl) stageEl.addEventListener("scroll", () => placeDice(), true);
   const stage = document.getElementById("stage");
   stage.addEventListener("transitionend", (e) => {
     if (e.target && e.target.id === "pager") placeDice();
@@ -1436,10 +1438,14 @@ function measureChrome() {
   const short = window.matchMedia("(max-height: 500px) and (orientation: landscape)").matches;
   const fs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const zoomed = fs >= 16 * 1.3;
+  const play = document.querySelector(".app.play");
+  const playZoom = play ? parseFloat(getComputedStyle(play).zoom) : 1;
+  const columnZoom = playZoom > 0 ? playZoom : 1;
   document.querySelectorAll(".rollstrip").forEach((el) => {
     const dome = el.closest(".dome-screen");
     const available = dome ? dome.clientWidth : el.clientWidth;
-    el.classList.toggle("totals", short || zoomed || available < 309);
+    const pipsTooSmall = !!(dome && 14 * columnZoom < 13.5);
+    el.classList.toggle("totals", short || zoomed || available < 309 || pipsTooSmall);
   });
 }
 function noteFair() {
@@ -1537,15 +1543,13 @@ function placeDice() {
   const ih = 1120 * k;
   const ix = r.left + shift + (r.width - iw) / 2;
   const iy = r.bottom - ih;
-  const die = Math.round(iw * 0.19);
+  let die = Math.round(iw * 0.19);
+  if (die < 40 && iw >= 96) die = 40;
   host.style.position = "fixed";
   host.style.marginLeft = "0";
-  if (die < 28) {
-    host.style.visibility = "hidden";
-    return;
-  }
-  host.style.visibility = "";
+  host.style.visibility = "visible";
   const gap = Math.max(6, Math.round(die * 0.12));
+  host.style.gap = gap + "px";
   const width = die * 2 + gap;
   host.style.left = Math.round(ix + (iw - width) / 2) + "px";
   host.style.top = Math.round(iy + ih * 0.66 - die) + "px";
@@ -2345,6 +2349,17 @@ function pageHTML(i) {
   return "<section class='page'>" + domeHTML() + "</section>";
 }
 
+function fieldSpot(stake) {
+  const nums = [2, 3, 4, 9, 10, 11, 12].map((n) => {
+    const dbl = n === 2 || n === 12;
+    return "<i class='fn" + (dbl ? " dbl" : "") + "'>" + n + "</i>";
+  }).join("");
+  return "<button class='spot field" + (stake ? " has" : "") + "' data-act='bet' data-kind='field' aria-label='Field" +
+    (stake ? ", " + money(stake) : "") + "'>" +
+    "<span class='fieldnums' aria-hidden='true'>" + nums + "</span>" +
+    "<b>FIELD</b><small>2 AND 12 PAYS DOUBLE</small>" + stakeLabel(stake) + "</button>";
+}
+
 function spotButton(opts) {
   const stake = opts.stake || 0;
   const teach = opts.teach ? " data-teach='" + opts.teach + "'" : "";
@@ -2405,7 +2420,7 @@ function boardHTML() {
     spotButton({ kind: "come", cls: "come", name: "COME", pay: crapless ? "7 WINS" : "7 · 11", stake: b.come, label: "Come" }) +
     (crapless ? "" : spotButton({ kind: "dontCome", name: "DON'T COME", pay: "BAR 12", stake: b.dontCome, label: "Don't Come" })) +
     "</div>" +
-    "<div class='band fieldband'>" + spotButton({ kind: "field", cls: "field", name: "FIELD", pay: "2 AND 12 PAY 2 TO 1", stake: b.field, label: "Field" }) + "</div>" +
+    "<div class='band fieldband'>" + fieldSpot(b.field) + "</div>" +
     "<div class='prop'><div class='horncol'><div class='box2'>" + horn + "</div>" + hornFoot + "</div><div class='midcol'>" +
     spotButton({ kind: "any7", cls: "bigred", name: "BIG RED", pay: "4 TO 1", stake: b.any7, label: "Big Red any seven" }) +
     spotButton({ kind: "hardAllDay", cls: "hwad", name: "ALL DAY", pay: "165 FOR 1", stake: b.hardAllDay, label: "Hard Way All Day", extra: "<span class='lamps'>" + lamps + "</span>" }) +

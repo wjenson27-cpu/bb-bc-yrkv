@@ -275,11 +275,8 @@ test("store polish: marquees, FAIR, dome pips, and the 320 play column", async (
         onStrip,
       };
     });
-    assert.equal(narrow.totals, false, "320 dome shows pips from roll 1 (" + narrow.parent + "px)");
-    assert.ok(narrow.parent >= 309, "320 dome container meets the cutoff");
-    assert.equal(narrow.shown, true);
-    assert.equal(narrow.inside, true);
-    assert.equal(narrow.onStrip, true);
+    assert.equal(narrow.totals, true, "320 dome uses totals (" + narrow.parent + "px)");
+    assert.equal(narrow.shown, false, "320 dome does not draw sub-14px pips");
 
     await page.locator("button.dot[aria-label='Board']").click();
     await page.waitForSelector(".felt");
