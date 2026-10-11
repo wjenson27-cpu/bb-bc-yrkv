@@ -532,9 +532,6 @@ function validate(state, spot, amount, removing) {
   if (crapless && (kind === "dontPass" || kind === "dontPassOdds" || kind === "dontCome" || kind === "dontComeOdds" || kind === "dontComePoint")) {
     return "Don't bets are not offered in Crapless.";
   }
-  if (crapless && (kind === "small" || kind === "tall" || kind === "all")) {
-    return "ATS is not offered in Crapless.";
-  }
   if (kind === "pass") {
     if (!comeOut) return "Pass Line is bet on the come-out.";
   } else if (kind === "dontPass") {
@@ -1073,6 +1070,7 @@ export function pressStatus(state, opts) {
   base.powerGive = plan.give || 0;
   base.powerTo = plan.toAmount || 0;
   base.powerKind = plan.toKind || lw.kind;
+  base.powerMode = plan.mode || "";
   base.capped = !!plan.capped;
   base.atMax = !!plan.atMax;
   if (plan.ok) {
