@@ -486,7 +486,7 @@ test("Hard Way All Day pays 165 for 1 and stays up", () => {
   assert.equal(lost.state.bets.hardAllDay, 0);
 });
 
-test("ATS pays 31/31/156 for 1, stays up, and is refused in Crapless", () => {
+test("ATS pays 31/31/156 for 1, stays up, and is offered in Crapless", () => {
   let g = E.placeBet(game(), { kind: "small" }, $(1)).state;
   for (const n of [2, 3, 4, 5]) g = roll(g, n, n === 2).state;
   const res = roll(g, 6);
@@ -508,9 +508,43 @@ test("ATS pays 31/31/156 for 1, stays up, and is refused in Crapless", () => {
   const seven = roll(E.placeBet(game(), { kind: "small" }, $(1)).state, 7);
   assert.equal(seven.state.bets.small, 0);
 
-  assert.match(E.placeBet(game("crapless"), { kind: "all" }, $(1)).error, /Crapless/);
-  assert.match(E.placeBet(game("crapless"), { kind: "small" }, $(1)).error, /Crapless/);
-  assert.match(E.placeBet(game("crapless"), { kind: "tall" }, $(1)).error, /Crapless/);
+  let crap = E.placeBet(game("crapless"), { kind: "small" }, $(1)).state;
+  crap = E.placeBet(crap, { kind: "pass" }, $(5)).state;
+  const comeOut = roll(crap, 7);
+  assert.equal(comeOut.result, "natural");
+  assert.equal(comeOut.decisions.find((d) => d.bet === "Pass Line").result, "win");
+  assert.equal(comeOut.decisions.find((d) => d.bet === "Low Rolls").result, "lose");
+  assert.equal(comeOut.state.bets.small, 0);
+
+  crap = E.placeBet(game("crapless"), { kind: "all" }, $(1)).state;
+  for (const n of [2, 3, 4, 5, 6, 8, 9, 10, 11]) crap = roll(crap, n, n === 2).state;
+  const paid = roll(crap, 12, true);
+  assert.equal(paid.decisions.find((d) => d.bet === "Roll 'Em All").profit, $(155));
+  assert.equal(paid.state.bets.all, $(1));
+  assert.equal(E.placeBet(game("crapless"), { kind: "tall" }, $(1)).ok, true);
+});
+
+test("all 36 pairs share one face total for caption, hardway, hop, and horn", () => {
+  for (let d1 = 1; d1 <= 6; d1++) {
+    for (let d2 = 1; d2 <= 6; d2++) {
+      const cap = E.rollCaption(d1, d2);
+      assert.equal(cap.d1, d1);
+      assert.equal(cap.d2, d2);
+      assert.equal(cap.total, d1 + d2);
+      assert.equal(cap.hard, d1 === d2);
+      assert.equal(E.rollPairKey(d1, d2), Math.min(d1, d2) + "-" + Math.max(d1, d2));
+    }
+  }
+  let g = E.placeBet(point(game(), 9), { kind: "hardway", number: 8 }, $(5)).state;
+  g = E.placeBet(g, { kind: "hop", pair: "4-4" }, $(1)).state;
+  const hard = E.settle(g, 4, 4);
+  assert.equal(hard.dice.total, 8);
+  assert.equal(hard.dice.hard, true);
+  assert.equal(hard.decisions.find((d) => d.bet === "Hard 8").result, "win");
+  assert.equal(hard.decisions.find((d) => d.bet === "Hop 4-4").result, "win");
+  const horn = E.settle(E.placeBet(game(), { kind: "horn" }, $(4)).state, 6, 6);
+  assert.equal(horn.dice.total, 12);
+  assert.equal(horn.decisions.find((d) => d.bet === "Horn").result, "win");
 });
 
 test("all 10 repeater pays, limits, and any 7 loses them", () => {
@@ -1171,4 +1205,64 @@ test("hit and split collects a side hit and waits for the next point", () => {
   g = point(a.state, 8);
   a = autoBet(g, "B14", $(5), { count: false });
   assert.equal(a.state.bets.place[6], $(12));
+});
+
+test("a hand press on the B14 start number is not regressed", () => {
+  let g = point(game("regular", $(500)), 4);
+  g = E.placeBet(g, { kind: "place", number: 6 }, $(18)).state;
+  g = E.placeBet(g, { kind: "place", number: 8 }, $(6)).state;
+  g = E.placeBet(g, { kind: "buy", number: 4 }, $(5)).state;
+  g = E.placeBet(g, { kind: "buy", number: 10 }, $(5)).state;
+  g = E.placeBet(g, { kind: "buy", number: 5 }, $(5)).state;
+  g = E.placeBet(g, { kind: "buy", number: 9 }, $(5)).state;
+  g.strategy = { id: "B14", rolls: 1, data: { start: 6, across: true, step: 3, override: { 6: true } } };
+  g = roll(g, 6).state;
+  const a = autoBet(g, "B14", $(5), { count: false });
+  assert.equal(a.state.bets.place[6], $(18));
+  assert.notEqual(a.state.strategy.data.regressDone, true);
+});
+
+test("hit and split stops after six lost starts and ignores a come-out 7", () => {
+  let g = point(game(), 4);
+  g.strategy = { id: "B14", rolls: 0, data: { start: 6 } };
+  let a = autoBet(g, "B14", $(5), { count: false });
+  assert.equal(a.state.strategy.data.armed, true);
+  g = roll(a.state, 4).state;
+  assert.equal(g.phase, "come-out");
+  assert.equal(g.bets.place[6], $(12));
+  g = roll(g, 7).state;
+  assert.equal(g.bets.place[6], $(12));
+  a = autoBet(g, "B14", $(5), { count: false });
+  assert.equal(a.state.strategy.data.startsLost || 0, 0);
+  assert.equal(a.state.strategy.id, "B14");
+
+  g = point(game(), 5);
+  g.strategy = { id: "B14", rolls: 0, data: { start: 6 } };
+  for (let i = 1; i <= 5; i++) {
+    if (g.phase !== "point") g = point(g, 5);
+    a = autoBet(g, "B14", $(5), { count: false });
+    assert.equal(a.state.bets.place[6], $(12));
+    g = roll(a.state, 7).state;
+    a = autoBet(g, "B14", $(5), { count: false });
+    assert.equal(a.state.strategy.data.startsLost, i);
+    g = a.state;
+  }
+  if (g.phase !== "point") g = point(g, 5);
+  a = autoBet(g, "B14", $(5), { count: false });
+  g = roll(a.state, 7).state;
+  a = autoBet(g, "B14", $(5), { count: false });
+  assert.equal(a.state.strategy, null);
+  assert.match(a.message, /6 starts lost/);
+});
+
+test("auto power press says so when the chips cannot cover the give", () => {
+  let g = point(game(), 8);
+  g = E.placeBet(g, { kind: "place", number: 6 }, $(6)).state;
+  g.billyMark = { place: { 6: true }, buy: {} };
+  g = roll(g, 6).state;
+  g.bankroll = 0;
+  g.autoPress = { mode: "power", max: 3, counts: {} };
+  const pressed = applyAutoPress(g);
+  assert.equal(pressed.ok, false);
+  assert.match(pressed.message || "", /not enough chips/);
 });

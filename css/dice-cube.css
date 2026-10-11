@@ -1,6 +1,6 @@
-/* Billy Bubs CSS 3D die: 6 flat faces, real cube, lit by a fixed light; tumble then settle with RESULT FACE UP-FRONT.
-   Usage: <div class="cube3d" style="--s:68px"><div class="cube" data-face="5"> 6 x <i class="f f1..f6"></i> </div></div>
-   Opposite faces sum to 7. Layout: front=1, back=6, right=3, left=4, top=2, bottom=5 (standard right-handed die). */
+/* Billy Bubs CSS 3D die: 6 flat faces, real cube, lit by a fixed light.
+   The settled result is the TOP face (normal mostly up, tipped toward the camera).
+   Opposite faces sum to 7. Layout at identity: front=1, back=6, right=3, left=4, top=2, bottom=5. */
 .cube3d{width:var(--s);height:var(--s);perspective:calc(var(--s)*9);filter:drop-shadow(0 calc(var(--s)*.16) calc(var(--s)*.12) rgba(0,0,0,.45))}
 .cube3d .cube{position:relative;width:100%;height:100%;transform-style:preserve-3d;transition:transform 420ms cubic-bezier(.2,1.4,.4,1)}
 .cube3d .f{position:absolute;inset:0;border-radius:16%;background-size:cover;backface-visibility:hidden;box-shadow:inset 0 0 calc(var(--s)*.08) rgba(0,0,0,.18)}
@@ -20,13 +20,13 @@
 .cube3d .cube[data-face="5"] .f5{--shade:transparent}
 .cube3d .cube[data-face="6"] .f6{--shade:transparent}
 .cube3d .cube.tumbling .f{--shade:rgba(0,0,0,.12)}
-/* resting pose per result: result face toward viewer, tipped so two side faces show */
-.cube3d .cube[data-face="1"]{--rest:rotateX(-22deg) rotateY(24deg);transform:var(--rest)}
-.cube3d .cube[data-face="6"]{--rest:rotateX(-22deg) rotateY(204deg);transform:var(--rest)}
-.cube3d .cube[data-face="3"]{--rest:rotateX(-22deg) rotateY(-66deg);transform:var(--rest)}
-.cube3d .cube[data-face="4"]{--rest:rotateX(-22deg) rotateY(114deg);transform:var(--rest)}
-.cube3d .cube[data-face="2"]{--rest:rotateX(-112deg) rotateY(0deg) rotateZ(24deg);transform:var(--rest)}
-.cube3d .cube[data-face="5"]{--rest:rotateX(68deg) rotateY(0deg) rotateZ(-24deg);transform:var(--rest)}
+/* Rest pose: that face is on top, tipped ~50deg toward the camera, pips upright. */
+.cube3d .cube[data-face="1"]{--rest:matrix3d(-0.9613,0,0.2756,0,0.1772,0.766,0.6179,0,0.2112,-0.6428,0.7364,0,0,0,0,1);transform:var(--rest)}
+.cube3d .cube[data-face="2"]{--rest:matrix3d(-0.9613,0,0.2756,0,-0.2112,0.6428,-0.7364,0,0.1772,0.766,0.6179,0,0,0,0,1);transform:var(--rest)}
+.cube3d .cube[data-face="3"]{--rest:matrix3d(0.2112,-0.6428,0.7364,0,0.1772,0.766,0.6179,0,0.9613,0,-0.2756,0,0,0,0,1);transform:var(--rest)}
+.cube3d .cube[data-face="4"]{--rest:matrix3d(-0.2112,0.6428,-0.7364,0,0.1772,0.766,0.6179,0,-0.9613,0,0.2756,0,0,0,0,1);transform:var(--rest)}
+.cube3d .cube[data-face="5"]{--rest:matrix3d(-0.9613,0,0.2756,0,0.2112,-0.6428,0.7364,0,-0.1772,-0.766,-0.6179,0,0,0,0,1);transform:var(--rest)}
+.cube3d .cube[data-face="6"]{--rest:matrix3d(0.9613,0,-0.2756,0,0.1772,0.766,0.6179,0,-0.2112,0.6428,-0.7364,0,0,0,0,1);transform:var(--rest)}
 /* tumble eases INTO the rest pose. JS sets data-face first, then .tumbling. 100% is the rest pose. */
 @keyframes bb-tumble{
   0%{transform:translateY(calc(var(--s)*-1.2)) rotateX(40deg) rotateY(20deg) rotateZ(8deg)}

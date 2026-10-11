@@ -123,7 +123,33 @@ Measured in Chromium at 390×844 and 844×390 (`shot-run7.mjs`). Compare shots a
 
 79 tests pass. `robots` meta `noindex, nofollow` is still on the page.
 
-Still open, from the non-blocking polish list: blazing ember trail, badge detail "THE RULE" card, dome roll-history overflow, empty ROLL kicker, one-line limit chip, roll-toast spacing, coach "WARM", the Crapless-extension chip on a Regular B14, a right-aligned LED roll count, the landscape felt rail, long-press bet preview, and the wide three-column layout.
+Still open after run 7, and closed in run 8 where noted below: blazing ember trail, badge detail "THE RULE" card, dome roll-history overflow, roll-toast spacing, and the right-aligned LED roll count. Still open: one-line limit chip, coach "WARM", the landscape felt rail, long-press bet preview, and the wide three-column layout.
+
+## Run 8
+
+The settled die was showing the result toward the camera while a different face sat on top. Rest poses now put the engine face on top, tipped toward the camera, with the pips upright. A browser test composes each face matrix with the cube rest matrix and checks all 36 pairs. Hardways, hops, and the horn settle from those same two faces. The sweep is `docs/qa/compare/run8-dice-36.jpg`.
+
+ATS (Low Rolls, High Rolls, Roll 'Em All, the sweep, and Spin the Block) is on in Crapless. Pays stay 31 / 31 / 156 for 1. Any 7 loses them, including a Crapless come-out 7, and Pass can win on that same roll. The five ATS badges count in both modes. Billy's Way is unchanged.
+
+Measured in Chromium (`shot-run8.mjs`):
+
+- Dome history shows the 10 newest rolls, nowrap, overflow hidden. The dock LAST 20 strip is gone on the dice page.
+- The ON puck is 36px, flush to the top-right of the point box (top 1px, right 0). The HUD puck stays.
+- After a Place 8 hit the keys read `PRESS 8 +$6` / `→ $12` and `POWER PRESS 8 → $18` / `add $5`.
+- A roll toast sits under the HUD (`top` 105px at 390) with the net in its own pill: `4·4 · HARD EIGHT | $7 | TAP FOR DOME ›`.
+- At 430px wide, `--felt-k` is 1.103 (cap 1.12, floor 0.78).
+- At 390, the point name ends at 226px and the mini dice start at 230px, so SIX is not clipped.
+- The leaderboard roll count is VT323 28px `#FFD36A`, right-aligned.
+- Badge detail shows Title Case tier and mode pills, a THE RULE card, and Odds / Pays / Edge.
+- Settings "Save initials" and "Apply to my existing entries" are gold pills.
+- Blazing dice use a 600ms ember animation. It is off under reduced motion.
+- Crapless shows the three ATS spots. Stage `touch-action` is `pan-y`.
+
+Auto Power Press toasts "Collected: not enough chips for the next step" when the give does not fit. A hand press on a Hit and Split number is not regressed. Six lost starts stop B14. A come-out 7 does not count as a lost start. Play this for B13 and B14 shows the bankroll check and can set a 40% loss limit and a 30% win goal. The session summary includes the longest hand, whether the limits were kept, and badges earned. #28 needs a loss limit. Ending before the next roll counts for #28 or #29. If both limits were hit, #29 wins. An idle end counts for #30 only.
+
+86 tests pass. `robots` meta `noindex, nofollow` is still on the page.
+
+Still later: Premium scaled and custom Power Press ladders, the rest of the tutor state table, long-press bet preview, the wide layout, and the fairness-card scroll for badge #25.
 
 ## Still short of the mockups
 

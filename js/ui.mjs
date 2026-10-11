@@ -474,6 +474,30 @@ function onClick(e) {
   if (act === "ruleset") { premiumSet = t.dataset.set; paint(); return; }
   if (act === "filter") { learnFilter = t.dataset.filter; paint(); return; }
   if (act === "strategy") { runStrategy(t.dataset.id); return; }
+  if (act === "strategy-level") {
+    if (t.disabled) return;
+    const sheet = t.closest(".sheet");
+    if (!sheet) return;
+    sheet.querySelectorAll("[data-act='strategy-level']").forEach((b) => b.classList.toggle("on", b === t));
+    const go = sheet.querySelector("[data-act='strategy-go']");
+    if (go) go.dataset.odds = t.dataset.level;
+    return;
+  }
+  if (act === "strategy-limits") {
+    const on = t.dataset.on !== "1";
+    t.dataset.on = on ? "1" : "0";
+    t.classList.toggle("on", on);
+    return;
+  }
+  if (act === "strategy-go") {
+    const lim = document.querySelector("[data-act='strategy-limits']");
+    if (lim && lim.dataset.on === "1") applyOfferedLimits();
+    const id = t.dataset.id;
+    const odds = t.dataset.odds || "max";
+    closeOverlay();
+    beginStrategy(id, odds);
+    return;
+  }
   if (act === "stop-strategy") { game.strategy = null; toast("Auto-bet stopped."); save(); paint(); return; }
   if (act === "strat-odds" && game.strategy && game.strategy.id === "B13") {
     game.strategy.data.odds = t.dataset.level || "max";
@@ -568,7 +592,7 @@ function switchMode(mode) {
   autoPause = settings.autoRoll ? "end" : "";
   emptyFelt = 0;
   if (mode === "crapless" && betTab === "lay") betTab = "place";
-  toast(mode === "crapless" ? "Crapless rules. Don't bets and ATS are off." : "Regular rules.");
+  toast(mode === "crapless" ? "Crapless rules. Don't bets are off. ATS stays up, and any 7 loses it." : "Regular rules.");
   save();
   paint();
 }
@@ -711,6 +735,7 @@ function doPress() {
   boardData.badges = noted.store.badges;
   boardData.progress = noted.store.progress;
   game = res.state;
+  markB14Override(st.number);
   A.press();
   haptic(12);
   toast(res.label);
@@ -728,6 +753,7 @@ function doPower() {
   boardData.badges = noted.store.badges;
   boardData.progress = noted.store.progress;
   game = res.state;
+  markB14Override(st.number);
   A.press();
   haptic(16);
   const cap = res.atMax ? "Capped at $1,000. " : "";
@@ -737,6 +763,88 @@ function doPower() {
   paint();
 }
 
+function markB14Override(number) {
+  if (!number || !game.strategy || game.strategy.id !== "B14") return;
+  const data = game.strategy.data || (game.strategy.data = {});
+  data.override = data.override || {};
+  data.override[number] = true;
+}
+
+function b13BankNeeds(mode) {
+  if (mode === "crapless") return { max: 200000, "2": 125000, "1": 85000, flat: 20000 };
+  return { max: 125000, "2": 75000, "1": 50000, flat: 12500 };
+}
+function playThisSheet(id) {
+  const bank = E.netWorth(game);
+  const limitsOff = !settings.lossLimit || settings.lossLimit.kind === "off" || !settings.winGoal || settings.winGoal.kind === "off";
+  const limitBtn = limitsOff
+    ? "<button class='on' data-act='strategy-limits' data-on='1'>Set a 40% loss limit and a 30% win goal</button>"
+    : "<p>Your session limits stay as you set them.</p>";
+  if (id === "B14") {
+    const need = 24000;
+    const short = bank < need;
+    return "<h2>Play Hit and Split</h2><p>Twenty starts need " + money(need) + " ($12 a start). You have " + money(bank) + ".</p>" +
+      (short ? "<p>Short of 20 starts. It still places the $12 when the chips are there.</p>" : "<p>That fits. A number you press by hand stays at your amount.</p>") +
+      "<p>It stops after 6 starts lost, or at your session loss limit, whichever comes first.</p>" +
+      limitBtn +
+      "<div class='actions'><button data-act='close'>Not now</button><button class='go' data-act='strategy-go' data-id='B14'>Play this</button></div>";
+  }
+  const needs = b13BankNeeds(game.mode);
+  const worst = game.mode === "crapless"
+    ? { max: 23000, "2": 15000, "1": 10000, flat: 5000 }
+    : { max: 15000, "2": 9000, "1": 6000, flat: 3000 };
+  const prefer = game.mode === "crapless" ? "1" : "2";
+  const order = ["max", "2", "1", "flat"];
+  const fitting = order.filter((level) => bank >= needs[level]);
+  const suggest = fitting.indexOf(prefer) >= 0 ? prefer : (fitting[0] || "flat");
+  const labels = { max: "Max odds", "2": "2x", "1": "1x", flat: "Flat" };
+  const buttons = order.map((level) => {
+    const fit = bank >= needs[level];
+    return "<button class='" + (level === suggest && fit ? "on" : "") + "'" + (fit ? "" : " disabled") +
+      " data-act='strategy-level' data-level='" + level + "'>" + labels[level] +
+      " · " + money(needs[level]) + " · worst " + money(worst[level]) + "</button>";
+  }).join("");
+  const named = suggest === "max" ? "Max odds" : suggest === "flat" ? "Flat" : suggest + "x";
+  return "<h2>Play Continuous Come</h2><p>You have " + money(bank) + ". Pick an odds level that fits. The app will not lower it for you.</p>" +
+    "<div class='actions'>" + buttons + "</div><p>Suggested: " + named + ".</p>" +
+    "<p>Each Come bet is a new Pass Line. A new one every roll means about one flat bet per roll.</p>" +
+    limitBtn +
+    "<div class='actions'><button data-act='close'>Not now</button><button class='go' data-act='strategy-go' data-id='B13' data-odds='" + suggest + "'>Play this</button></div>";
+}
+function applyOfferedLimits() {
+  const before = {
+    loss: Object.assign({}, settings.lossLimit),
+    win: Object.assign({}, settings.winGoal),
+  };
+  if (!settings.lossLimit || settings.lossLimit.kind === "off") {
+    settings.lossLimit = { kind: "pct", amount: (settings.lossLimit && settings.lossLimit.amount) || 2500, pct: 40 };
+  }
+  if (!settings.winGoal || settings.winGoal.kind === "off") {
+    settings.winGoal = { kind: "pct", amount: (settings.winGoal && settings.winGoal.amount) || 2500, pct: 30 };
+  }
+  const after = { loss: settings.lossLimit, win: settings.winGoal };
+  if (boardData.session && !boardData.session.ended) {
+    if (Sess.limitsLoosened(before, after, boardData.session)) {
+      boardData.session = Sess.markLoosened(boardData.session);
+    }
+    boardData.session = Sess.applyLiveLimits(boardData.session, after);
+  }
+}
+function beginStrategy(id, odds) {
+  const card = S.strategyById(id);
+  const data = {};
+  if (id === "B13") data.odds = odds || "max";
+  game.strategy = { id, rolls: 0, data };
+  view = "play";
+  page = 1;
+  syncAutoPress();
+  const res = S.autoBet(game, id, settings.chip, { count: false });
+  game = res.state;
+  toast(res.message || (card ? card.name : id) + " is placing bets for you. Cancel any time.");
+  save();
+  paint();
+  startTimer();
+}
 function runStrategy(id) {
   const card = S.strategyById(id);
   if (!card) return;
@@ -745,16 +853,11 @@ function runStrategy(id) {
     toast(card.name + " is for " + card.mode + ".");
     return;
   }
-  game.strategy = { id, rolls: 0, data: {} };
-  view = "play";
-  page = 1;
-  syncAutoPress();
-  const res = S.autoBet(game, id, settings.chip, { count: false });
-  game = res.state;
-  toast(res.message || card.name + " is placing bets for you. Cancel any time.");
-  save();
-  paint();
-  startTimer();
+  if (id === "B13" || id === "B14") {
+    openSheet(playThisSheet(id));
+    return;
+  }
+  beginStrategy(id);
 }
 
 function testRngAllowed() {
@@ -815,9 +918,9 @@ async function doRoll(source) {
   let autoPressed = false;
   if (!(game.strategy && game.strategy.id === "B5")) {
     const pressed = S.applyAutoPress(game);
+    if (pressed.message) pressNote = pressed.message;
     if (pressed.ok) {
       game = pressed.state;
-      pressNote = pressed.message || "";
       autoPressed = true;
     }
   }
@@ -840,7 +943,12 @@ async function doRoll(source) {
   maybeTutor(settled);
   noteHandRoll(handBefore, settled, dice, hadBetNow, pointBefore, source === "auto" ? "auto" : "manual", totalBefore, edgeCap, onTable, autoPressed);
   maybeRecord(handBefore, settled, dice, hadBetNow);
+  if (settled.result === "seven-out" && boardData.session && !boardData.session.ended) {
+    const length = handBefore.rolls + 1;
+    if (!boardData.session.longest || length > boardData.session.longest) boardData.session.longest = length;
+  }
   noteSession(hadBetNow, settled);
+  maybeAtsNote(settled);
   if (emptyFelt >= 3 && settings.autoRoll && !autoPause) {
     autoPause = "empty";
     toast("Auto-roll paused · nothing on the felt");
@@ -977,6 +1085,11 @@ function noteHandRoll(before, settled, dice, hadBet, pointBefore, source, totalB
 }
 function queueUnlocks(ids) {
   ids.forEach((id) => { if (badgeQueue.indexOf(id) < 0) badgeQueue.push(id); });
+  if (boardData.session && !boardData.session.ended && ids.length) {
+    const have = boardData.session.badges || [];
+    ids.forEach((id) => { if (have.indexOf(id) < 0) have.push(id); });
+    boardData.session.badges = have;
+  }
   if (!badgeTimer) pumpBadges();
 }
 function badgeBlocked() {
@@ -1023,28 +1136,37 @@ function pumpBadges() {
   const def = B.badgeById(id);
   if (!def) { pumpBadges(); return; }
   showBadgeToast(def);
-  const ms = (def.marquee || def.tier === "gold" || def.tier === "legendary") ? 4500 : 3000;
+  const ms = def.marquee ? 4500 : 3000;
   badgeTimer = setTimeout(() => { badgeTimer = 0; pumpBadges(); }, ms);
 }
 function showBadgeToast(def) {
   const host = badgeHost();
   host.classList.remove("out");
-  const marquee = def.tier === "gold" || def.tier === "legendary" || def.marquee;
-  document.body.classList.toggle("mascot-toast", !!marquee);
-  const line = def.tier === "legendary" ? "Spin it to win it!" : "That's a keeper.";
+  const marquee = !!def.marquee;
+  document.body.classList.toggle("mascot-toast", marquee);
+  const lines = {
+    spin_the_block: "Spin it to win it!",
+    ats_sweep_one_hand: "Low, high, and all of them.",
+    hand_40_rolls: "Forty rolls. The dice have no memory.",
+    points_six_one_hand: "All six points, one hand.",
+    crapless_six_points_one_hand: "Six Crapless points, one hand.",
+  };
+  const line = lines[def.id] || (def.tier === "legendary" ? "A rare one. Still random." : "That's a keeper.");
+  const facts = [def.pay, def.edge].filter(Boolean).join(" · ");
   if (marquee) {
     host.innerHTML = "<div class='badgetoast marquee " + def.tier + "' data-id='" + def.id + "'>" +
       "<i class='burst' aria-hidden='true'></i>" +
       "<img class='art' src='" + B.artFile(def.id, "open") + "' alt=''>" +
       "<img class='billie' src='assets/mascots/billie/billie-C-" + (def.tier === "legendary" ? "winner" : "cheer") + ".svg' alt='Bubbles Billie'>" +
-      "<div><em class='tierpill'>" + def.tier + "</em><b>" + esc(def.name) + "</b><div>" + esc(def.desc) + "</div>" +
+      "<div><em class='tierpill'>" + def.tier + "</em><b>" + esc(def.name) + "</b>" +
+      (facts ? "<span class='facts'>" + esc(facts) + "</span>" : "") +
       "<p class='billieline'>" + line + "</p></div>" +
       "<button type='button' data-act='badge-view' data-id='" + def.id + "'>VIEW</button></div>";
   } else {
     host.innerHTML = "<div class='badgetoast' data-id='" + def.id + "'>" +
       "<img class='art' src='" + B.artFile(def.id, "open") + "' alt=''>" +
       "<div><b>Badge: " + esc(def.name) + "</b><div>" + esc(def.desc) + "</div>" +
-      (def.odds ? "<small>" + esc(def.odds) + "</small>" : "") + "</div></div>";
+      (facts ? "<small>" + esc(facts) + "</small>" : (def.odds ? "<small>" + esc(def.odds) + "</small>" : "")) + "</div></div>";
   }
   const card = host.querySelector(".badgetoast");
   if (!card) return;
@@ -1072,9 +1194,11 @@ function awardSession(session, reason) {
     winCents: session.badgeWinCents != null ? session.badgeWinCents : session.winCents,
     winPromptAfter20: !!session.promptedWin && session.betRolls >= 20,
     lossPromptAfter20: !!session.promptedLoss && session.betRolls >= 20,
-    endedAtWin: reason === "win",
-    endedAtLoss: reason === "loss",
-    endedBeforeNextRoll: reason === "win" || reason === "loss",
+    endedAtWin: reason === "win" || ((reason === "end") && session.winHit && !session.lossHit && !session.rollAfterLoss),
+    endedAtLoss: reason === "loss" || ((reason === "loss" || reason === "end") && session.lossHit && !session.rollAfterLoss),
+    endedBeforeNextRoll: (reason === "win" || reason === "loss" || reason === "end") && !session.rollAfterLoss && (session.lossHit || session.winHit),
+    winHit: !!session.winHit,
+    lossHit: !!session.lossHit,
     rollAfterLoss: !!session.rollAfterLoss,
     now,
     mode: game.mode,
@@ -1142,7 +1266,12 @@ function finishSession(reason) {
   saveBoard();
   const s = boardData.session;
   const net = s ? E.netWorth(game) - s.startChips : 0;
-  openSheet("<h2>Session summary</h2><p>" + (s ? s.rolls : 0) + " rolls · " + (s ? s.hands : 0) + " hands</p><p>" + money(s ? s.startChips : 0) + " → " + money(E.netWorth(game)) + " · " + (net >= 0 ? "+" : "−") + money(Math.abs(net)) + "</p><p>Longest hand on this device stays on the board.</p><p>Practice chips carry over. A new session starts with your next roll.</p><div class='actions'><button class='go' data-act='close'>Close</button></div>");
+  const longest = s && s.longest ? s.longest + " rolls" : "none yet";
+  const lossKept = !s || !s.lossCents ? "Loss limit off" : s.lossHit ? (s.rollAfterLoss ? "Loss limit hit, then play continued" : "Loss limit kept") : "Loss limit not reached";
+  const winKept = !s || !s.winCents ? "Win goal off" : s.winHit ? (reason === "win" || !s.rollAfterLoss ? "Win goal banked" : "Win goal hit") : "Win goal not reached";
+  const names = (s && s.badges || []).map((id) => { const b = B.badgeById(id); return b ? b.name : id; });
+  const badgeLine = names.length ? names.join(", ") : "None this session";
+  openSheet("<h2>Session summary</h2><p>" + (s ? s.rolls : 0) + " rolls · " + (s ? s.hands : 0) + " hands</p><p>" + money(s ? s.startChips : 0) + " → " + money(E.netWorth(game)) + " · " + (net >= 0 ? "+" : "−") + money(Math.abs(net)) + "</p><p>Longest hand this session: " + longest + ".</p><p>" + lossKept + ". " + winKept + ".</p><p>Badges this session: " + esc(badgeLine) + ".</p><p>Practice chips carry over. A new session starts with your next roll.</p><div class='actions'><button class='go' data-act='close'>Close</button></div>");
   paint();
 }
 function resetTable() {
@@ -1182,7 +1311,7 @@ function stepLimit(which, field, dir) {
   const spec = which === "win" ? settings.winGoal : settings.lossLimit;
   const before = { loss: Object.assign({}, settings.lossLimit), win: Object.assign({}, settings.winGoal) };
   if (field === "pct") {
-    const choices = which === "win" ? [10, 25, 50, 100] : [10, 20, 25, 50];
+    const choices = which === "win" ? [10, 25, 30, 50, 100] : [10, 20, 25, 40, 50];
     let i = choices.indexOf(spec.pct);
     if (i < 0) i = 0;
     spec.pct = choices[Math.max(0, Math.min(choices.length - 1, i + dir))];
@@ -1243,6 +1372,9 @@ function measureChrome() {
   if (dots && dots.offsetHeight) {
     document.documentElement.style.setProperty("--dots-top", dots.getBoundingClientRect().top + "px");
   }
+  if (hud && hud.offsetHeight) {
+    document.documentElement.style.setProperty("--hud-bottom", hud.getBoundingClientRect().bottom + "px");
+  }
 }
 function noteFair() {
   const scope = fairScope === "last" ? "last" : fairScope === "all" ? "all" : "session";
@@ -1259,7 +1391,7 @@ function fitFelt() {
   let k = Math.min(s.width / 390, Math.max(160, s.height) / 505);
   if (!(k > 0)) k = 0.78;
   if (k < 0.78) k = 0.78;
-  if (k > 1) k = 1;
+  if (k > 1.12) k = 1.12;
   document.documentElement.style.setProperty("--felt-k", k.toFixed(3));
   felts.forEach((f) => f.classList.add("scaled"));
   measureChrome();
@@ -1604,7 +1736,8 @@ function leaderHTML() {
       "<span class='rank medal " + (medals[i] || "") + "'>" + (i + 1) + "</span>" +
       "<div class='boardmain'><b>" + esc(e.name) + "</b>" +
       (mine ? "<i class='youtag'>YOU</i>" : "") +
-      "<small>" + e.throws + " rolls · " + pts + " · " + esc(L.formatWhen(e.at)) + " · " + esc(L.formatClock(e.at)) + "</small></div>" +
+      "<small>" + pts + " · " + esc(L.formatWhen(e.at)) + " · " + esc(L.formatClock(e.at)) + "</small></div>" +
+      "<span class='rollcount'>" + e.throws + "</span>" +
       "<span class='tierchip " + tier + "'>" + tier + "</span></li>";
   }).join("") + "</ol>" : "<article class='card boardempty'><img src='assets/mascots/billie/billie-C-hello.svg' alt='Bubbles Billie'><div><h3>No finished hands yet</h3><p>" + emptyCopy + "</p></div></article>";
   const live = game.hand && game.hand.rolls > 0
@@ -1689,13 +1822,20 @@ function openBadge(id) {
     openSheet("<h2>Hidden badge</h2><p>" + b.tier + " · locked</p><p>Badges never change the odds or payouts.</p><div class='actions'><button class='go' data-act='close'>Close</button></div>");
     return;
   }
-  const when = got ? L.formatWhen(got.at) + " " + L.formatClock(got.at) : "Locked";
-  openSheet("<img src='" + B.artFile(b.id, got ? "open" : "locked") + "' alt='' width='96'>" +
-    "<h2>" + esc(b.name) + "</h2><p>" + b.tier + " · " + (b.mode === "both" ? "Both modes" : b.mode) + "</p>" +
-    "<p>" + esc(b.desc) + "</p><p>" + esc(b.rule) + "</p>" +
-    (b.odds ? "<p>" + esc(b.odds) + "</p>" : "") +
-    "<p>" + when + (got && got.count > 1 ? " · Earned " + got.count + " times" : "") + "</p>" +
-    "<p>Badges never change the odds or payouts. Every roll is random.</p><div class='actions'><button class='go' data-act='close'>Close</button></div>");
+  const tierName = b.tier.charAt(0).toUpperCase() + b.tier.slice(1);
+  const modeName = b.mode === "both" ? "Both" : b.mode === "crapless" ? "Crapless" : "Regular";
+  const when = got ? "First earned " + L.formatWhen(got.at) + " " + L.formatClock(got.at) : "Not earned yet";
+  const times = got ? (got.count + " time" + (got.count === 1 ? "" : "s")) : "0 times";
+  openSheet("<div class='badgedetail'><img src='" + B.artFile(b.id, got ? "open" : "locked") + "' alt='' width='96'>" +
+    "<h2>" + esc(b.name) + "</h2>" +
+    "<div class='pills'><span class='tierpill'>" + tierName + "</span><span class='modepill'>" + modeName + "</span></div>" +
+    "<p>" + esc(b.desc) + "</p>" +
+    "<article class='rulecard'><h3>THE RULE</h3><p>" + esc(b.rule) + "</p></article>" +
+    "<div class='factrow'><div><small>Odds</small><b>" + esc(b.odds || "—") + "</b></div>" +
+    "<div><small>Pays</small><b>" + esc(b.pay || "—") + "</b></div>" +
+    "<div><small>Edge</small><b>" + esc(b.edge || "—") + "</b></div></div>" +
+    "<p>" + when + " · " + times + "</p>" +
+    "<p>Badges never change the odds or payouts. Every roll is random.</p><div class='actions'><button class='go' data-act='close'>Close</button></div></div>");
 }
 
 function blazeLesson(tier) {
@@ -1735,6 +1875,27 @@ function maybeTutor(settled) {
   if (settled.result === "point-set") openTutor(3);
   else if (settled.result === "seven-out" || settled.result === "point-made") openTutor(5);
 }
+function maybeAtsNote(settled) {
+  if (!settings.tutorOn || !settled) return;
+  const decisions = settled.decisions || [];
+  const atsLost = decisions.some((d) => d.result === "lose" && /^(Low Rolls|High Rolls|Roll 'Em All)$/.test(d.bet || ""));
+  if (settled.result === "natural" && settled.dice && settled.dice.total === 7 && atsLost && !settings.seenAtsComeout) {
+    settings.seenAtsComeout = true;
+    save();
+    if (document.querySelector(".overlay, .coach")) {
+      queueToast("Seven on the come-out: Pass wins, and a 7 ends Low Rolls, High Rolls, and Roll 'Em All.", "", 1600);
+    } else openTutor(0, "ats7");
+  }
+  if (game.mode === "crapless" && settled.result === "point-set" && [2, 3, 11, 12].indexOf(game.point) >= 0 && !settings.seenAtsLamp) {
+    if (game.bets.small || game.bets.tall || game.bets.all) {
+      settings.seenAtsLamp = true;
+      save();
+      const n = game.point;
+      const name = n <= 6 ? "Low Rolls" : "High Rolls";
+      queueToast("That " + n + " set your point, and it also lit " + name + "'s " + n + " lamp. ATS counts every roll's total.", "", 900);
+    }
+  }
+}
 
 function currentTip() {
   const experienced = settings.tutorTrack === "experienced";
@@ -1749,7 +1910,7 @@ function currentTip() {
       title: "Come-out",
       body: experienced
         ? "1 in 6 chance of a 2/3/11/12 point. Max odds there is 3x."
-        : "Come-out! Only a 7 wins right away. Nothing loses on this roll.",
+        : "Come-out! Only a 7 wins Pass right away. A 7 also loses Low Rolls, High Rolls, and Roll 'Em All.",
     };
   }
   if (game.phase === "come-out") {
@@ -1775,7 +1936,7 @@ function tutorSteps() {
   return [
     { id: "s1", title: "Practice chips", body: "Education only. Play money only. No real gambling, no deposits, no cash-out, no prizes. The machine rolls. Regular has the lower edge. Crapless is a variant." },
     { id: "s2", title: "Puck OFF", body: "Come-out roll. Bet the Pass Line. Your bankroll says Practice chips." },
-    { id: "s3", title: "Come-out results", body: crapless ? "Only a 7 wins right away. 2, 3, 11, and 12 become the point. Nothing loses on the come-out." : "7 and 11 win. 2, 3, and 12 lose. 4, 5, 6, 8, 9, and 10 become the point." },
+    { id: "s3", title: "Come-out results", body: crapless ? "Only a 7 wins Pass right away. 2, 3, 11, and 12 become the point. Come-out 7 with ATS up: Pass wins, and any 7 loses Low Rolls, High Rolls, and Roll 'Em All." : "7 and 11 win. 2, 3, and 12 lose. 4, 5, 6, 8, 9, and 10 become the point. A 7 also loses ATS." },
     { id: "s4", title: "Odds", body: "When the puck is ON, add Odds. There is no house edge on odds, up to 3x, 4x, or 5x. The expected loss in chips stays tied to the flat bet. Swings get bigger." },
     { id: "s5", title: "Numbers", body: "Place 6 and 8 (1.52%). On 4, 5, 9, and 10, Buy is cheaper than Place when the 5% commission is taken only on a win." },
     { id: "s6", title: "The cycle", body: "A point hit turns the puck OFF. A seven-out takes the line, Place, and Buy. That is normal. Dice have no memory." },
@@ -1806,9 +1967,18 @@ function openTutor(step, force) {
     ? { id: "billy", title: "Billy's Way", body: settings.tutorTrack === "experienced" ? "1.71% blended in Regular, 1.43% in Crapless. Each spot is the cheaper way to bet that number. A 7 takes them all. Seven-out exposure is 6.4 units in Regular and 10.4 in Crapless per press." : "Billy's Way buys the outside numbers and places 6 and 8. A 7 takes them all down.", edge: 1.71 }
     : force === "press"
       ? { id: "press", title: "Press", body: "That extra unit came from your chips. Bigger bet, same odds. The house edge does not change. What is at risk, and the swings, go up.", edge: 1.52 }
-      : force === "power"
+        : force === "power"
         ? { id: "power", title: "Power Press", body: "The win was already yours. Putting it back on the number is not house money. Same odds, bigger swings.", edge: 1.52 }
-        : currentTip();
+        : force === "ats7"
+          ? {
+            id: "ats-comeout",
+            title: "Come-out 7 with ATS up",
+            body: settings.tutorTrack === "experienced"
+              ? "Come-out 7: Pass wins, and every ATS bet up loses. ATS edges are the same in both modes (18.30% / 17.98%). Crapless hands are shorter, so Low Rolls hits about 1 hand in 29 instead of 1 in 27."
+              : "Seven on the come-out: your Pass Line wins, but a 7 ends Low Rolls, High Rolls and Roll 'Em All. ATS only cares about the dice total, not the point.",
+            edge: 18.3,
+          }
+          : currentTip();
   currentCoachTip = tip;
   coachOn = true;
   const steps = tour ? tutorSteps() : [];
@@ -1903,7 +2073,7 @@ function showRollToast(settled, extra) {
   const el = document.getElementById("toast");
   if (!el) return;
   const net = settled.net || 0;
-  const netHtml = net === 0 ? "" : "<b class='" + (net > 0 ? "up" : "down") + "'>" + money(net) + "</b>";
+  const netHtml = net === 0 ? "" : "<b class='netpill " + (net > 0 ? "up" : "down") + "'>" + money(net) + "</b>";
   const billie = net > 0 && !isBigWin(settled)
     ? "<img class='toast-billie' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'>"
     : "";
@@ -2008,7 +2178,7 @@ function hudHTML() {
     "<div class='hud-row2'><div class='hud-bank'><small>Chips</small><strong>" + money(game.bankroll) + "</strong></div>" +
     "<div class='hud-bank'><small>On table</small><strong>" + money(on) + "</strong></div>" +
     rollHud() +
-    "<div class='hud-puck'>" + puck + "</div>" + dice + heaterHTML(false) +
+    "<div class='hud-puck hud-point'>" + puck + "</div>" + dice + heaterHTML(false) +
     limitChip() +
     "<button class='fairchip' data-act='view' data-view='fair' aria-label='Fair Dice'>FAIR</button></div>";
 }
@@ -2086,7 +2256,7 @@ function boardHTML() {
     kind: "hardway", number: n, name: "HARD " + n, pay, stake: b.hardways[n], label: "Hard " + n,
   })).join("");
   const lamps = [4, 6, 8, 10].map((n) => "<i class='lamp" + (game.progress.hardAllDay[n] ? " on" : "") + "'>" + n + "</i>").join("");
-  const ats = crapless ? "" : "<div class='ats'>" + [
+  const ats = "<div class='ats'>" + [
     ["small", "LOW ROLLS", "31 FOR 1"],
     ["all", "ROLL 'EM ALL", "156 FOR 1"],
     ["tall", "HIGH ROLLS", "31 FOR 1"],
@@ -2096,8 +2266,11 @@ function boardHTML() {
     const come = game.bets.comeBets[n];
     const word = faceWord(n);
     const spelled = n === 6 || n === 9 ? " spelled" : "";
+    const onPuck = game.phase === "point" && game.point === n
+      ? "<img class='feltpuck' src='assets/icons/puck-on.svg' alt='Point on'>"
+      : "";
     return "<div class='numbox'><button class='half buy" + (b.buy[n] ? " has" : "") + "' data-act='bet' data-kind='buy' data-number='" + n + "' aria-label='Buy " + n + (b.buy[n] ? ", " + money(b.buy[n]) : "") + "'><span>BUY</span>" +
-      chipStack(b.buy[n]) + "</button><div class='face" + spelled + "'>" + word +
+      chipStack(b.buy[n]) + "</button><div class='face" + spelled + "'>" + word + onPuck +
       (come && come.amount ? "<div class='cmark'>C " + money(come.amount) + "</div>" : "") +
       "</div><button class='half place" + (b.place[n] ? " has" : "") + "' data-act='bet' data-kind='place' data-number='" + n + "' data-teach='place-" + n + "' aria-label='Place " + n + (b.place[n] ? ", " + money(b.place[n]) : "") + "'><span>PLACE</span>" +
       chipStack(b.place[n]) + "</button></div>";
@@ -2178,11 +2351,9 @@ function layoutExtras() {
   add("ce", null, "C & E", "stays up when it wins", b.ce);
   add("horn", null, "Horn", "comes down in $4 units", b.horn);
   [4, 6, 8, 10].forEach((n) => add("hardway", n, "Hard " + n, "stays up until a 7 or the easy way", b.hardways[n]));
-  if (game.mode !== "crapless") {
-    add("small", null, "Low Rolls", "31 for 1", b.small);
-    add("tall", null, "High Rolls", "31 for 1", b.tall);
-    add("all", null, "Roll 'Em All", "156 for 1", b.all);
-  }
+  add("small", null, "Low Rolls", "31 for 1", b.small);
+  add("tall", null, "High Rolls", "31 for 1", b.tall);
+  add("all", null, "Roll 'Em All", "156 for 1", b.all);
   add("hardAllDay", null, "Hard Way All Day", "165 for 1 · minus clears the lamps", b.hardAllDay);
   const billy = billyUp()
     ? "<button class='ghost' data-act='billy-down'>Take down Billy's Way</button>"
@@ -2285,8 +2456,8 @@ function domeCall() {
   if (game.point) return "Come on, " + game.point + "!";
   return "Coming out!";
 }
-function historyChips(list, markLatest) {
-  const arr = (list || []).slice(0, 20).reverse();
+function historyChips(list, markLatest, limit) {
+  const arr = (list || []).slice(0, limit || 20).reverse();
   return arr.map((h, i) => {
     const total = h && h.total != null ? h.total : h;
     const last = markLatest && i === arr.length - 1;
@@ -2315,17 +2486,28 @@ function domeHTML() {
     "<img class='dome-billy' src='assets/mascots/dealer-billy/" + billyPose + "' alt='Dealer Billy'>" +
     "<p class='speech'>" + domeCall() + "</p></div>" +
     line + win + heaterHTML(true) +
-    "<div class='rollstrip' aria-label='Last rolls'>" + historyChips(game.history, true) + "</div></div>";
+    "<div class='rollstrip' aria-label='Last rolls'>" + historyChips(game.history, true, 10) + "</div></div>";
 }
 
 function dockHTML() {
   const st = E.pressStatus(game);
   const chips = E.CHIPS.map((c) => "<button class='chip-btn" + (settings.chip === c ? " on" : "") + "' data-act='chip' data-cents='" + c + "' aria-label='$" + (c / 100) + " chip'>" + chipHTML(c) + "</button>").join("");
   const taps = game.pressStack.length;
-  const pressLine = rolling ? "PRESS" : (st.pressOk ? "PRESS " + st.number + " <em>+" + money(st.original) + "</em>" : "PRESS");
-  const pressSub = rolling ? "after a hit" : (st.pressOk ? "→ " + money((st.stake || 0) + (st.original || 0)) + (taps > 0 ? " · " + taps + " tap" + (taps === 1 ? "" : "s") : "") : (st.pressReason || "after a hit"));
-  const powerLine = rolling ? "POWER PRESS" : (st.powerOk ? st.powerLabel : "POWER PRESS");
-  const powerSub = rolling ? "after a hit" : (st.powerOk ? (st.powerGive > 0 ? "add " + money(st.powerGive) + " from chips" : (st.powerBack > 0 ? "get " + money(st.powerBack) : "even")) : (st.powerReason || "after a hit"));
+  const pressLine = rolling ? "PRESS" : (st.pressOk ? "PRESS " + st.number + " +" + money(st.original) : "PRESS");
+  const pressSub = rolling ? "after a hit" : (st.pressOk ? "→ " + money((st.stake || 0) + (st.original || 0)) : (st.pressReason || "after a hit"));
+  let powerLine = "POWER PRESS";
+  let powerSub = rolling ? "after a hit" : (st.powerReason || "after a hit");
+  if (!rolling && st.powerOk) {
+    const round = st.powerMode === "round" || st.powerMode === "round-capped";
+    if (round) {
+      powerLine = "POWER PRESS " + st.number + " +" + money(st.powerAdd || 0);
+      powerSub = "round-down";
+    } else {
+      const buy = st.powerKind === "buy" ? "Buy " : "";
+      powerLine = "POWER PRESS " + st.number + " → " + buy + money(st.powerTo || 0);
+      powerSub = st.powerGive > 0 ? "add " + money(st.powerGive) : (st.powerBack > 0 ? "get " + money(st.powerBack) : "even");
+    }
+  }
   const undo = taps ? "<button class='undodisc' data-act='undo'" + (rolling ? " disabled" : "") + " aria-label='Undo press'>↺</button>" : "";
   const clear = taps ? "<button class='clearchip' data-act='clear'" + (rolling ? " disabled" : "") + " aria-label='Clear presses'>×</button>" : "";
   const secs = !settings.autoRoll ? "" : autoPause ? "PAUSED" : "AUTO " + (settings.autoInterval || 15) + "s";
@@ -2333,8 +2515,7 @@ function dockHTML() {
   if (page === 0) {
     context = "<div class='context leftkeys'><button class='key' data-act='same'>SAME BET</button><button class='key' data-act='addchip'>ADD A CHIP</button><button class='key' data-act='takedown'>TAKE DOWN</button></div>";
   } else if (page === 2) {
-    const hist = historyChips(game.history, true);
-    context = "<div class='context last20'><b>LAST 20</b>" + hist + "</div>";
+    context = "";
   } else {
     const way = E.billysWayAmounts(settings.chip);
     context = "<div class='context midkeys'><button class='key" + (game.betsOff ? " on" : "") + "' data-act='betsoff'>BETS OFF</button>" +
@@ -2405,7 +2586,7 @@ function homeHTML() {
     "<p class='speech'>Bets down! Air's coming on.</p></div>" +
     "<p class='choose'>CHOOSE YOUR RULES</p>" +
     "<div class='modes'><button class='mode-card on' data-act='play' data-mode='regular'><i class='starttag'>START HERE</i><b>Regular</b><span>Pass, Don't, odds 3-4-5x.</span>" + edgeChip(0.37) + "<small>Pass + odds</small></button>" +
-    "<button class='mode-card' data-act='play' data-mode='crapless'><b>Crapless</b><span>Only a come-out 7 wins. No Don't. No ATS.</span>" + edgeChip(1.26) + "<small>Pass + odds</small></button></div>" +
+    "<button class='mode-card' data-act='play' data-mode='crapless'><b>Crapless</b><span>Only a come-out 7 wins. No Don't. ATS counts the dice total.</span>" + edgeChip(1.26) + "<small>Pass + odds</small></button></div>" +
     "<button class='cta' data-act='play' data-mode='regular'><b>PLAY REGULAR</b><small>TAP ROLL · AUTO-ROLL OPTIONAL IN SETTINGS</small></button>" +
     "<div class='ghostrow'><button class='ghost' data-act='tour'>TAKE THE TUTOR TOUR</button><button class='ghost' data-act='billy-help'>WHAT'S BILLY'S WAY?</button></div>" +
     "<button class='ghost boardlink' data-act='view' data-view='leaderboard'>BADGES AND LONGEST ROLLS</button>" +
@@ -2453,10 +2634,10 @@ function premiumHTML() {
     ["B-15", "Horn payouts", "30:1 / 15:1"],
     ["B-16", "Any 7 / Big Red", "4:1"],
     ["B-17", "Hardway payouts", "US 7:1 / 9:1"],
-    ["B-18", "Side-bet toggles", regular ? "All on, including ATS" : "All on · ATS off"],
+    ["B-18", "Side-bet toggles", "All on, including ATS"],
     ["B-19", "Hard Way All Day pay", "165 for 1 · 21.43%"],
-    ["B-20", "ATS comes down after a hit", regular ? "Off (stays up)" : "Not in Crapless"],
-    ["B-21", "ATS pay table", regular ? "31 / 31 / 156 for 1" : "Not in Crapless"],
+    ["B-20", "ATS comes down after a hit", "Off (stays up)"],
+    ["B-21", "ATS pay table", "31 / 31 / 156 for 1"],
     ["B-22", "Repeater pay table", "Standard 40/50/65/80/90"],
     ["B-23", "Repeater stay-up options", "All off"],
     ["B-24", "Repeaters in Crapless", regular ? "On" : "On"],
@@ -2485,7 +2666,7 @@ function premiumHTML() {
 function limitSetting(which, label) {
   const spec = which === "win" ? settings.winGoal : settings.lossLimit;
   const kinds = [["off", "Off"], ["amount", "Amount"], ["pct", "%"]];
-  const pcts = which === "win" ? [10, 25, 50, 100] : [10, 20, 25, 50];
+  const pcts = which === "win" ? [10, 25, 30, 50, 100] : [10, 20, 25, 40, 50];
   if (spec.kind === "pct" && pcts.indexOf(spec.pct) < 0) spec.pct = pcts[0];
   const detail = spec.kind === "amount" ? money(spec.amount || 2500) : spec.kind === "pct" ? spec.pct + "%" : "Off";
   return "<div class='setting stackpress'><div><b>" + label + "</b><div class='muted'>" + detail + ". Checked after each roll.</div></div><div class='seg'>" +

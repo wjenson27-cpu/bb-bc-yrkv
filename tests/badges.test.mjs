@@ -113,6 +113,80 @@ test("discipline badges refuse short, loosened, and reset sessions", () => {
   assert.equal(res.unlocked.length, 0);
 });
 
+test("ATS badges count in Crapless", () => {
+  const res = roll({ badges: {}, progress: {} }, {
+    mode: "crapless",
+    decisions: [{ bet: "Low Rolls", result: "win", profit: 3000 }],
+    total: 6,
+  });
+  assert.ok(res.unlocked.includes("ats_low_rolls"));
+  assert.equal(B.BADGES.filter((b) => b.section === "ATS" && b.mode === "both").length, 5);
+});
+
+test("ending before the next roll banks the goal or keeps the limit, and idle does not", () => {
+  const base = { badges: {}, progress: {}, sessions: { withinLimits: 0, awarded: [] } };
+  const banked = B.evaluateSession(base, {
+    sessionId: 2,
+    betRolls: 22,
+    lossCents: 25000,
+    winCents: 30000,
+    endReason: "end",
+    winPromptAfter20: true,
+    winHit: true,
+    endedBeforeNextRoll: true,
+    rollAfterLoss: false,
+    now: 2,
+  });
+  assert.ok(banked.unlocked.includes("win_goal_banked"));
+  assert.ok(!banked.unlocked.includes("loss_limit_kept"));
+
+  const both = B.evaluateSession(base, {
+    sessionId: 3,
+    betRolls: 22,
+    lossCents: 25000,
+    winCents: 30000,
+    endReason: "end",
+    winPromptAfter20: true,
+    lossPromptAfter20: true,
+    winHit: true,
+    lossHit: true,
+    endedBeforeNextRoll: true,
+    rollAfterLoss: false,
+    now: 3,
+  });
+  assert.ok(both.unlocked.includes("loss_limit_kept"));
+  assert.ok(!both.unlocked.includes("win_goal_banked"));
+
+  const noLossLimit = B.evaluateSession(base, {
+    sessionId: 4,
+    betRolls: 22,
+    lossCents: 0,
+    winCents: 30000,
+    endReason: "win",
+    winPromptAfter20: true,
+    endedAtWin: true,
+    winHit: true,
+    now: 4,
+  });
+  assert.ok(!noLossLimit.unlocked.includes("win_goal_banked"));
+
+  const idle = B.evaluateSession(base, {
+    sessionId: 5,
+    betRolls: 22,
+    lossCents: 25000,
+    winCents: 30000,
+    endReason: "idle",
+    winPromptAfter20: true,
+    lossPromptAfter20: true,
+    winHit: true,
+    lossHit: true,
+    now: 5,
+  });
+  assert.ok(!idle.unlocked.includes("win_goal_banked"));
+  assert.ok(!idle.unlocked.includes("loss_limit_kept"));
+  assert.equal(idle.store.sessions.withinLimits, 1);
+});
+
 test("five within limits ignores a roll after the loss limit and allows play after a win goal", () => {
   let store = { badges: {}, progress: {}, sessions: { withinLimits: 0, awarded: [] } };
   for (let i = 1; i <= 5; i++) {

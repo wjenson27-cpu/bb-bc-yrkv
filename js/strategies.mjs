@@ -298,7 +298,8 @@ function b14OnHits(state, data, wins, out) {
   };
   if (data.across) {
     const startHit = wins.some((d) => numOf(d) === start);
-    if (startHit && !data.regressDone && (state.bets.place[start] || 0) >= 1200) {
+    const handPressed = data.override && data.override[start];
+    if (startHit && !data.regressDone && !handPressed && (state.bets.place[start] || 0) >= 1200) {
       const res = removeBet(state, { kind: "place", number: start }, 600);
       if (res.ok) state = res.state;
       data.regressDone = true;
@@ -317,6 +318,7 @@ function b14OnHits(state, data, wins, out) {
     if ((data.collected || 0) >= 2) {
       state = b14TakeAll(state);
       b14Reset(data);
+      data.armed = false;
       data.down = true;
       data.sawComeOut = false;
       out.message = "Two collected hits. The ladder comes down and starts again on the next point.";
@@ -361,7 +363,21 @@ function b14OnHits(state, data, wins, out) {
 function maintainB14(state, strat, out) {
   const data = strat.data;
   data.start = data.start === 8 ? 8 : 6;
-  const sig = String((state.lastDice && state.lastDice.total) || "") + ":" + ((state.stats && state.stats.rolls) || 0);
+  const rollId = (state.stats && state.stats.rolls) || 0;
+  if (data.armed && state.lastDice && state.lastDice.total === 7 && !b14HasBets(state) && data.lossRoll !== rollId) {
+    data.lossRoll = rollId;
+    data.armed = false;
+    data.startsLost = (data.startsLost || 0) + 1;
+    b14Reset(data);
+    data.down = false;
+    if (data.startsLost >= 6) {
+      out.stop = true;
+      out.message = "Hit and Split stopped. 6 starts lost.";
+      return state;
+    }
+    out.message = "Start lost (" + data.startsLost + " of 6). The ladder resets.";
+  }
+  const sig = String((state.lastDice && state.lastDice.total) || "") + ":" + rollId;
   if (data.down) {
     if (state.phase === "come-out") data.sawComeOut = true;
     if (data.sawComeOut && state.phase === "point") {
@@ -378,6 +394,7 @@ function maintainB14(state, strat, out) {
   if (data.down) return state;
   if (state.phase === "point" && (data.step || 0) === 0 && !data.across && !data.partial && !(state.bets.place[data.start] > 0)) {
     state = fillExact(state, { kind: "place", number: data.start }, 1200, out);
+    if (state.bets.place[data.start] > 0) data.armed = true;
   }
   return state;
 }
@@ -558,7 +575,13 @@ export function autoBet(state, id, chipCents, opts = {}) {
       if (!(cap > 0 && working >= cap) && !next.bets.come) next = tryPlace(next, { kind: "come" }, TABLE_MIN, out);
     }
   }
-  if (id === "B14") next = maintainB14(next, strat, out);
+  if (id === "B14") {
+    next = maintainB14(next, strat, out);
+    if (out.stop) {
+      next.strategy = null;
+      return { ok: true, state: next, ...out };
+    }
+  }
   if (id === "B12") {
     const want = billysWayAmounts(chip);
     const buys = (state.mode === "crapless" ? [2, 3, 4, 5, 9, 10, 11, 12] : [4, 5, 9, 10]).filter((n) => numbersFor(next).includes(n));
