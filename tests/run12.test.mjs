@@ -260,10 +260,26 @@ test("store polish: marquees, FAIR, dome pips, and the 320 play column", async (
     await wait(150);
     const narrow = await page.evaluate(() => {
       const el = document.querySelector(".dome-screen .rollstrip");
-      return { totals: el.classList.contains("totals"), parent: el.closest(".dome-screen").clientWidth };
+      const tile = el.querySelector(".rolltile");
+      const faces = [...tile.querySelectorAll(".dieface")];
+      const tb = tile.getBoundingClientRect();
+      const rects = faces.map((face) => face.getBoundingClientRect());
+      const strip = el.getBoundingClientRect();
+      const inside = rects.every((r) => r.width >= 10 && r.left >= tb.left - 1 && r.right <= tb.right + 1);
+      const onStrip = tb.left >= strip.left - 1 && tb.right <= strip.right + 1;
+      return {
+        totals: el.classList.contains("totals"),
+        parent: el.closest(".dome-screen").clientWidth,
+        shown: faces.every((face) => getComputedStyle(face).display !== "none"),
+        inside,
+        onStrip,
+      };
     });
-    assert.equal(narrow.totals, true, "320 dome still uses totals (" + narrow.parent + "px)");
-    assert.ok(narrow.parent < 309, "320 dome container stays under the cutoff");
+    assert.equal(narrow.totals, false, "320 dome shows pips from roll 1 (" + narrow.parent + "px)");
+    assert.ok(narrow.parent >= 309, "320 dome container meets the cutoff");
+    assert.equal(narrow.shown, true);
+    assert.equal(narrow.inside, true);
+    assert.equal(narrow.onStrip, true);
 
     await page.locator("button.dot[aria-label='Board']").click();
     await page.waitForSelector(".felt");
