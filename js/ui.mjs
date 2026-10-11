@@ -928,6 +928,7 @@ async function doRoll(source) {
     paint();
     return;
   }
+  clearWin();
   rolling = true;
   stopTimer();
   const pointBefore = game.point;
@@ -1440,7 +1441,7 @@ function measureChrome() {
   const fs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const zoomed = fs >= 16 * 1.3;
   document.querySelectorAll(".rollstrip").forEach((el) => {
-    el.classList.toggle("totals", short || zoomed || el.clientWidth < 300);
+    el.classList.toggle("totals", short || zoomed || el.clientWidth < 309);
   });
 }
 function noteFair() {
@@ -1730,8 +1731,8 @@ function showRecordCard(preview) {
   const rolls = preview.throws === 1 ? "1 roll" : preview.throws + " rolls";
   const points = preview.points === 1 ? "1 point" : preview.points + " points";
   const mode = preview.mode === "crapless" ? "Crapless" : "Regular";
-  const ended = preview.sevenOutDice
-    ? "<p class='endedon'>Ended on " + diceReadout(preview.sevenOutDice.d1, preview.sevenOutDice.d2, 20, { sevenOut: true }) + " <span class='outtag'>· seven out</span></p>"
+    const ended = preview.sevenOutDice
+    ? "<p class='endedon'><span>Ended on</span> " + diceReadout(preview.sevenOutDice.d1, preview.sevenOutDice.d2, 20, { sevenOut: true }) + " <span class='outtag'>· seven out</span></p>"
     : "";
   el.innerHTML = "<div class='recordlayer' role='dialog' aria-labelledby='record-title'>" +
     "<div class='recordcard'>" +
@@ -1819,7 +1820,7 @@ function leaderHTML() {
       "<div class='boardmain'><b>" + esc(e.name) + "</b>" +
       (mine ? "<i class='youtag'>YOU</i>" : "") +
       "<small>" + pts + " · " + esc(L.formatWhen(e.at)) + " · " + esc(L.formatClock(e.at)) + "</small>" +
-      (e.sevenOutDice ? "<span class='endedon'>Ended on " + diceReadout(e.sevenOutDice.d1, e.sevenOutDice.d2, 20, { sevenOut: true }) + " <span class='outtag'>· seven out</span></span>" : "") +
+      (e.sevenOutDice ? "<span class='endedon'><span>Ended on</span> " + diceReadout(e.sevenOutDice.d1, e.sevenOutDice.d2, 20, { sevenOut: true }) + " <span class='outtag'>· seven out</span></span>" : "") +
       "</div>" +
       "<span class='rollcount'>" + e.throws + "</span>" +
       "<span class='tierchip " + tier + "'>" + tier + "</span></li>";
@@ -2053,6 +2054,11 @@ function markSpotlight() {
   if (el) el.classList.add("teach");
 }
 let currentCoachTip = null;
+function refreshCoachKicker() {
+  const kick = document.querySelector("#overlay .coach .kicker");
+  if (!kick) return;
+  kick.textContent = "TUTOR · " + (game.phase === "point" ? "POINT IS ON" : "COME-OUT");
+}
 function openTutor(step, force) {
   if (typeof step === "number") tutorStep = step;
   const tip = force === "billy"
@@ -2258,7 +2264,10 @@ function paint() {
     document.getElementById("dock").innerHTML = dockHTML();
     snap();
     document.querySelectorAll(".page").forEach((p, i) => { if (scrolls[i]) p.scrollTop = scrolls[i]; });
-    if (coachOn) markSpotlight();
+    if (coachOn) {
+      markSpotlight();
+      refreshCoachKicker();
+    }
     requestAnimationFrame(() => { placeDice(); fitFelt(); measureChrome(); });
   } else {
     if (view === "fair") noteFair();
