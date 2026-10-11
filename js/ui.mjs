@@ -2,6 +2,7 @@ import * as E from "./engine.mjs";
 import * as S from "./strategies.mjs";
 import * as F from "./fair.mjs";
 import * as A from "./audio.mjs";
+import * as L from "./leaderboard.mjs";
 import { resolveSwipe } from "./swipe.mjs";
 
 const STORE = "bb-bubble-craps-v1";
@@ -58,6 +59,11 @@ let betsOpen = false;
 let sideFocus = null;
 let coachOn = false;
 let celeTimer = 0;
+const boardStore = L.browserStore();
+let boardData = L.emptyData();
+let boardMode = "regular";
+let boardScope = "week";
+let pendingRecord = null;
 
 const app = document.getElementById("app");
 const reducedMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -92,6 +98,15 @@ function save() {
   } catch {
     /* quota */
   }
+}
+function saveBoard() {
+  try { L.writeStore(boardStore, boardData); }
+  catch { /* quota */ }
+}
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
 }
 
 function money(c) { return E.formatMoney(c); }
@@ -280,9 +295,20 @@ function mount() {
   });
   stage.addEventListener("pointercancel", () => { tracking = false; captured = false; snap(); });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowRight") { page = Math.min(2, page + 1); snap(); paint(); }
-    if (e.key === "ArrowLeft") { page = Math.max(0, page - 1); snap(); paint(); }
-    if (e.key === " " && view === "play" && !rolling) { e.preventDefault(); doRoll(); }
+    if (e.key === "ArrowRight" && !e.target.closest("input")) { page = Math.min(2, page + 1); snap(); paint(); }
+    if (e.key === "ArrowLeft" && !e.target.closest("input")) { page = Math.max(0, page - 1); snap(); paint(); }
+    if (e.key === " " && view === "play" && !rolling && !e.target.closest("input")) { e.preventDefault(); doRoll(); }
+    if (e.key === "Backspace" && e.target.classList && e.target.classList.contains("init") && !e.target.value) {
+      const prev = e.target.previousElementSibling;
+      if (prev && prev.classList.contains("init")) { prev.focus(); prev.value = ""; e.preventDefault(); }
+    }
+    if (e.key === "Enter" && pendingRecord && e.target.closest(".recordcard")) { e.preventDefault(); savePending(false); }
+  });
+  app.addEventListener("input", (e) => {
+    const el = e.target;
+    if (!el.classList || !el.classList.contains("init")) return;
+    el.value = el.value.replace(/[^A-Za-z0-9]/g, "").slice(-1).toUpperCase();
+    if (el.value && el.nextElementSibling && el.nextElementSibling.classList.contains("init")) el.nextElementSibling.focus();
   });
   paint();
 }
@@ -408,6 +434,10 @@ function onClick(e) {
   if (act === "for") { openSheet(forSheet()); return; }
   if (act === "confirm-take") { confirmTake(); return; }
   if (act === "premium") { setView("premium"); return; }
+  if (act === "board-mode") { boardMode = t.dataset.mode === "crapless" ? "crapless" : "regular"; paint(); return; }
+  if (act === "board-scope") { boardScope = t.dataset.scope === "all" ? "all" : "week"; paint(); return; }
+  if (act === "save-record") { savePending(t.dataset.goto === "board"); return; }
+  if (act === "skip-record") { pendingRecord = null; closeOverlay(); return; }
 }
 
 function setView(next) {
@@ -664,6 +694,7 @@ async function doRoll() {
   celebrate(settled, handBefore);
   noteBlaze(handBefore, settled);
   maybeTutor(settled);
+  maybeRecord(handBefore, settled);
   save();
   startTimer();
 }
@@ -836,6 +867,127 @@ function celebrate(settled, before) {
     return;
   }
   if (isBigWin(settled)) showBigWin(settled);
+}
+function rollHud() {
+  const n = game.hand.rolls || 0;
+  const word = n === 1 ? "throw" : "throws";
+  return "<div class='hud-roll' aria-label='This roll, " + n + " " + word + "'><small>Roll</small><strong>" + n + "</strong></div>";
+}
+function nameFromForm() {
+  const nick = document.getElementById("nick");
+  const inits = [...document.querySelectorAll(".recordcard .init")].map((el) => el.value.trim()).join("");
+  if (nick && nick.value.trim()) return L.normalizeName(nick.value);
+  if (inits.length === 3) return L.normalizeName(inits);
+  return "";
+}
+function savePending(goBoard) {
+  if (!pendingRecord) return;
+  const name = nameFromForm();
+  const err = document.querySelector(".recorderr");
+  if (!name) {
+    if (err) { err.hidden = false; err.textContent = "Enter 3 initials or a nickname."; }
+    return;
+  }
+  const res = L.commitRoll(boardData, Object.assign({ name }, pendingRecord));
+  if (!res.ok) {
+    if (err) { err.hidden = false; err.textContent = res.error; }
+    return;
+  }
+  boardData = res.data;
+  saveBoard();
+  const mode = res.entry.mode;
+  const scope = res.madeWeek ? "week" : "all";
+  pendingRecord = null;
+  closeOverlay();
+  const where = res.madeWeek && res.madeAll ? "this week and all time" : res.madeWeek ? "this week" : "all time";
+  if (goBoard) {
+    boardMode = mode;
+    boardScope = scope;
+    setView("leaderboard");
+  }
+  toast(name + " · new record, " + where + ".");
+}
+function showRecordCard(preview) {
+  const el = document.getElementById("overlay");
+  if (!el) return;
+  stopTimer();
+  const where = [
+    preview.madeWeek ? "This week #" + preview.rankWeek : "",
+    preview.madeAll ? "All time #" + preview.rankAll : "",
+  ].filter(Boolean).join(" · ");
+  const saved = boardData.name || "";
+  const letters = saved.length <= 3 ? (saved + "   ").slice(0, 3).split("") : ["", "", ""];
+  const nick = saved.length > 3 ? saved : "";
+  const pb = preview.personalBest ? "<p class='pbbadge'>Personal best</p>" : "";
+  const rolls = preview.throws === 1 ? "1 roll" : preview.throws + " rolls";
+  const points = preview.points === 1 ? "1 point" : preview.points + " points";
+  const mode = preview.mode === "crapless" ? "Crapless" : "Regular";
+  el.innerHTML = "<div class='recordlayer" + (motionOff() ? " reduce" : "") + "' role='dialog' aria-labelledby='record-title'>" +
+    "<div class='sunburst' aria-hidden='true'></div>" +
+    "<div class='recordcard'>" +
+    "<img class='record-billie' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'>" +
+    "<p class='record-speech' id='record-title'>New record!</p>" +
+    "<b class='recordcount'>" + preview.throws + "</b>" +
+    "<p class='recordmeta'>" + rolls + " · " + points + "</p>" +
+    "<p class='recordwhere'>" + esc(where) + " · " + mode + "</p>" +
+    pb +
+    "<p class='ask'>Three initials, or a nickname</p>" +
+    "<div class='inits'>" + letters.map((ch, i) =>
+      "<input class='init' maxlength='1' value='" + esc(ch.trim()) + "' aria-label='Initial " + (i + 1) + "' autocomplete='off' autocapitalize='characters'>").join("") +
+    "</div>" +
+    "<label class='nicklab'>Nickname<input id='nick' maxlength='12' value='" + esc(nick) + "' autocomplete='nickname' placeholder='Billie'></label>" +
+    "<p class='recorderr' hidden></p>" +
+    "<div class='actions'><button class='go' data-act='save-record'>Save</button>" +
+    "<button class='ghost' data-act='save-record' data-goto='board'>See the board</button></div>" +
+    "<button class='skiplink' data-act='skip-record'>Not now</button></div></div>";
+  const first = el.querySelector(".init");
+  if (first && !nick) first.focus();
+}
+function maybeRecord(before, settled) {
+  if (settled.result !== "seven-out") return;
+  const done = L.completedRoll(before, settled.result);
+  if (!done) return;
+  const at = Date.now();
+  const preview = L.previewRoll(boardData, {
+    throws: done.throws,
+    points: done.points,
+    mode: game.mode,
+    at,
+  });
+  if (!preview.madeWeek && !preview.madeAll) return;
+  pendingRecord = { throws: done.throws, points: done.points, mode: game.mode, at };
+  showRecordCard(preview);
+}
+function leaderHTML() {
+  const mode = boardMode === "crapless" ? "crapless" : "regular";
+  const scope = boardScope === "all" ? "all" : "week";
+  const rows = L.ranked(boardData.entries, { mode, scope, now: Date.now() });
+  const best = L.bestEntry(boardData.entries, mode);
+  const modeName = mode === "crapless" ? "Crapless" : "Regular";
+  const list = rows.length ? "<ol class='boardlist'>" + rows.map((e, i) => {
+    const latest = e.id === boardData.highlightId;
+    const pb = best && e.id === best.id;
+    const pts = e.points === 1 ? "1 point" : e.points + " points";
+    return "<li class='boardrow" + (latest ? " latest" : "") + "'>" +
+      "<span class='rank'>" + (i + 1) + "</span>" +
+      "<div class='boardmain'><b>" + esc(e.name) + "</b>" +
+      (pb ? "<i class='pbbadge'>Personal best</i>" : "") +
+      (latest ? "<i class='latesttag'>Latest</i>" : "") +
+      "<small>" + e.throws + (e.throws === 1 ? " roll" : " rolls") + " · " + pts + " · " + esc(L.formatWhen(e.at)) + " · " + modeName + "</small></div></li>";
+  }).join("") + "</ol>" : "<article class='card boardempty'><img src='assets/mascots/dealer-billy/billy-A-hello.svg' alt='Dealer Billy'><div><h3>No rolls yet</h3><p>A roll is every throw from the come-out until a seven-out. A made point keeps the dice. A 7 on the come-out does not end the roll.</p></div></article>";
+  const weekNote = scope === "week" ? "<p class='weeknote'>Resets Monday at 12:00 AM, on this device.</p>" : "<p class='weeknote'>Longest rolls saved on this device.</p>";
+  return "<section class='boardpage'><header class='boardhead'>" +
+    "<img src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>" +
+    "<div><p class='kicker'>ON THIS DEVICE</p><h2>Longest rolls</h2>" +
+    "<p class='muted'>Throws by one shooter, come-out through seven-out. Regular and Crapless are separate.</p></div></header>" +
+    "<div class='seg boardseg'>" +
+    "<button class='" + (mode === "regular" ? "on" : "") + "' data-act='board-mode' data-mode='regular'>Regular</button>" +
+    "<button class='" + (mode === "crapless" ? "on" : "") + "' data-act='board-mode' data-mode='crapless'>Crapless</button></div>" +
+    "<div class='filters'>" +
+    "<button class='" + (scope === "week" ? "on" : "") + "' data-act='board-scope' data-scope='week'>This week</button>" +
+    "<button class='" + (scope === "all" ? "on" : "") + "' data-act='board-scope' data-scope='all'>All time</button></div>" +
+    weekNote + list +
+    "<button class='cta' data-act='view' data-view='play'>BACK TO THE TABLE</button></section>";
 }
 
 function blazeLesson(tier) {
@@ -1054,7 +1206,7 @@ function showRollToast(settled, extra) {
 
 function startTimer() {
   stopTimer();
-  if (!settings.autoRoll || view !== "play" || rolling || document.querySelector(".overlay")) return;
+  if (!settings.autoRoll || view !== "play" || rolling || document.querySelector(".overlay, .recordlayer")) return;
   timerStart = performance.now();
   const loop = (now) => {
     const p = Math.min(1, (now - timerStart) / 15000);
@@ -1126,6 +1278,7 @@ function hudHTML() {
     mode + "</div>" +
     "<div class='hud-row2'><div class='hud-bank'><small>Chips</small><strong>" + money(game.bankroll) + "</strong></div>" +
     "<div class='hud-bank'><small>On table</small><strong>" + money(on) + "</strong></div>" +
+    rollHud() +
     "<div class='hud-puck'>" + puck + "</div>" + dice + heaterHTML(false) +
     "<button class='fairchip' data-act='view' data-view='fair' aria-label='Fair Dice'>FAIR</button></div>";
 }
@@ -1136,6 +1289,7 @@ function tabsHTML() {
     ["fair", "Fair Dice"],
     ["learn", "Learn"],
     ["premium", "Premium"],
+    ["leaderboard", "Rolls"],
     ["settings", "Settings"],
   ];
   return items.map(([id, label]) => {
@@ -1151,6 +1305,7 @@ function icon(name) {
     fair: "M4 19V5M10 19V9M16 19V7M22 19H2",
     learn: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z",
     premium: "M12 3l2.2 6.6H21l-5.4 4 2.1 6.4L12 16.8 6.3 20l2.1-6.4L3 9.6h6.8z",
+    leaderboard: "M7 4h10v5a5 5 0 0 1-10 0V4zM7 6H4a3 3 0 0 0 3 3M17 6h3a3 3 0 0 1-3 3M8 21h8M12 17v4",
     settings: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z",
   };
   return "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.7' aria-hidden='true'><path d='" + (paths[name] || "") + "'/></svg>";
@@ -1474,6 +1629,7 @@ function panelHTML() {
   if (view === "fair") return fairHTML();
   if (view === "learn") return learnHTML();
   if (view === "premium") return premiumHTML();
+  if (view === "leaderboard") return leaderHTML();
   if (view === "settings") return settingsHTML();
   return homeHTML();
 }
@@ -1492,6 +1648,7 @@ function homeHTML() {
     "<button class='mode-card' data-act='play' data-mode='crapless'><b>Crapless</b><span>Only a come-out 7 wins. No Don't. No ATS.</span>" + edgeChip(1.26) + "<small>Pass + odds</small></button></div>" +
     "<button class='cta' data-act='play' data-mode='regular'><b>PLAY REGULAR</b><small>15-SECOND BET TIMER · AUTO ROLL</small></button>" +
     "<div class='ghostrow'><button class='ghost' data-act='tour'>TAKE THE TUTOR TOUR</button><button class='ghost' data-act='billy-help'>WHAT'S BILLY'S WAY?</button></div>" +
+    "<button class='ghost boardlink' data-act='view' data-view='leaderboard'>LONGEST ROLLS</button>" +
     "<div class='disclaimer'><b>Education only. Play money only.</b> No real gambling, no deposits, no cash-out, no prizes. Every bankroll on this table is practice chips. 18+.</div></section>";
 }
 
@@ -1645,6 +1802,7 @@ function fairHTML() {
 }
 
 load();
+boardData = L.readStore(boardStore);
 game.placeWorkingOnComeOut = !!settings.workingComeOut;
 A.setMuted(!settings.sound);
 mount();

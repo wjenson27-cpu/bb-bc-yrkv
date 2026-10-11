@@ -51,6 +51,7 @@ That runs `node --test tests/*.test.mjs`. The suite covers the chip set, come-ou
 - Fair Dice: totals versus expected, chi-square in plain words, per-die chi-square, hard 4/6/8/10 against 1/36, streaks, the most repeated number in a hand, last 20, above and below expected. Secure RNG with rejection sampling, Math.random fallback labeled.
 - Blazing meter is cosmetic and can be turned off in Settings. The HUD reads the hand length. The first time Warm, Hot, or Blazing appears, Dealer Billy says the dice have no memory. A seven-out from a longer hand says the hand cooled off.
 - 15-second bet timer, default on, manual ROLL always works.
+- Longest-roll leaderboard, on this device. A roll is every throw from the come-out until a seven-out. A made point continues it. A come-out 7 does not end it. Regular and Crapless are separate. This week resets Monday at local midnight. All time stays. Top 10. The HUD shows the current roll length. A board-making roll asks for 3 initials or a nickname and celebrates with Bubbles Billie.
 - Three-screen swipe, including a sideways drag that starts on a bet button. The dots follow the page. Pinned HUD and dock. Mini roll toast off the dice screen.
 - WebAudio after a gesture, haptics where the device allows, reduced motion. Cinzel, Cinzel Decorative, Archivo, Fredoka, Orbitron, and VT323 are self-hosted.
 - Premium is a locked preview: Regular and Crapless, presets (Standard, MGM, Caesars, Custom, Downtown 10x), B-1 through B-30, and an Edge Preview. Nothing on that screen changes the live table. No payments.
