@@ -61,13 +61,27 @@ Severity: the Don't Come plus and the missing Horn bet were functional. The dice
 
 Checked in the live DOM, not only in the pictures: Crapless text has no Don't and no ATS, the Lay tab is absent, and the ten Crapless numbers are 2, 3, 4, 5, 6, 8, 9, 10, 11, 12. Pass Line bottom was 544px and the stage ended at 553px, so the line is on screen above the dock.
 
+## Design review
+
+The designer review (D1–D22) is applied on top of the rules pass. Brand fonts load from `css/fonts.css` before `css/app.css`: Cinzel on the felt, Archivo on the UI, Fredoka on speech, Orbitron on LED captions, VT323 on the tumble line, Cinzel Decorative on BIG WIN.
+
+The middle board order is ATS, numbers, Come, Field, props, then Pass last. The cloth uses the emerald felt tile, a leather rail, the printed wordmark, and chip stacks. Big Red is `#C21F2E`. Any Craps, C&E (`C 3:1 · E 7:1`), and Horn 4-way sit beside the Horn box.
+
+The Play view hides the tab bar. Home is a button in the HUD. There is no second bankroll bar. PRESS and POWER PRESS show the live amount and the reason they are off. Undo is a ↺ disc on PRESS. Bets Off, Billy's Way, and Reset stay under the dock. ROLL does not overlap those keys.
+
+A seven-out is a toast (`Seven-out · new shooter` when nothing was lost). A small win is the roll toast. A big win overlay stops above the dock, dismisses itself, and does not call the auto-roll stop. Place 6 and 8 post in $6 units.
+
+Landscape phones (500px tall or shorter) put a 132px dock on the right. At 844×390 the stage measured 328px tall. Wide desktop windows still center the phone column.
+
+Side-by-side shots of this pass against the mockups are in `docs/qa/compare/`.
+
 ## Still short of the mockups
 
-The felt follows the locked order (Horn 2×2, Big Red, Hard Way All Day, hardways, numbers with Buy above and Place below, Come, Field, Pass line). It is not a pixel copy. Type is Palatino and system UI, not the mockup's display face. Any Craps, Horn 4-way, and C&E sit on an extra row under the prop grid so those bets can be made; they are not separate spots in the locked mockup. Felt cells are under 44px so the Pass Line fits; the dock, chips, tabs, and bet-panel steppers are at least 44px, and every felt bet is also on a 44px stepper.
+The felt is the right material and order, and it is still denser than mockup 15. Number faces are smaller than the 29px mockup size so Pass Line stays on a 390×844 screen. Felt cells are under 44px. Dock, chips, and bet-panel steppers are at least 44px.
 
-Wide windows center the phone column. They do not become the spec's side-by-side or three-column layout.
+Dice use the handoff face art rather than a live CSS cube, because the pager's transform flattens 3D descendants. The 1-pip colour is whatever is in that art.
 
-Side-by-side comparisons of the polished screens and the mockups are in `docs/qa/compare/`.
+Wide windows (900px and up) stay a centered phone column. They do not become the spec's side-by-side or three-column layout.
 
 ## Rules pass
 
@@ -83,4 +97,4 @@ The rules review found a C&E overpay and a progress-banking hole, plus several m
 - B8 can post a new Buy 4/5/9/10 set after it takes the first one down. B11 pauses after 100 rolls, not 99.
 - PRESS and POWER PRESS show why they are grey, including while the dice are tumbling. The $500 cap toast only shows when the bet lands on the table max.
 
-49 tests pass, including the browser swipe. `robots` meta `noindex, nofollow` is still on the page.
+49 tests pass, including the browser swipe, after the design review as well. `robots` meta `noindex, nofollow` is still on the page.

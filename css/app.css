@@ -1475,7 +1475,8 @@ img { max-width: 100%; display: block; }
 .rlamps i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 1px rgba(255,231,160,.3); }
 .rlamps i.on { background: radial-gradient(circle at 40% 35%, #fff6d6, #ffd36a 55%, #b07a1a); }
 .rep .edgechip { position: absolute; top: 2px; right: 2px; font-size: 7px; padding: 0 3px; }
-.hops { grid-template-columns: repeat(3, 1fr); }
+.hops { grid-template-columns: repeat(6, 1fr); }
+.hop { min-height: 52px; font-size: 8px; padding: 2px; }
 .hop {
   min-height: 64px;
   color: #f6edd8;
@@ -1486,9 +1487,9 @@ img { max-width: 100%; display: block; }
 .billytip { display: flex; gap: 8px; align-items: center; font-family: var(--fun); font-weight: 600; }
 .billytip img { width: 48px; height: 48px; }
 
-.vchart { display: flex; align-items: flex-end; gap: 3px; height: 140px; position: relative; }
-.vcol { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
-.vtrack { flex: 1; width: 100%; display: flex; align-items: flex-end; position: relative; }
+.vchart { display: flex; align-items: flex-end; gap: 3px; height: 168px; position: relative; }
+.vcol { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; font-size: 9px; }
+.vtrack { height: 110px; width: 80%; display: flex; align-items: flex-end; position: relative; background: rgba(255,255,255,.04); border-radius: 3px; }
 .vtrack i { display: block; width: 100%; border-radius: 3px 3px 0 0; background: linear-gradient(#3ee07a, #127a3a); }
 .vtrack i.seven { background: #c21f2e; }
 .vtrack em { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed #ffe7a0; }

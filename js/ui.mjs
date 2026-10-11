@@ -1000,7 +1000,7 @@ function paint() {
   document.getElementById("dock").classList.toggle("hidden", !play);
   document.getElementById("panel").classList.toggle("hidden", play);
   document.getElementById("tabs").classList.toggle("hidden", play);
-  document.getElementById("hud").innerHTML = hudHTML();
+  document.getElementById("hud").innerHTML = play ? hudHTML() : "";
   document.getElementById("tabs").innerHTML = tabsHTML();
   const sheet = document.getElementById("betsheet");
   if (sheet) sheet.innerHTML = play && betsOpen ? betPanelHTML() : "";
