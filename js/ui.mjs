@@ -179,6 +179,54 @@ function paintDie(el, face) {
 function miniDie(face) {
   return '<div class="mini-die" aria-hidden="true">' + pipGrid(face) + "</div>";
 }
+function dieFace(n, px) {
+  const f = n >= 1 && n <= 6 ? n : 1;
+  return "<img class='dieface' width='" + px + "' height='" + px + "' src='assets/dice/faces/face-" + f + ".svg' alt=''>";
+}
+function diceReadout(d1, d2, size, opts) {
+  opts = opts || {};
+  const px = size || 16;
+  const total = d1 + d2;
+  const hard = d1 === d2;
+  let label = (opts.aria) || (game.lastDice && game.lastDice.d1 === d1 && game.lastDice.d2 === d2 && game.lastDice.aria) || "";
+  if (!label) {
+    const cap = E.rollCaption(d1, d2);
+    label = cap.aria;
+  }
+  if (opts.sevenOut) label += ", seven out";
+  let extra = "";
+  if (opts.tag !== false) extra += "<b class='readbadge" + (total === 7 ? " seven" : "") + "'>" + total + "</b>";
+  const showHard = opts.hardTag && hard && (total === 4 || total === 6 || total === 8 || total === 10);
+  if (showHard) extra += "<b class='hardtag'>Hard " + total + "</b>";
+  else if (opts.call) extra += "<span class='readcall'>" + esc(opts.call) + "</span>";
+  return "<span class='readout s" + px + "' style='--die:" + px + "px' role='img' aria-label='" + esc(label) + "'>" +
+    dieFace(d1, px) + dieFace(d2, px) + extra + "</span>";
+}
+function rollTiles(list, opts) {
+  opts = opts || {};
+  const limit = opts.limit || 20;
+  const src = list || [];
+  const arr = opts.newestFirst ? src.slice(0, limit).reverse() : src.slice(-limit);
+  return arr.map((h, i) => {
+    const total = h && h.total != null ? h.total : h;
+    const last = opts.markLatest && i === arr.length - 1;
+    const d1 = h && h.d1;
+    const d2 = h && h.d2;
+    if (d1 == null || d2 == null) {
+      return "<span class='rchip" + (total === 7 ? " seven" : "") + (last ? " latest" : "") + "'>" + total + "</span>";
+    }
+    const cap = E.rollCaption(d1, d2);
+    const label = cap.aria;
+    const cls = "rolltile" + (total === 7 ? " seven" : "") + (last ? " latest" : "") + (d1 === d2 ? " dbl" : "");
+    return "<button type='button' class='" + cls + "' data-act='last20' aria-label='" + esc(label) + "'>" +
+      dieFace(d1, 14) + dieFace(d2, 14) + "<b>" + total + "</b></button>";
+  }).join("");
+}
+function last20Sheet() {
+  const rows = (game.history || []).slice(0, 20);
+  const tiles = rows.map((h) => diceReadout(h.d1, h.d2, 20, { sevenOut: h.total === 7, aria: E.rollCaption(h.d1, h.d2).aria })).join("");
+  openSheet("<h2>Last 20</h2><div class='last20'>" + (tiles || "<p>No rolls yet.</p>") + "</div><div class='actions'><button class='go' data-act='close'>Close</button></div>");
+}
 function faceWord(n) {
   if (n === 6) return "SIX";
   if (n === 9) return "NINE";
@@ -426,6 +474,7 @@ function onClick(e) {
     return;
   }
   if (act === "toast-go") { page = 2; hideToast(); snap(); paint(); return; }
+  if (act === "last20") { last20Sheet(); return; }
   if (act === "tutor") { openTutor(t.dataset.step ? Number(t.dataset.step) : tutorStep); return; }
   if (act === "tips") {
     settings.tutorOn = !settings.tutorOn;
@@ -968,6 +1017,8 @@ function rememberRoll(settled) {
     phaseBefore: settled.result === "natural" || settled.result === "craps" || settled.result === "point-set" ? "come-out" : "point",
     mode: game.mode,
     net: settled.net,
+    hard: !!settled.dice.hard,
+    at: Date.now(),
     source: settled.dice.source || E.getRngSource(),
   };
   sessionRolls.push(rec);
@@ -1152,7 +1203,10 @@ function showBadgeToast(def) {
     crapless_six_points_one_hand: "Six Crapless points, one hand.",
   };
   const line = lines[def.id] || (def.tier === "legendary" ? "A rare one. Still random." : "That's a keeper.");
-  const facts = [def.pay, def.edge].filter(Boolean).join(" · ");
+  const oddsLine = def.id === "spin_the_block" ? "About 1 in 523 hands" : def.odds;
+  const facts = marquee
+    ? [oddsLine, def.pay ? def.pay + ", paid in practice chips" : "", def.edge ? "House edge " + def.edge : ""].filter(Boolean).join(" · ")
+    : [def.pay, def.edge].filter(Boolean).join(" · ");
   if (marquee) {
     host.innerHTML = "<div class='badgetoast marquee " + def.tier + "' data-id='" + def.id + "'>" +
       "<i class='burst' aria-hidden='true'></i>" +
@@ -1194,12 +1248,13 @@ function awardSession(session, reason) {
     winCents: session.badgeWinCents != null ? session.badgeWinCents : session.winCents,
     winPromptAfter20: !!session.promptedWin && session.betRolls >= 20,
     lossPromptAfter20: !!session.promptedLoss && session.betRolls >= 20,
-    endedAtWin: reason === "win" || ((reason === "end") && session.winHit && !session.lossHit && !session.rollAfterLoss),
+    endedAtWin: reason === "win" || ((reason === "end") && session.winHit && !session.lossHit && !session.rollAfterWin),
     endedAtLoss: reason === "loss" || ((reason === "loss" || reason === "end") && session.lossHit && !session.rollAfterLoss),
-    endedBeforeNextRoll: (reason === "win" || reason === "loss" || reason === "end") && !session.rollAfterLoss && (session.lossHit || session.winHit),
+    endedBeforeNextRoll: (reason === "win" || reason === "loss" || reason === "end") && (session.lossHit || session.winHit) && !session.rollAfterLoss && !session.rollAfterWin,
     winHit: !!session.winHit,
     lossHit: !!session.lossHit,
     rollAfterLoss: !!session.rollAfterLoss,
+    rollAfterWin: !!session.rollAfterWin,
     now,
     mode: game.mode,
   });
@@ -1268,7 +1323,7 @@ function finishSession(reason) {
   const net = s ? E.netWorth(game) - s.startChips : 0;
   const longest = s && s.longest ? s.longest + " rolls" : "none yet";
   const lossKept = !s || !s.lossCents ? "Loss limit off" : s.lossHit ? (s.rollAfterLoss ? "Loss limit hit, then play continued" : "Loss limit kept") : "Loss limit not reached";
-  const winKept = !s || !s.winCents ? "Win goal off" : s.winHit ? (reason === "win" || !s.rollAfterLoss ? "Win goal banked" : "Win goal hit") : "Win goal not reached";
+  const winKept = !s || !s.winCents ? "Win goal off" : s.winHit ? (s.rollAfterWin ? "Win goal hit, then play continued" : "Win goal banked") : "Win goal not reached";
   const names = (s && s.badges || []).map((id) => { const b = B.badgeById(id); return b ? b.name : id; });
   const badgeLine = names.length ? names.join(", ") : "None this session";
   openSheet("<h2>Session summary</h2><p>" + (s ? s.rolls : 0) + " rolls · " + (s ? s.hands : 0) + " hands</p><p>" + money(s ? s.startChips : 0) + " → " + money(E.netWorth(game)) + " · " + (net >= 0 ? "+" : "−") + money(Math.abs(net)) + "</p><p>Longest hand this session: " + longest + ".</p><p>" + lossKept + ". " + winKept + ".</p><p>Badges this session: " + esc(badgeLine) + ".</p><p>Practice chips carry over. A new session starts with your next roll.</p><div class='actions'><button class='go' data-act='close'>Close</button></div>");
@@ -1375,6 +1430,12 @@ function measureChrome() {
   if (hud && hud.offsetHeight) {
     document.documentElement.style.setProperty("--hud-bottom", hud.getBoundingClientRect().bottom + "px");
   }
+  const short = window.matchMedia("(max-height: 500px) and (orientation: landscape)").matches;
+  const fs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const zoomed = fs >= 16 * 1.3;
+  document.querySelectorAll(".rollstrip").forEach((el) => {
+    el.classList.toggle("totals", short || zoomed || el.clientWidth < 340);
+  });
 }
 function noteFair() {
   const scope = fairScope === "last" ? "last" : fairScope === "all" ? "all" : "session";
@@ -1653,12 +1714,16 @@ function showRecordCard(preview) {
   const rolls = preview.throws === 1 ? "1 roll" : preview.throws + " rolls";
   const points = preview.points === 1 ? "1 point" : preview.points + " points";
   const mode = preview.mode === "crapless" ? "Crapless" : "Regular";
+  const ended = preview.sevenOutDice
+    ? "<p class='endedon'>Ended on " + diceReadout(preview.sevenOutDice.d1, preview.sevenOutDice.d2, 20, { sevenOut: true }) + " · seven out</p>"
+    : "";
   el.innerHTML = "<div class='recordlayer' role='dialog' aria-labelledby='record-title'>" +
     "<div class='recordcard'>" +
     "<div class='recordtop'><img class='record-billie' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'>" +
     "<p class='record-speech' id='record-title'>" + title + "</p></div>" +
     "<b class='recordcount'>" + preview.throws + "</b>" +
     "<p class='recordmeta'>" + rolls + " · " + points + " · " + mode + "</p>" +
+    ended +
     "<p class='recordwhere'>" + esc(where) + "</p>" +
     "<p class='ask'>Top 10! Add your initials? (Stays on this device.)</p>" +
     "<div class='inits'>" + [0, 1, 2].map((i) =>
@@ -1691,6 +1756,7 @@ function maybeRecord(before, settled, dice, hadBet) {
     rngSource: dice && dice.source === "fallback" ? "fallback" : "secure",
     sessionId: boardData.session ? boardData.session.id : 0,
     hadBetOnSevenOut: true,
+    sevenOutDice: dice && dice.d1 ? { d1: dice.d1, d2: dice.d2 } : null,
   };
   const preview = L.previewRoll(boardData, candidate);
   if (!preview.madeWeek && !preview.madeAll) {
@@ -1736,7 +1802,9 @@ function leaderHTML() {
       "<span class='rank medal " + (medals[i] || "") + "'>" + (i + 1) + "</span>" +
       "<div class='boardmain'><b>" + esc(e.name) + "</b>" +
       (mine ? "<i class='youtag'>YOU</i>" : "") +
-      "<small>" + pts + " · " + esc(L.formatWhen(e.at)) + " · " + esc(L.formatClock(e.at)) + "</small></div>" +
+      "<small>" + pts + " · " + esc(L.formatWhen(e.at)) + " · " + esc(L.formatClock(e.at)) + "</small>" +
+      (e.sevenOutDice ? "<span class='endedon'>Ended on " + diceReadout(e.sevenOutDice.d1, e.sevenOutDice.d2, 20, { sevenOut: true }) + " · seven out</span>" : "") +
+      "</div>" +
       "<span class='rollcount'>" + e.throws + "</span>" +
       "<span class='tierchip " + tier + "'>" + tier + "</span></li>";
   }).join("") + "</ol>" : "<article class='card boardempty'><img src='assets/mascots/billie/billie-C-hello.svg' alt='Bubbles Billie'><div><h3>No finished hands yet</h3><p>" + emptyCopy + "</p></div></article>";
@@ -1831,7 +1899,7 @@ function openBadge(id) {
     "<div class='pills'><span class='tierpill'>" + tierName + "</span><span class='modepill'>" + modeName + "</span></div>" +
     "<p>" + esc(b.desc) + "</p>" +
     "<article class='rulecard'><h3>THE RULE</h3><p>" + esc(b.rule) + "</p></article>" +
-    "<div class='factrow'><div><small>Odds</small><b>" + esc(b.odds || "—") + "</b></div>" +
+    "<div class='factrow'><div><small>Odds</small><b>" + esc(b.id === "spin_the_block" ? "About 1 in 523 hands" : (b.odds || "—")) + "</b></div>" +
     "<div><small>Pays</small><b>" + esc(b.pay || "—") + "</b></div>" +
     "<div><small>Edge</small><b>" + esc(b.edge || "—") + "</b></div></div>" +
     "<p>" + when + " · " + times + "</p>" +
@@ -1981,6 +2049,7 @@ function openTutor(step, force) {
           : currentTip();
   currentCoachTip = tip;
   coachOn = true;
+  document.body.classList.add("has-coach");
   const steps = tour ? tutorSteps() : [];
   const n = steps.length;
   const dots = n ? "<div class='steps'>" + steps.map((_, i) => "<i class='" + (i === tutorStep ? "on" : "") + "'></i>").join("") + "<span>STEP " + (tutorStep + 1) + " OF " + n + "</span></div>" : "";
@@ -2039,6 +2108,7 @@ function lockedExport() {
 
 function openSheet(html) {
   coachOn = false;
+  document.body.classList.remove("has-coach");
   stopTimer();
   document.getElementById("overlay").innerHTML = "<div class='overlay'><div class='sheet' role='dialog'>" + html + "</div></div>";
 }
@@ -2046,7 +2116,7 @@ function closeOverlay() {
   const el = document.getElementById("overlay");
   coachOn = false;
   currentCoachTip = null;
-  document.body.classList.remove("bigwin");
+  document.body.classList.remove("bigwin", "has-coach");
   if (el) el.innerHTML = "";
   window.__take = null;
   if (view === "play") startTimer();
@@ -2079,9 +2149,11 @@ function showRollToast(settled, extra) {
     : "";
   const note = extra ? "<span class='extranote'>" + extra + "</span>" : "";
   el.className = "toast show roll";
-  el.innerHTML = billie + "<button data-act='toast-go' aria-label='Open the dice'>" +
-    "<span class='faces'>" + miniDie(settled.dice.d1) + miniDie(settled.dice.d2) + "</span>" +
-    "<b>" + settled.dice.line + "</b>" + netHtml + "<span class='tap'>TAP FOR DOME ›</span></button>" +
+  const cap = settled.dice;
+  const spoken = (cap.aria || "") + (net ? ", " + money(net) : "");
+  el.innerHTML = billie + "<button data-act='toast-go' aria-label='Open the dice. " + esc(spoken) + "'>" +
+    diceReadout(cap.d1, cap.d2, 24, { call: cap.word, hardTag: true, aria: cap.aria }) +
+    netHtml + "<span class='tap'>TAP FOR DOME ›</span></button>" +
     note +
     "<button class='autoswipe" + (settings.showDice ? " on" : "") + "' data-act='autoswipe' aria-pressed='" + settings.showDice + "'>AUTO-SWIPE</button>";
   clearTimeout(toastTimer);
@@ -2167,7 +2239,7 @@ function hudHTML() {
   const puck = game.phase === "point"
     ? "<img class='puckimg' src='assets/icons/puck-on.svg' alt=''><span class='pointname'><span class='pointword'>POINT </span>" + pointName + "</span>"
     : "<img class='puckimg' src='assets/icons/puck-off.svg' alt='Puck off'>";
-  const dice = game.lastDice ? "<span class='lastdice'>" + miniDie(game.lastDice.d1) + miniDie(game.lastDice.d2) + "</span>" : "";
+  const dice = game.lastDice ? "<span class='lastdice'>" + diceReadout(game.lastDice.d1, game.lastDice.d2, 16, { aria: game.lastDice.aria, tag: true }) + "</span>" : "";
   const mode = "<div class='seg modeseg'>" +
     "<button class='" + (game.mode === "regular" ? "on" : "") + "' data-act='mode' data-mode='regular'>Regular</button>" +
     "<button class='" + (game.mode === "crapless" ? "on" : "") + "' data-act='mode' data-mode='crapless'>Crapless</button></div>";
@@ -2175,8 +2247,8 @@ function hudHTML() {
     "<img src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt=''></button>" +
     "<img class='lockup' src='assets/logos/billybubs-bubble-craps-compact-color-dark.svg' alt='Billy Bubs Bubble Craps'>" +
     mode + "</div>" +
-    "<div class='hud-row2'><div class='hud-bank'><small>Chips</small><strong>" + money(game.bankroll) + "</strong></div>" +
-    "<div class='hud-bank'><small>On table</small><strong>" + money(on) + "</strong></div>" +
+    "<div class='hud-row2'><div class='hud-money'><div class='hud-bank'><small>Chips</small><strong>" + money(game.bankroll) + "</strong></div>" +
+    "<div class='hud-bank'><small>On table</small><strong>" + money(on) + "</strong></div></div>" +
     rollHud() +
     "<div class='hud-puck hud-point'>" + puck + "</div>" + dice + heaterHTML(false) +
     limitChip() +
@@ -2310,7 +2382,7 @@ function betPanelHTML() {
   const crapless = game.mode === "crapless";
   const tabs = ["place", "buy", ...(crapless ? [] : ["lay"]), "odds", "repeaters"];
   if (!tabs.includes(betTab)) betTab = "place";
-  const ledLast = game.lastDice ? game.lastDice.d1 + "·" + game.lastDice.d2 : "—";
+  const ledLast = game.lastDice ? diceReadout(game.lastDice.d1, game.lastDice.d2, 16, { aria: game.lastDice.aria }) : "<b>—</b>";
   let rows = "";
   if (betTab === "place" || betTab === "buy") {
     const kind = betTab;
@@ -2330,7 +2402,7 @@ function betPanelHTML() {
   const tabLabel = (id) => id === "repeaters" ? "REPEATERS ›" : id === "lay" ? "LAY" : id.toUpperCase();
   return "<div class='betscrim' data-act='bets'></div><section class='betpanel'>" +
     "<div class='sheetbar'><i class='sheethandle' data-act='bets'></i><button class='sheetx' data-act='bets' aria-label='Close bets'>×</button></div>" +
-    "<div class='led ledglass'><div><span>POINT</span><b>" + (game.point || "OFF") + "</b></div><div><span>LAST ROLL</span><b>" + ledLast + "</b></div><div><span>BALANCE</span><b>" + money(game.bankroll) + "</b></div></div>" +
+    "<div class='led ledglass'><div><span>POINT</span><b>" + (game.point || "OFF") + "</b></div><div><span>LAST ROLL</span>" + ledLast + "</div><div><span>BALANCE</span><b>" + money(game.bankroll) + "</b></div></div>" +
     "<div class='btabs'>" + tabs.map((id) => "<button class='btab" + (betTab === id ? " on" : "") + "' data-act='tab' data-tab='" + id + "'>" + tabLabel(id) + "</button>").join("") + "</div>" +
     "<div class='betlist'>" + rows + layoutExtras() + "</div></section>";
 }
@@ -2456,13 +2528,25 @@ function domeCall() {
   if (game.point) return "Come on, " + game.point + "!";
   return "Coming out!";
 }
-function historyChips(list, markLatest, limit) {
-  const arr = (list || []).slice(0, limit || 20).reverse();
-  return arr.map((h, i) => {
-    const total = h && h.total != null ? h.total : h;
-    const last = markLatest && i === arr.length - 1;
-    return "<span class='rchip" + (total === 7 ? " seven" : "") + (last ? " latest" : "") + "'>" + total + "</span>";
+function fairHistoryList(rolls) {
+  if (!rolls || !rolls.length) return "";
+  const cap = 80;
+  const shown = rolls.slice(-cap);
+  const start = rolls.length - shown.length;
+  const rows = shown.slice().reverse().map((r, i) => {
+    const n = start + shown.length - i;
+    const time = r.at ? new Date(r.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "—";
+    const hard = r.d1 === r.d2 && (r.total === 4 || r.total === 6 || r.total === 8 || r.total === 10);
+    const capRoll = E.rollCaption(r.d1, r.d2);
+    return "<li><span class='hn'>" + n + "</span><time>" + esc(time) + "</time>" +
+      diceReadout(r.d1, r.d2, 20, { aria: capRoll.aria, sevenOut: r.result === "seven-out" }) +
+      (hard ? "<b class='hardtag'>Hard " + r.total + "</b>" : "") +
+      "<span class='hline'>" + esc(String(r.result || "").replace(/-/g, " ")) + "</span></li>";
   }).join("");
+  const note = rolls.length > cap
+    ? "<p class='muted'>Showing the latest " + cap + " of " + rolls.length + ". CSV export stays numeric.</p>"
+    : "<p class='muted'>Same rolls as a CSV export. Die 1 and die 2 stay numbers there.</p>";
+  return "<article class='card'><h3>Roll history</h3>" + note + "<ol class='fairhist'>" + rows + "</ol></article>";
 }
 function domeHTML() {
   const tier = E.blazingTier(E.blazingScore(game.hand), game.hand.points);
@@ -2473,7 +2557,7 @@ function domeHTML() {
     "<i class='bubble' style='left:" + left + "%;width:" + (8 + (i % 4) * 5) + "px;height:" + (8 + (i % 4) * 5) + "px;animation-delay:" + (i * 0.35) + "s'></i>").join("");
   const line = rolling
     ? "<div class='ledglass'>AIR ON · DICE OUT</div>"
-    : "<div class='result-line'>" + (game.lastDice ? game.lastDice.line : "READY") + "</div>";
+    : "<div class='result-line'>" + (game.lastDice ? diceReadout(game.lastDice.d1, game.lastDice.d2, 32, { call: game.lastDice.word, aria: game.lastDice.aria }) : "READY") + "</div>";
   const win = !rolling && game.lastWin
     ? "<p class='hitline'>WIN · " + (game.lastWin.kind === "buy" ? "Buy " : "Place ") + game.lastWin.number + " +" + money(game.lastWin.profit) + "</p>"
     : "";
@@ -2486,7 +2570,7 @@ function domeHTML() {
     "<img class='dome-billy' src='assets/mascots/dealer-billy/" + billyPose + "' alt='Dealer Billy'>" +
     "<p class='speech'>" + domeCall() + "</p></div>" +
     line + win + heaterHTML(true) +
-    "<div class='rollstrip' aria-label='Last rolls'>" + historyChips(game.history, true, 10) + "</div></div>";
+    "<div class='rollstrip' aria-label='Last rolls'>" + rollTiles(game.history, { newestFirst: true, limit: 10, markLatest: true }) + "</div></div>";
 }
 
 function dockHTML() {
@@ -2772,7 +2856,8 @@ function fairHTML() {
     })() +
     "<p>Every roll uses your device's secure random generator. Each die is a fair 1 to 6, and the two dice are independent. Nothing on this screen, not your bets, your streak, or the Blazing meter, can change the next roll.</p>" +
     "<p class='muted'>RNG: " + (E.getRngSource() === "fallback" ? "basic (fallback)" : "secure") + ".</p>" +
-    "<article class='card'><h3>Last 20</h3><div class='rollstrip'>" + lastFair.map((r, i) => "<span class='rchip" + (r.total === 7 ? " seven" : "") + (i === lastFair.length - 1 ? " latest" : "") + "'>" + r.total + "</span>").join("") + "</div></article>" +
+    "<article class='card'><h3>Last 20</h3><div class='rollstrip fairstrip'>" + rollTiles(lastFair, { newestFirst: false, markLatest: true }) + "</div></article>" +
+    fairHistoryList(rolls) +
     "<p class='billytip'><img src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt='Dealer Billy'><span>Every roll is random, from a secure generator. A seven is always 1 in 6.</span></p>" +
     "<button class='ghost' data-act='export'>Export CSV <span class='prembadge'>PREMIUM</span></button>" +
     "<button class='cta' data-act='view' data-view='play'>BACK TO DOME</button></section>";

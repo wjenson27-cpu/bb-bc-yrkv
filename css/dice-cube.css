@@ -20,13 +20,13 @@
 .cube3d .cube[data-face="5"] .f5{--shade:transparent}
 .cube3d .cube[data-face="6"] .f6{--shade:transparent}
 .cube3d .cube.tumbling .f{--shade:rgba(0,0,0,.12)}
-/* Rest pose: that face is on top, tipped ~50deg toward the camera, pips upright. */
-.cube3d .cube[data-face="1"]{--rest:matrix3d(-0.9613,0,0.2756,0,0.1772,0.766,0.6179,0,0.2112,-0.6428,0.7364,0,0,0,0,1);transform:var(--rest)}
-.cube3d .cube[data-face="2"]{--rest:matrix3d(-0.9613,0,0.2756,0,-0.2112,0.6428,-0.7364,0,0.1772,0.766,0.6179,0,0,0,0,1);transform:var(--rest)}
-.cube3d .cube[data-face="3"]{--rest:matrix3d(0.2112,-0.6428,0.7364,0,0.1772,0.766,0.6179,0,0.9613,0,-0.2756,0,0,0,0,1);transform:var(--rest)}
-.cube3d .cube[data-face="4"]{--rest:matrix3d(-0.2112,0.6428,-0.7364,0,0.1772,0.766,0.6179,0,-0.9613,0,0.2756,0,0,0,0,1);transform:var(--rest)}
-.cube3d .cube[data-face="5"]{--rest:matrix3d(-0.9613,0,0.2756,0,0.2112,-0.6428,0.7364,0,-0.1772,-0.766,-0.6179,0,0,0,0,1);transform:var(--rest)}
-.cube3d .cube[data-face="6"]{--rest:matrix3d(0.9613,0,-0.2756,0,0.1772,0.766,0.6179,0,-0.2112,0.6428,-0.7364,0,0,0,0,1);transform:var(--rest)}
+/* Rest pose: a true rotation (det +1), not a mirror. That face is on top, tipped ~50deg toward the camera, pips upright. */
+.cube3d .cube[data-face="1"]{--rest:matrix3d(0.9613,0,-0.2757,0,0.1772,0.7661,0.6179,0,0.2112,-0.6428,0.7364,0,0,0,0,1);transform:var(--rest)}
+.cube3d .cube[data-face="2"]{--rest:matrix3d(0.9613,0,-0.2757,0,-0.2112,0.6428,-0.7364,0,0.1772,0.7661,0.6179,0,0,0,0,1);transform:var(--rest)}
+.cube3d .cube[data-face="3"]{--rest:matrix3d(0.2112,-0.6428,0.7364,0,0.1772,0.7661,0.6179,0,-0.9613,0,0.2757,0,0,0,0,1);transform:var(--rest)}
+.cube3d .cube[data-face="4"]{--rest:matrix3d(-0.2112,0.6428,-0.7364,0,0.1772,0.7661,0.6179,0,0.9613,0,-0.2757,0,0,0,0,1);transform:var(--rest)}
+.cube3d .cube[data-face="5"]{--rest:matrix3d(0.9613,0,-0.2757,0,0.2112,-0.6428,0.7364,0,-0.1772,-0.7661,-0.6179,0,0,0,0,1);transform:var(--rest)}
+.cube3d .cube[data-face="6"]{--rest:matrix3d(-0.9613,0,0.2757,0,0.1772,0.7661,0.6179,0,-0.2112,0.6428,-0.7364,0,0,0,0,1);transform:var(--rest)}
 /* tumble eases INTO the rest pose. JS sets data-face first, then .tumbling. 100% is the rest pose. */
 @keyframes bb-tumble{
   0%{transform:translateY(calc(var(--s)*-1.2)) rotateX(40deg) rotateY(20deg) rotateZ(8deg)}

@@ -18,7 +18,7 @@ export const BADGES = [
   { id: "ats_high_rolls", n: 11, name: "High Rolls Lit", desc: "High Rolls paid: 8, 9, 10, 11, 12 before a 7.", tier: "gold", hidden: false, mode: "both", section: "ATS", marquee: true, rule: "Any paid High Rolls win, in either mode. A re-arm counts. Any 7 loses it.", odds: "About 1 try in 38. Per hand about 1 in 27 Regular, 1 in 29 Crapless.", pay: "31 for 1", edge: "18.30%" },
   { id: "ats_roll_em_all", n: 12, name: "Roll 'Em All", desc: "Every number 2 to 12 (no 7) before a 7.", tier: "gold", hidden: false, mode: "both", section: "ATS", marquee: true, rule: "Any paid Roll 'Em All win, in either mode.", odds: "About 1 try in 190. Per hand about 1 in 134 Regular, 1 in 145 Crapless.", pay: "156 for 1", edge: "17.98%" },
   { id: "ats_sweep_one_hand", n: 13, name: "The ATS Sweep", desc: "Low Rolls, High Rolls, and Roll 'Em All, all paid in one hand.", tier: "legendary", hidden: false, mode: "both", section: "ATS", marquee: true, rule: "In one hand, each of the three ATS bets is paid at least once. Either mode.", odds: "About 1 in 134 hands Regular, 1 in 145 Crapless, with all three up.", pay: "31 / 31 / 156 for 1", edge: "about 18%" },
-  { id: "spin_the_block", n: 14, name: "Spin the Block", desc: "Low Rolls or High Rolls paid twice in a row on the same bet.", tier: "legendary", hidden: false, mode: "both", section: "ATS", marquee: true, rule: "The same ATS bet, Low or High, is paid twice with no 7 between. Either mode.", odds: "About 1 in 523 hands Regular, 1 in 565 Crapless, with both bets up.", pay: "31 for 1", edge: "18.30%" },
+  { id: "spin_the_block", n: 14, name: "Spin the Block", desc: "Low Rolls or High Rolls paid twice in a row on the same bet.", tier: "legendary", hidden: false, mode: "both", section: "ATS", marquee: true, rule: "The same ATS bet, Low or High, is paid twice with no 7 between. Either mode. About 1 in 565 hands in Crapless, with both bets up.", odds: "About 1 in 523 hands", pay: "31 for 1", edge: "18.30%" },
   { id: "hwad_win", n: 15, name: "Hard Way All Day", desc: "Hard 4, 6, 8, and 10 all before a 7. 165 for 1.", tier: "gold", hidden: false, mode: "both", section: "Hardways", marquee: true, rule: "Any paid Hard Way All Day win. A re-arm counts.", odds: "About 1 try in 210. Pays 165 for 1. House edge 21.43%.", pay: "165 for 1", edge: "21.43%" },
   { id: "hard_hat_trick", n: 16, name: "Hard Hat Trick", desc: "Three hardway wins in a row, no hardway loss between.", tier: "gold", hidden: false, mode: "both", section: "Hardways", rule: "Three of your hardway bets are paid in a row. A hardway loss resets the run.", odds: "About 1 in 40 hands with all four up." },
   { id: "repeaters_all_ten", n: 17, name: "Full Repeater Rail", desc: "Every Repeater paid at least once: 2 through 12.", tier: "gold", hidden: false, mode: "both", section: "Repeaters", rule: "Each Repeater number, 2 through 12, is paid at least once.", odds: "A long-shot collection. House edge about 18% to 22%." },
@@ -32,7 +32,7 @@ export const BADGES = [
   { id: "fair_dice_explorer", n: 25, name: "Fair Dice Detective", desc: "Checked the dice three ways.", tier: "bronze", hidden: false, mode: "both", section: "Practice", rule: "Open This session, Last 100, and All time, and reach the fairness card.", odds: "" },
   { id: "daily_practice_3", n: 26, name: "Three-Day Practice", desc: "Practiced three days running.", tier: "bronze", hidden: false, mode: "both", section: "Practice", rule: "Three local days in a row with a finished hand or a finished lesson.", odds: "" },
   { id: "limits_set_session", n: 27, name: "Set Your Limits", desc: "Played a session with a loss limit set before the first roll.", tier: "bronze", hidden: false, mode: "both", section: "Limits", rule: "A qualifying session ends with a loss limit that was set before the first roll.", odds: "" },
-  { id: "win_goal_banked", n: 28, name: "Banked the Goal", desc: "Hit your win goal and ended the session there.", tier: "silver", hidden: false, mode: "both", section: "Limits", rule: "A qualifying session also has a loss limit. The win-goal prompt fires after 20 bet-rolls, and the session ends there, including End session before the next roll.", odds: "" },
+  { id: "win_goal_banked", n: 28, name: "Banked the Goal", desc: "Hit your win goal and ended the session there.", tier: "silver", hidden: false, mode: "both", section: "Limits", rule: "A win goal is set before the first roll. The win-goal prompt fires after 20 bet-rolls, and the session ends there or before the next roll. A loss limit is not required. Keep playing past the goal does not count, even if you end later. If both limits were hit, Kept My Limit counts instead.", odds: "" },
   { id: "loss_limit_kept", n: 29, name: "Kept My Limit", desc: "Reached your loss limit and stopped, just like you planned.", tier: "silver", hidden: false, mode: "both", section: "Limits", rule: "The loss-limit prompt fires after 20 bet-rolls, and the session ends there, including End session before the next roll. If both limits were hit, this one counts.", odds: "" },
   { id: "five_sessions_within_limits", n: 30, name: "Five Within Limits", desc: "Five sessions that stayed inside your limits.", tier: "gold", hidden: false, mode: "both", section: "Limits", rule: "Five qualifying sessions with a loss limit and no roll after that limit.", odds: "" },
 ];
@@ -306,23 +306,24 @@ export function evaluateSession(store, report) {
   if (id != null && sessions.awarded.indexOf(id) >= 0) {
     return { store: next, unlocked: [] };
   }
-  const qualifies = report.qualifies === true
-    || (report.betRolls >= 20 && !report.loosened && report.endReason !== "reset" && report.lossCents > 0);
-  if (!qualifies) return { store: next, unlocked: [] };
-  unlock(next, next.progress, "limits_set_session", c);
+  const baseGate = report.betRolls >= 20 && !report.loosened && report.endReason !== "reset";
+  const lossQualified = report.qualifies === true || (baseGate && report.lossCents > 0);
+  const stoppedAtWin = !report.rollAfterWin && (report.endedAtWin || (report.endedBeforeNextRoll && report.winHit));
+  const winQualified = baseGate && report.endReason !== "idle" && report.winCents > 0
+    && report.winPromptAfter20 && stoppedAtWin;
+  if (!lossQualified && !winQualified) return { store: next, unlocked: [] };
+  if (lossQualified) unlock(next, next.progress, "limits_set_session", c);
   let awardedOne = false;
-  const banked = report.winPromptAfter20 && report.winCents > 0 && report.lossCents > 0
-    && (report.endedAtWin || (report.endedBeforeNextRoll && report.winHit));
-  const kept = report.lossPromptAfter20 && (report.endedAtLoss || (report.endedBeforeNextRoll && report.lossHit));
+  const kept = lossQualified && report.lossPromptAfter20
+    && (report.endedAtLoss || (report.endedBeforeNextRoll && report.lossHit));
   if (kept) {
     unlock(next, next.progress, "loss_limit_kept", c);
     awardedOne = true;
-  } else if (banked) {
+  } else if (winQualified) {
     unlock(next, next.progress, "win_goal_banked", c);
     awardedOne = true;
   }
-  const stayed = !report.rollAfterLoss;
-  if (stayed) {
+  if (lossQualified && !report.rollAfterLoss) {
     sessions.withinLimits += 1;
     if (sessions.withinLimits >= 5) unlock(next, next.progress, "five_sessions_within_limits", c);
   }

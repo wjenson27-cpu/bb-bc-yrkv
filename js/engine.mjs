@@ -361,7 +361,12 @@ export function rollCaption(d1, d2) {
   if (hard && (total === 4 || total === 6 || total === 8 || total === 10)) word = "HARD " + names[total];
   else if (!hard && (total === 4 || total === 6 || total === 8 || total === 10)) word = "EASY " + names[total];
   else if (total === 7) word = "SEVEN";
-  return { d1, d2, total, hard, line: d1 + "·" + d2 + " · " + word, word };
+  const faceWord = ["", "one", "two", "three", "four", "five", "six"];
+  const totalWord = ["", "", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+  let aria = faceWord[d1] + " and " + faceWord[d2] + ", " + totalWord[total];
+  if (hard && (total === 4 || total === 6 || total === 8 || total === 10)) aria = faceWord[d1] + " and " + faceWord[d2] + ", hard " + totalWord[total];
+  else if (!hard && (total === 4 || total === 6 || total === 8 || total === 10)) aria += ", easy " + totalWord[total];
+  return { d1, d2, total, hard, line: word, word, aria };
 }
 
 function cryptoObj() {

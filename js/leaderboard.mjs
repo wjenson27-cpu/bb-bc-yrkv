@@ -200,6 +200,14 @@ export function lastWeekBest(entries, mode, now) {
   return rows[0] || null;
 }
 
+function sevenDice(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const d1 = Math.floor(Number(raw.d1));
+  const d2 = Math.floor(Number(raw.d2));
+  if (d1 < 1 || d1 > 6 || d2 < 1 || d2 > 6 || d1 + d2 !== 7) return null;
+  return { d1, d2 };
+}
+
 function asEntry(raw) {
   const throws = rollsOf(raw || {});
   const points = pointsOf(raw || {});
@@ -229,6 +237,7 @@ export function previewRoll(data, candidate) {
     points: entry.points,
     mode: entry.mode,
     at: entry.at,
+    sevenOutDice: sevenDice(candidate && candidate.sevenOutDice),
   };
 }
 
@@ -297,6 +306,7 @@ export function commitRoll(data, candidate) {
     sessionId: Math.floor(Number(candidate.sessionId) || 0),
     appVersion: candidate.appVersion || "run6",
     personalBest,
+    sevenOutDice: sevenDice(candidate.sevenOutDice),
   };
   let entries = base.entries.map((e) => (
     personalBest && e.mode === entry.mode ? Object.assign({}, e, { personalBest: false }) : e
@@ -371,6 +381,7 @@ function copyEntry(e) {
     sessionId: e.sessionId || 0,
     appVersion: e.appVersion || "",
     personalBest: !!e.personalBest,
+    sevenOutDice: sevenDice(e.sevenOutDice),
   };
 }
 

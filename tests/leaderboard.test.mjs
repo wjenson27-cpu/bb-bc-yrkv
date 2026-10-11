@@ -254,6 +254,20 @@ test("initials are 1 to 3 letters, blank is allowed, and the blocklist refuses a
     throws: 12, points: 1, mode: "regular", at: now, initials: "BIL", rngSource: "test",
   });
   assert.equal(testRoll.ok, false);
+  const posted = L.commitRoll(L.emptyData(), {
+    throws: 12, points: 1, mode: "regular", at: now, initials: "BIL",
+    sevenOutDice: { d1: 3, d2: 4 },
+  });
+  assert.equal(posted.ok, true);
+  assert.deepEqual(posted.entry.sevenOutDice, { d1: 3, d2: 4 });
+  const store = L.memoryStore();
+  L.writeStore(store, posted.data);
+  assert.deepEqual(L.readStore(store).entries[0].sevenOutDice, { d1: 3, d2: 4 });
+  const bad = L.commitRoll(L.emptyData(), {
+    throws: 12, points: 1, mode: "regular", at: now, initials: "BIL",
+    sevenOutDice: { d1: 6, d2: 6 },
+  });
+  assert.equal(bad.entry.sevenOutDice, null);
 });
 
 test("a pending record card survives a reload", () => {

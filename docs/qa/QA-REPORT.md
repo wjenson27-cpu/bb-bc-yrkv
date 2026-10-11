@@ -149,6 +149,16 @@ Auto Power Press toasts "Collected: not enough chips for the next step" when the
 
 86 tests pass. `robots` meta `noindex, nofollow` is still on the page.
 
+## Run 9
+
+Mini dice in the hop icons and the HUD use a 3×3 grid that fits inside the face, so Hard 4 reads 2·2 and Hard 6 reads 3·3. The gold and legendary marquee is `position: fixed` and stays inside the viewport at 375, 390, 430, and landscape. The settled 3D dice are true rotations (determinant +1) with the engine face on top, opposite faces summing to 7, and a right-handed 1-2-3 corner. Compare: `docs/qa/compare/run9-dice-36.jpg`, `run9-hops.jpg`, `run9-marquee-*.jpg`.
+
+Roll readouts use the face art instead of `n·m = total`: the dome result, the roll toast, the HUD, the bet-panel LED, the Last strips (14px, with a total-chip fallback under 340px), Fair Dice history, and the record card. The leaderboard stores `sevenOutDice`. Badge #28 does not need a loss limit, and Keep playing past the win goal does not unlock it. The marquee line includes the badge odds and a House edge label. Spin the Block’s odds cell says “About 1 in 523 hands”. B13 still offers a 40% loss limit and a 30% win goal.
+
+A coach card hides the dome Billy. Sheets sit above the dice. The felt ON puck sits inset so it does not cover the number word. The HUD roll counter uses Cinzel, and the two money labels have a 14px gap. The landscape DOME pill stays on one line.
+
+Still later: Premium scaled and custom ladders, the rest of the tutor rows, long-press bet preview, the wide layout, cent flooring, the fairness-card scroll for #25, practice-day counting for #26, and the Table Craps turn log.
+
 Still later: Premium scaled and custom Power Press ladders, the rest of the tutor state table, long-press bet preview, the wide layout, and the fairness-card scroll for badge #25.
 
 ## Still short of the mockups

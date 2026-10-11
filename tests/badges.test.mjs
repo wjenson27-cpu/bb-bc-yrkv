@@ -166,9 +166,27 @@ test("ending before the next roll banks the goal or keeps the limit, and idle do
     winPromptAfter20: true,
     endedAtWin: true,
     winHit: true,
+    rollAfterWin: false,
     now: 4,
   });
-  assert.ok(!noLossLimit.unlocked.includes("win_goal_banked"));
+  assert.ok(noLossLimit.unlocked.includes("win_goal_banked"));
+  assert.ok(!noLossLimit.unlocked.includes("limits_set_session"));
+  assert.equal(noLossLimit.store.sessions.withinLimits, 0);
+
+  const keptPlaying = B.evaluateSession(base, {
+    sessionId: 6,
+    betRolls: 22,
+    lossCents: 0,
+    winCents: 30000,
+    endReason: "end",
+    winPromptAfter20: true,
+    winHit: true,
+    endedBeforeNextRoll: true,
+    rollAfterWin: true,
+    now: 6,
+  });
+  assert.ok(!keptPlaying.unlocked.includes("win_goal_banked"));
+  assert.ok(!keptPlaying.unlocked.includes("limits_set_session"));
 
   const idle = B.evaluateSession(base, {
     sessionId: 5,
