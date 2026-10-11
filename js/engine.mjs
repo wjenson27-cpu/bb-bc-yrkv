@@ -365,7 +365,7 @@ export function rollCaption(d1, d2) {
   const totalWord = ["", "", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
   let aria = faceWord[d1] + " and " + faceWord[d2] + ", " + totalWord[total];
   if (hard && (total === 4 || total === 6 || total === 8 || total === 10)) aria = faceWord[d1] + " and " + faceWord[d2] + ", hard " + totalWord[total];
-  else if (!hard && (total === 4 || total === 6 || total === 8 || total === 10)) aria += ", easy " + totalWord[total];
+  else if (!hard && (total === 4 || total === 6 || total === 8 || total === 10)) aria = faceWord[d1] + " and " + faceWord[d2] + ", easy " + totalWord[total];
   return { d1, d2, total, hard, line: word, word, aria };
 }
 
@@ -1564,9 +1564,6 @@ export function settle(state, d1, d2) {
   next.stats.rolls += 1;
   next.lastDice = rollCaption(d1, d2);
   next.lastDice.source = getRngSource();
-  next.history.unshift({ d1, d2, total, hard });
-  if (next.history.length > 20) next.history.length = 20;
-
   settleOneRoll(next, d1, d2, decisions);
   settleHardways(next, d1, d2, decisions);
   settleBonus(next, d1, d2, decisions);
@@ -1575,6 +1572,8 @@ export function settle(state, d1, d2) {
   settleComeContracts(next, total, decisions, comeOut);
   settleNewCome(next, total, decisions);
   const line = settleLine(next, total, decisions, comeOut, point);
+  next.history.unshift({ d1, d2, total, hard, result: line.result });
+  if (next.history.length > 20) next.history.length = 20;
 
   const sevenOut = line.result === "seven-out";
   if (sevenOut) {

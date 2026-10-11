@@ -216,7 +216,7 @@ function rollTiles(list, opts) {
       return "<span class='rchip" + (total === 7 ? " seven" : "") + (last ? " latest" : "") + "'>" + total + "</span>";
     }
     const cap = E.rollCaption(d1, d2);
-    const label = cap.aria;
+    const label = cap.aria + (h.result === "seven-out" ? ", seven out" : "");
     const cls = "rolltile" + (total === 7 ? " seven" : "") + (last ? " latest" : "") + (d1 === d2 ? " dbl" : "");
     return "<button type='button' class='" + cls + "' data-act='last20' aria-label='" + esc(label) + "'>" +
       dieFace(d1, 14) + dieFace(d2, 14) + "<b>" + total + "</b></button>";
@@ -224,7 +224,7 @@ function rollTiles(list, opts) {
 }
 function last20Sheet() {
   const rows = (game.history || []).slice(0, 20);
-  const tiles = rows.map((h) => diceReadout(h.d1, h.d2, 20, { sevenOut: h.total === 7, aria: E.rollCaption(h.d1, h.d2).aria })).join("");
+  const tiles = rows.map((h) => diceReadout(h.d1, h.d2, 20, { sevenOut: h.result === "seven-out", aria: E.rollCaption(h.d1, h.d2).aria })).join("");
   openSheet("<h2>Last 20</h2><div class='last20'>" + (tiles || "<p>No rolls yet.</p>") + "</div><div class='actions'><button class='go' data-act='close'>Close</button></div>");
 }
 function faceWord(n) {
@@ -1144,7 +1144,13 @@ function queueUnlocks(ids) {
   if (!badgeTimer) pumpBadges();
 }
 function badgeBlocked() {
-  return rolling || !!document.querySelector(".winlayer") || !!document.querySelector(".recordcard");
+  if (rolling || document.querySelector(".recordcard")) return true;
+  if (document.querySelector(".winlayer")) {
+    const next = badgeQueue[0];
+    const def = next && B.badgeById(next);
+    return !(def && def.marquee);
+  }
+  return false;
 }
 function badgeHost() {
   let host = document.getElementById("badge-toast");
@@ -1215,7 +1221,7 @@ function showBadgeToast(def) {
       "<div><em class='tierpill'>" + def.tier + "</em><b>" + esc(def.name) + "</b>" +
       (facts ? "<span class='facts'>" + esc(facts) + "</span>" : "") +
       "<p class='billieline'>" + line + "</p></div>" +
-      "<button type='button' data-act='badge-view' data-id='" + def.id + "'>VIEW</button></div>";
+      "<button type='button' class='view' data-act='badge-view' data-id='" + def.id + "'>VIEW</button></div>";
   } else {
     host.innerHTML = "<div class='badgetoast' data-id='" + def.id + "'>" +
       "<img class='art' src='" + B.artFile(def.id, "open") + "' alt=''>" +
@@ -1434,7 +1440,7 @@ function measureChrome() {
   const fs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const zoomed = fs >= 16 * 1.3;
   document.querySelectorAll(".rollstrip").forEach((el) => {
-    el.classList.toggle("totals", short || zoomed || el.clientWidth < 340);
+    el.classList.toggle("totals", short || zoomed || el.clientWidth < 300);
   });
 }
 function noteFair() {
@@ -1601,9 +1607,16 @@ function showBigWin(settled) {
   el.innerHTML = "<div class='winlayer" + (reduce ? " reduce" : "") + "'>" +
     "<div class='sunburst' aria-hidden='true'></div>" +
     "<div class='spark' aria-hidden='true'>" + [0, 1, 2, 3, 4, 5, 6, 7].map((i) => "<i style='--a:" + i + "'></i>").join("") + "</div>" +
-    "<div class='winrow'><div class='winstamp'><b>BIG WIN!</b><strong>" + amount + "</strong><p>PRACTICE CHIPS</p>" +
+    "<div class='winrow'><div class='winstamp'><b>BIG WIN!</b><strong>" + amount + "</strong>" +
+    (settled.dice && settled.dice.d1 ? diceReadout(settled.dice.d1, settled.dice.d2, 24, {
+      aria: settled.dice.aria,
+      sevenOut: settled.result === "seven-out",
+      hardTag: settled.result !== "seven-out",
+      call: settled.result === "seven-out" ? "SEVEN OUT" : settled.dice.word,
+    }) : "") +
+    "<p>PRACTICE CHIPS</p>" +
     (lines.length ? "<em>" + lines.join("<br>") + "</em>" : "") + "</div>" +
-    "<img src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'></div>" +
+    "<img class='win-billie' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'></div>" +
     burstChips(settled.net) +
     "<div class='actions'><button class='go' data-act='collect'>Collect</button><button class='ghost' data-act='add-win'>Add a chip</button></div></div>";
   clearTimeout(celeTimer);
@@ -1620,10 +1633,13 @@ function sevenToast(settled, extra) {
   const line = net === 0 ? "Seven out." : "Seven out. " + money(net).replace("-", "−");
   const el = document.getElementById("toast");
   if (!el) return;
+  const dice = settled.dice || {};
+  const pips = dice.d1 ? diceReadout(dice.d1, dice.d2, 24, { sevenOut: true, aria: dice.aria, call: "SEVEN OUT" }) : "";
   el.className = "toast show seven";
   el.innerHTML = "<img class='toast-billy' src='assets/mascots/dealer-billy/billy-A-sevenout.svg' alt='Dealer Billy'>" +
-    "<div class='speech'><b>" + line + "</b>" + (extra ? "<small>" + extra + "</small>" : "") + "</div>" +
+    "<div class='speech'><b>" + line + "</b>" + pips + (extra ? "<small>" + extra + "</small>" : "") + "</div>" +
     "<span class='steams' aria-hidden='true'><i class='steam'></i><i class='steam'></i><i class='steam'></i></span>";
+  syncMascot();
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, 2800);
 }
@@ -1715,7 +1731,7 @@ function showRecordCard(preview) {
   const points = preview.points === 1 ? "1 point" : preview.points + " points";
   const mode = preview.mode === "crapless" ? "Crapless" : "Regular";
   const ended = preview.sevenOutDice
-    ? "<p class='endedon'>Ended on " + diceReadout(preview.sevenOutDice.d1, preview.sevenOutDice.d2, 20, { sevenOut: true }) + " · seven out</p>"
+    ? "<p class='endedon'>Ended on " + diceReadout(preview.sevenOutDice.d1, preview.sevenOutDice.d2, 20, { sevenOut: true }) + " <span class='outtag'>· seven out</span></p>"
     : "";
   el.innerHTML = "<div class='recordlayer' role='dialog' aria-labelledby='record-title'>" +
     "<div class='recordcard'>" +
@@ -1803,7 +1819,7 @@ function leaderHTML() {
       "<div class='boardmain'><b>" + esc(e.name) + "</b>" +
       (mine ? "<i class='youtag'>YOU</i>" : "") +
       "<small>" + pts + " · " + esc(L.formatWhen(e.at)) + " · " + esc(L.formatClock(e.at)) + "</small>" +
-      (e.sevenOutDice ? "<span class='endedon'>Ended on " + diceReadout(e.sevenOutDice.d1, e.sevenOutDice.d2, 20, { sevenOut: true }) + " · seven out</span>" : "") +
+      (e.sevenOutDice ? "<span class='endedon'>Ended on " + diceReadout(e.sevenOutDice.d1, e.sevenOutDice.d2, 20, { sevenOut: true }) + " <span class='outtag'>· seven out</span></span>" : "") +
       "</div>" +
       "<span class='rollcount'>" + e.throws + "</span>" +
       "<span class='tierchip " + tier + "'>" + tier + "</span></li>";
@@ -1934,7 +1950,9 @@ function noteBlaze(before, settled) {
   }
   if (parts.length) {
     const delay = isBigWin(settled) ? 2600 : 1400;
-    queueToast(parts.join(" "), "", delay);
+    const hot = moment.tier === "hot" || moment.tier === "blazing";
+    const mascot = hot ? "assets/mascots/billie/billie-C-cheer.svg" : "";
+    queueToast(parts.join(" "), mascot, delay, hot ? "heat" : "");
   }
 }
 
@@ -1950,8 +1968,11 @@ function maybeAtsNote(settled) {
   if (settled.result === "natural" && settled.dice && settled.dice.total === 7 && atsLost && !settings.seenAtsComeout) {
     settings.seenAtsComeout = true;
     save();
+    const sevenPips = settled.dice && settled.dice.d1
+      ? diceReadout(settled.dice.d1, settled.dice.d2, 18, { aria: settled.dice.aria, sevenOut: false })
+      : "";
     if (document.querySelector(".overlay, .coach")) {
-      queueToast("Seven on the come-out: Pass wins, and a 7 ends Low Rolls, High Rolls, and Roll 'Em All.", "", 1600);
+      queueToast((sevenPips ? sevenPips + " " : "") + "Seven on the come-out: Pass wins, and a 7 ends Low Rolls, High Rolls, and Roll 'Em All.", "", 1600);
     } else openTutor(0, "ats7");
   }
   if (game.mode === "crapless" && settled.result === "point-set" && [2, 3, 11, 12].indexOf(game.point) >= 0 && !settings.seenAtsLamp) {
@@ -1960,7 +1981,10 @@ function maybeAtsNote(settled) {
       save();
       const n = game.point;
       const name = n <= 6 ? "Low Rolls" : "High Rolls";
-      queueToast("That " + n + " set your point, and it also lit " + name + "'s " + n + " lamp. ATS counts every roll's total.", "", 900);
+      const lampPips = settled.dice && settled.dice.d1
+        ? diceReadout(settled.dice.d1, settled.dice.d2, 18, { aria: settled.dice.aria, tag: true })
+        : String(n);
+      queueToast("That " + lampPips + " set your point, and it also lit " + name + "'s " + n + " lamp. ATS counts every roll's total.", "", 900);
     }
   }
 }
@@ -2041,9 +2065,11 @@ function openTutor(step, force) {
           ? {
             id: "ats-comeout",
             title: "Come-out 7 with ATS up",
-            body: settings.tutorTrack === "experienced"
+            body: (game.lastDice && game.lastDice.d1
+              ? diceReadout(game.lastDice.d1, game.lastDice.d2, 18, { aria: game.lastDice.aria, sevenOut: false }) + " "
+              : "") + (settings.tutorTrack === "experienced"
               ? "Come-out 7: Pass wins, and every ATS bet up loses. ATS edges are the same in both modes (18.30% / 17.98%). Crapless hands are shorter, so Low Rolls hits about 1 hand in 29 instead of 1 in 27."
-              : "Seven on the come-out: your Pass Line wins, but a 7 ends Low Rolls, High Rolls and Roll 'Em All. ATS only cares about the dice total, not the point.",
+              : "Seven on the come-out: your Pass Line wins, but a 7 ends Low Rolls, High Rolls and Roll 'Em All. ATS only cares about the dice total, not the point."),
             edge: 18.3,
           }
           : currentTip();
@@ -2122,22 +2148,30 @@ function closeOverlay() {
   if (view === "play") startTimer();
 }
 
-function toast(text, mascot) {
+function syncMascot() {
+  const toastEl = document.getElementById("toast");
+  const show = !!(toastEl && toastEl.classList.contains("show"));
+  document.body.classList.toggle("has-billy-toast", !!(show && toastEl.querySelector(".toast-billy")));
+  document.body.classList.toggle("has-heat", !!(show && toastEl.querySelector(".toast-billie.heat")));
+}
+function toast(text, mascot, kind) {
   const el = document.getElementById("toast");
   if (!el) return;
   el.className = "toast show info";
-  const img = mascot ? "<img class='toast-billie' src='" + mascot + "' alt='Bubbles Billie'>" : "";
+  const img = mascot ? "<img class='toast-billie" + (kind === "heat" ? " heat" : "") + "' src='" + mascot + "' alt='Bubbles Billie'>" : "";
   el.innerHTML = img + "<div>" + text + "</div>";
+  syncMascot();
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, 2500);
 }
-function queueToast(text, mascot, delay) {
+function queueToast(text, mascot, delay, kind) {
   if (!text) return;
-  setTimeout(() => { if (view === "play") toast(text, mascot); }, delay == null ? 1200 : delay);
+  setTimeout(() => { if (view === "play") toast(text, mascot, kind); }, delay == null ? 1200 : delay);
 }
 function hideToast() {
   const el = document.getElementById("toast");
   if (el) el.className = "toast";
+  syncMascot();
 }
 function showRollToast(settled, extra) {
   const el = document.getElementById("toast");
@@ -2145,7 +2179,7 @@ function showRollToast(settled, extra) {
   const net = settled.net || 0;
   const netHtml = net === 0 ? "" : "<b class='netpill " + (net > 0 ? "up" : "down") + "'>" + money(net) + "</b>";
   const billie = net > 0 && !isBigWin(settled)
-    ? "<img class='toast-billie' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'>"
+    ? "<img class='toast-billie board-cheer' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'>"
     : "";
   const note = extra ? "<span class='extranote'>" + extra + "</span>" : "";
   el.className = "toast show roll";
@@ -2156,6 +2190,7 @@ function showRollToast(settled, extra) {
     netHtml + "<span class='tap'>TAP FOR DOME ›</span></button>" +
     note +
     "<button class='autoswipe" + (settings.showDice ? " on" : "") + "' data-act='autoswipe' aria-pressed='" + settings.showDice + "'>AUTO-SWIPE</button>";
+  syncMascot();
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, extra ? 3200 : 2500);
 }
@@ -2877,3 +2912,9 @@ if (boardData.pending && !(boardData.initials && boardData.initials.asked)) {
   if (preview.madeWeek || preview.madeAll) showRecordCard(preview);
 }
 if (view === "play") startTimer();
+if (testRngAllowed()) {
+  window.__bbShowMarquee = (id) => {
+    const def = B.badgeById(id || "spin_the_block");
+    if (def) showBadgeToast(def);
+  };
+}
