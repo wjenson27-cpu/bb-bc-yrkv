@@ -928,8 +928,8 @@ async function doRoll(source) {
     paint();
     return;
   }
-  clearWin();
   rolling = true;
+  clearWin();
   stopTimer();
   const pointBefore = game.point;
   A.setMuted(!settings.sound);
@@ -1146,11 +1146,7 @@ function queueUnlocks(ids) {
 }
 function badgeBlocked() {
   if (rolling || document.querySelector(".recordcard")) return true;
-  if (document.querySelector(".winlayer")) {
-    const next = badgeQueue[0];
-    const def = next && B.badgeById(next);
-    return !(def && def.marquee);
-  }
+  if (document.body.classList.contains("bigwin") || document.querySelector(".winlayer")) return true;
   return false;
 }
 function badgeHost() {
@@ -1210,7 +1206,7 @@ function showBadgeToast(def) {
     crapless_six_points_one_hand: "Six Crapless points, one hand.",
   };
   const line = lines[def.id] || (def.tier === "legendary" ? "A rare one. Still random." : "That's a keeper.");
-  const oddsLine = def.id === "spin_the_block" ? "About 1 in 523 hands" : def.odds;
+  const oddsLine = def.odds;
   const facts = marquee
     ? [oddsLine, def.pay ? def.pay + ", paid in practice chips" : "", def.edge ? "House edge " + def.edge : ""].filter(Boolean).join(" · ")
     : [def.pay, def.edge].filter(Boolean).join(" · ");
@@ -1441,7 +1437,9 @@ function measureChrome() {
   const fs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const zoomed = fs >= 16 * 1.3;
   document.querySelectorAll(".rollstrip").forEach((el) => {
-    el.classList.toggle("totals", short || zoomed || el.clientWidth < 309);
+    const dome = el.closest(".dome-screen");
+    const available = dome ? dome.clientWidth : el.clientWidth;
+    el.classList.toggle("totals", short || zoomed || available < 309);
   });
 }
 function noteFair() {
@@ -1916,7 +1914,7 @@ function openBadge(id) {
     "<div class='pills'><span class='tierpill'>" + tierName + "</span><span class='modepill'>" + modeName + "</span></div>" +
     "<p>" + esc(b.desc) + "</p>" +
     "<article class='rulecard'><h3>THE RULE</h3><p>" + esc(b.rule) + "</p></article>" +
-    "<div class='factrow'><div><small>Odds</small><b>" + esc(b.id === "spin_the_block" ? "About 1 in 523 hands" : (b.odds || "—")) + "</b></div>" +
+    "<div class='factrow'><div><small>Odds</small><b>" + esc(b.odds || "—") + "</b></div>" +
     "<div><small>Pays</small><b>" + esc(b.pay || "—") + "</b></div>" +
     "<div><small>Edge</small><b>" + esc(b.edge || "—") + "</b></div></div>" +
     "<p>" + when + " · " + times + "</p>" +
@@ -2926,5 +2924,11 @@ if (testRngAllowed()) {
   window.__bbShowMarquee = (id) => {
     const def = B.badgeById(id || "spin_the_block");
     if (def) showBadgeToast(def);
+  };
+  window.__bbQueueMarquee = (id) => {
+    const def = B.badgeById(id || "spin_the_block");
+    if (!def) return;
+    if (badgeQueue.indexOf(def.id) < 0) badgeQueue.push(def.id);
+    if (!badgeTimer) pumpBadges();
   };
 }
