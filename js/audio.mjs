@@ -92,7 +92,9 @@ export function win() {
   const a = ac();
   if (!a || muted) return;
   const t = a.currentTime;
-  [523, 659, 784].forEach((f, i) => tone(f, t + i * 0.08, 0.22, "sine", 0.06));
+  [523, 659, 784, 1046].forEach((f, i) => tone(f, t + i * 0.07, 0.28, "sine", 0.055));
+  tone(1568, t + 0.28, 0.18, "triangle", 0.03);
+  noise(t + 0.02, 0.1, 0.025);
 }
 
 export function seven() {

@@ -66,3 +66,21 @@ Checked in the live DOM, not only in the pictures: Crapless text has no Don't an
 The felt follows the locked order (Horn 2×2, Big Red, Hard Way All Day, hardways, numbers with Buy above and Place below, Come, Field, Pass line). It is not a pixel copy. Type is Palatino and system UI, not the mockup's display face. Any Craps, Horn 4-way, and C&E sit on an extra row under the prop grid so those bets can be made; they are not separate spots in the locked mockup. Felt cells are under 44px so the Pass Line fits; the dock, chips, tabs, and bet-panel steppers are at least 44px, and every felt bet is also on a 44px stepper.
 
 Wide windows center the phone column. They do not become the spec's side-by-side or three-column layout.
+
+Side-by-side comparisons of the polished screens and the mockups are in `docs/qa/compare/`.
+
+## Rules pass
+
+The rules review found a C&E overpay and a progress-banking hole, plus several missing Standard behaviors. Those are fixed in the engine and covered by tests.
+
+- C&E pays 3 to 1 on 2, 3, and 12 and 7 to 1 on 11, on the whole stake. A $10 C&E wins $30 on craps and $70 on 11. The spot says `C 3:1 · E 7:1`. The bet is posted in $2 units. The old test that expected $75 and $35 on a $5 C&E was asserting the bug.
+- Hard Way All Day and ATS reject more chips once any lamp is lit. Any takedown, including a partial one, clears the lamps. A Repeater takedown clears its tally the same way.
+- Regular/Crapless and Home → Play do not refund a working Pass, Don't, or Come bet, and they do not clear a point that is on.
+- Settings has auto-press (Off / PRESS / POWER PRESS, max 1–5). It adds to the Billy's Way spot that won and leaves the original bet alone. B5 uses the same control, reopens after a seven-out, and stops after three lost opening spreads.
+- Premium lists B-1 through B-30, Regular and Crapless, the presets, and an Edge Preview. Every control on that screen is locked.
+- A sideways drag changes screens even when it starts on a felt button, and the dot follows. Playwright drives that gesture when system Chrome is available.
+- The Blazing meter can be switched off. The first time each tier appears, the copy says the dice have no memory. A seven-out from a longer hand says the hand cooled off.
+- B8 can post a new Buy 4/5/9/10 set after it takes the first one down. B11 pauses after 100 rolls, not 99.
+- PRESS and POWER PRESS show why they are grey, including while the dice are tumbling. The $500 cap toast only shows when the bet lands on the table max.
+
+49 tests pass, including the browser swipe. `robots` meta `noindex, nofollow` is still on the page.
