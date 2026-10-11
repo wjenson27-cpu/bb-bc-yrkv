@@ -3,6 +3,8 @@ import * as S from "./strategies.mjs";
 import * as F from "./fair.mjs";
 import * as A from "./audio.mjs";
 import * as L from "./leaderboard.mjs";
+import * as B from "./badges.mjs";
+import * as Sess from "./session.mjs";
 import { resolveSwipe } from "./swipe.mjs";
 
 const STORE = "bb-bubble-craps-v1";
@@ -20,7 +22,11 @@ const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6,
 const settings = {
   sound: true,
   haptics: true,
-  autoRoll: true,
+  autoRoll: false,
+  autoInterval: 15,
+  badgeToasts: true,
+  lossLimit: { kind: "off", amount: 2500, pct: 25 },
+  winGoal: { kind: "off", amount: 2500, pct: 25 },
   workingComeOut: false,
   hardwaysComeOut: true,
   comeOddsOff: true,
@@ -64,6 +70,14 @@ let boardData = L.emptyData();
 let boardMode = "regular";
 let boardScope = "week";
 let pendingRecord = null;
+let autoPause = "";
+let emptyFelt = 0;
+let limitHold = false;
+let badgeFilter = "all";
+let handMeta = { id: 0, startedAt: 0, betRolls: 0, topTier: "cold", points: [], sources: {} };
+let badgeQueue = [];
+let badgeTimer = 0;
+let recordTimer = 0;
 
 const app = document.getElementById("app");
 const reducedMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -236,7 +250,19 @@ function mount() {
   diceHost.className = "dice-live";
   diceHost.hidden = true;
   document.body.appendChild(diceHost);
-  window.addEventListener("resize", () => placeDice());
+  window.addEventListener("resize", () => { placeDice(); fitFelt(); });
+  document.body.addEventListener("click", (e) => {
+    if (e.target.closest("#record")) onClick(e);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && settings.autoRoll) {
+      autoPause = "away";
+      stopTimer();
+    }
+  });
+  window.addEventListener("pagehide", () => {
+    if (settings.autoRoll) { autoPause = "away"; stopTimer(); }
+  });
   const stage = document.getElementById("stage");
   stage.addEventListener("transitionend", (e) => {
     if (e.target && e.target.id === "pager") placeDice();
@@ -249,6 +275,7 @@ function mount() {
   let fromButton = false;
   let captured = false;
   stage.addEventListener("pointerdown", (e) => {
+    swallowClick = false;
     if (e.button != null && e.button !== 0) return;
     tracking = true;
     captured = false;
@@ -280,7 +307,10 @@ function mount() {
     try { stage.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
     const next = resolveSwipe(page, dx, dy);
     const moved = next !== page;
-    if (moved && fromButton) swallowClick = true;
+    if (moved && fromButton) {
+      swallowClick = true;
+      setTimeout(() => { swallowClick = false; }, 400);
+    }
     page = next;
     dx = 0;
     dy = 0;
@@ -307,7 +337,7 @@ function mount() {
   app.addEventListener("input", (e) => {
     const el = e.target;
     if (!el.classList || !el.classList.contains("init")) return;
-    el.value = el.value.replace(/[^A-Za-z0-9]/g, "").slice(-1).toUpperCase();
+    el.value = el.value.replace(/[^A-Za-z]/g, "").slice(-1).toUpperCase();
     if (el.value && el.nextElementSibling && el.nextElementSibling.classList.contains("init")) el.nextElementSibling.focus();
   });
   paint();
@@ -324,6 +354,11 @@ function snap() {
 
 function onClick(e) {
   if (swallowClick) { swallowClick = false; return; }
+  if (betsOpen && e.target.closest(".felt") && !e.target.closest(".betpanel")) {
+    betsOpen = false;
+    paint();
+    return;
+  }
   const t = e.target.closest("[data-act]");
   if (!t || t.disabled) return;
   A.unlock();
@@ -346,7 +381,14 @@ function onClick(e) {
   if (act === "undo") {
     if (rolling) return;
     const r = E.undoPress(game);
-    if (r.ok) { game = r.state; A.chip(); }
+    if (r.ok) {
+      game = r.state;
+      const noted = B.noteAction(boardData, { type: "undo", mode: game.mode, now: Date.now() });
+      boardData.badges = noted.store.badges;
+      boardData.progress = noted.store.progress;
+      if (noted.unlocked.length) queueUnlocks(noted.unlocked);
+      A.chip();
+    }
     save();
     paint();
     return;
@@ -354,7 +396,13 @@ function onClick(e) {
   if (act === "clear") {
     if (rolling) return;
     const r = E.clearPress(game);
-    if (r.ok) game = r.state;
+    if (r.ok) {
+      game = r.state;
+      const noted = B.noteAction(boardData, { type: "undo", mode: game.mode, now: Date.now() });
+      boardData.badges = noted.store.badges;
+      boardData.progress = noted.store.progress;
+      if (noted.unlocked.length) queueUnlocks(noted.unlocked);
+    }
     save();
     paint();
     return;
@@ -419,6 +467,28 @@ function onClick(e) {
   if (act === "filter") { learnFilter = t.dataset.filter; paint(); return; }
   if (act === "strategy") { runStrategy(t.dataset.id); return; }
   if (act === "stop-strategy") { game.strategy = null; toast("Auto-bet stopped."); save(); paint(); return; }
+  if (act === "strat-odds" && game.strategy && game.strategy.id === "B13") {
+    game.strategy.data.odds = t.dataset.level || "max";
+    toast("Come odds: " + (game.strategy.data.odds === "max" ? "max" : game.strategy.data.odds === "flat" ? "flat" : game.strategy.data.odds + "x") + ".");
+    save(); paint(); return;
+  }
+  if (act === "strat-cap" && game.strategy && game.strategy.id === "B13") {
+    game.strategy.data.cap = Math.max(0, Math.min(5, Number(t.dataset.cap) || 0));
+    toast(game.strategy.data.cap ? "Come cap: " + game.strategy.data.cap + "." : "Come bets are uncapped.");
+    save(); paint(); return;
+  }
+  if (act === "strat-start" && game.strategy && game.strategy.id === "B14") {
+    const data = game.strategy.data;
+    if ((data.step || 0) > 0 || data.partial || data.across) { toast("The ladder already started. It begins again on the next point."); return; }
+    data.start = t.dataset.start === "8" ? 8 : 6;
+    toast("Hit and Split starts on " + data.start + ".");
+    save(); paint(); return;
+  }
+  if (act === "strat-extend" && game.strategy && game.strategy.id === "B14") {
+    game.strategy.data.extend = t.dataset.on === "1";
+    toast(game.strategy.data.extend ? "Crapless extension is on." : "Crapless extension is off.");
+    save(); paint(); return;
+  }
   if (act === "fair-scope") { fairScope = t.dataset.scope; paint(); return; }
   if (act === "setting") { toggleSetting(t.dataset.key); return; }
   if (act === "track") {
@@ -428,7 +498,7 @@ function onClick(e) {
     if (coachOn) openTutor();
     return;
   }
-  if (act === "bank-reset") { game = E.resetBankroll(game); sessionRolls = []; toast("Practice chips reset to $1,000."); save(); paint(); return; }
+  if (act === "bank-reset") { resetTable(); return; }
   if (act === "fair-reset") { allRolls = []; sessionRolls = []; toast("Fair Dice history cleared on this device."); save(); paint(); return; }
   if (act === "export") { openSheet(lockedExport()); return; }
   if (act === "for") { openSheet(forSheet()); return; }
@@ -437,7 +507,19 @@ function onClick(e) {
   if (act === "board-mode") { boardMode = t.dataset.mode === "crapless" ? "crapless" : "regular"; paint(); return; }
   if (act === "board-scope") { boardScope = t.dataset.scope === "all" ? "all" : "week"; paint(); return; }
   if (act === "save-record") { savePending(t.dataset.goto === "board"); return; }
-  if (act === "skip-record") { pendingRecord = null; closeOverlay(); return; }
+  if (act === "skip-record") { skipPending(); return; }
+  if (act === "resume") { autoPause = ""; limitHold = false; toast("Auto-roll is on."); save(); paint(); startTimer(); return; }
+  if (act === "keep-playing") { limitHold = false; closeOverlay(); paint(); return; }
+  if (act === "end-session") { finishSession(t.dataset.reason || "end"); return; }
+  if (act === "interval") { settings.autoInterval = Number(t.dataset.sec) || 15; save(); paint(); startTimer(); return; }
+  if (act === "limit-kind") { setLimitKind(t.dataset.which, t.dataset.kind); return; }
+  if (act === "limit-step") { stepLimit(t.dataset.which, t.dataset.field, Number(t.dataset.dir)); return; }
+  if (act === "initials-save") { saveInitials(false); return; }
+  if (act === "initials-apply") { saveInitials(true); return; }
+  if (act === "badge-filter") { badgeFilter = t.dataset.filter || "all"; paint(); return; }
+  if (act === "badge") { openBadge(t.dataset.id); return; }
+  if (act === "reset-records") { confirmResetRecords(); return; }
+  if (act === "reset-records-yes") { wipeRecords(); return; }
 }
 
 function setView(next) {
@@ -463,11 +545,20 @@ function startMode(mode) {
   startTimer();
 }
 
+function limitChip() {
+  const s = boardData.session;
+  if (!s || s.ended) return "";
+  if (s.lossHit) return "<button class='limitchip' data-act='end-session' data-reason='end'>Past your loss limit</button>";
+  if (s.winHit) return "<button class='limitchip' data-act='end-session' data-reason='end'>Win goal reached</button>";
+  return "";
+}
 function switchMode(mode) {
   if (game.mode === mode) return;
   const res = E.switchMode(game, mode);
   if (!res.ok) { toast(res.error); return; }
   game = res.state;
+  autoPause = settings.autoRoll ? "end" : "";
+  emptyFelt = 0;
   if (mode === "crapless" && betTab === "lay") betTab = "place";
   toast(mode === "crapless" ? "Crapless rules. Don't bets and ATS are off." : "Regular rules.");
   save();
@@ -600,8 +691,12 @@ function syncAutoPress() {
 
 function doPress() {
   if (rolling) { toast("Press is available after a hit."); return; }
+  const st = E.pressStatus(game);
   const res = E.press(game);
   if (!res.ok) { toast("Press: " + res.error); return; }
+  const noted = B.noteAction(boardData, { type: "press", number: st.number, mode: game.mode, now: Date.now() });
+  boardData.badges = noted.store.badges;
+  boardData.progress = noted.store.progress;
   game = res.state;
   A.press();
   haptic(12);
@@ -613,8 +708,12 @@ function doPress() {
 
 function doPower() {
   if (rolling) { toast("Power Press is available after a hit."); return; }
+  const st = E.pressStatus(game);
   const res = E.powerPress(game);
   if (!res.ok) { toast("Power Press: " + res.error); return; }
+  const noted = B.noteAction(boardData, { type: "press", number: st.number, mode: game.mode, now: Date.now() });
+  boardData.badges = noted.store.badges;
+  boardData.progress = noted.store.progress;
   game = res.state;
   A.press();
   haptic(16);
@@ -645,19 +744,46 @@ function runStrategy(id) {
   startTimer();
 }
 
-async function doRoll() {
-  if (rolling || view !== "play") return;
+function testRngAllowed() {
+  const h = location.hostname;
+  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "";
+}
+function autoShort() {
+  if (game.bankroll <= 0 && E.tableTotal(game) === 0) return true;
+  if (!(game.strategy && game.strategy.id)) return false;
+  const preview = S.autoBet(structuredClone(game), game.strategy.id, settings.chip, { count: false });
+  return !!preview.short;
+}
+async function doRoll(source) {
+  if (rolling || view !== "play" || limitHold) return;
+  if (source === "auto" && autoPause) return;
+  if (source === "auto" && autoShort()) {
+    autoPause = "short";
+    toast("Auto-roll paused · not enough practice chips for your bets");
+    paint();
+    return;
+  }
   rolling = true;
   stopTimer();
+  const pointBefore = game.point;
   A.setMuted(!settings.sound);
   syncAutoPress();
+  const acted = B.noteAction(boardData, { type: "roll-started" });
+  boardData.badges = acted.store.badges;
+  boardData.progress = acted.store.progress;
   if (game.strategy && game.strategy.id) {
     const maintained = S.autoBet(game, game.strategy.id, settings.chip);
     game = maintained.state;
     if (maintained.message) toast(maintained.message);
   }
+  const hadBetNow = E.hadWorkingBet(game);
+  const onTable = E.tableTotal(game);
+  const totalBefore = E.netWorth(game);
+  const edgeCap = maxWorkingEdge(game);
   const handBefore = { rolls: game.hand.rolls, points: game.hand.points };
-  const dice = typeof window.__bbRng === "function" ? E.rollDice(window.__bbRng) : E.rollDice();
+  ensureHand(handBefore.rolls);
+  const custom = testRngAllowed() && typeof window.__bbRng === "function" ? window.__bbRng : null;
+  const dice = custom ? E.rollDice(custom) : E.rollDice();
   delete window.__bbRng;
   const from = page;
   if (settings.showDice) { returnPage = from; page = 2; }
@@ -672,14 +798,18 @@ async function doRoll() {
   lastNet = settled.net;
   syncAutoPress();
   let pressNote = "";
+  let autoPressed = false;
   if (!(game.strategy && game.strategy.id === "B5")) {
     const pressed = S.applyAutoPress(game);
     if (pressed.ok) {
       game = pressed.state;
       pressNote = pressed.message || "";
+      autoPressed = true;
     }
   }
-  rememberRoll(settled);
+  rememberRoll(settled, source === "auto" ? "auto" : "manual");
+  if (onTable === 0) emptyFelt += 1;
+  else emptyFelt = 0;
   if (settled.net > 0) { A.win(); haptic([12, 40, 16]); }
   else if (settled.result === "seven-out") { A.seven(); haptic(40); }
   else A.chip();
@@ -694,8 +824,15 @@ async function doRoll() {
   celebrate(settled, handBefore);
   noteBlaze(handBefore, settled);
   maybeTutor(settled);
-  maybeRecord(handBefore, settled);
+  noteHandRoll(handBefore, settled, dice, hadBetNow, pointBefore, source === "auto" ? "auto" : "manual", totalBefore, edgeCap, onTable, autoPressed);
+  maybeRecord(handBefore, settled, dice, hadBetNow);
+  noteSession(hadBetNow, settled);
+  if (emptyFelt >= 3 && settings.autoRoll && !autoPause) {
+    autoPause = "empty";
+    toast("Auto-roll paused · nothing on the felt");
+  }
   save();
+  saveBoard();
   startTimer();
 }
 
@@ -715,6 +852,324 @@ function rememberRoll(settled) {
   if (allRolls.length > 8000) allRolls.splice(0, allRolls.length - 8000);
 }
 
+function freshMeta() {
+  return { id: 0, startedAt: 0, betRolls: 0, topTier: "cold", points: [], sources: {} };
+}
+function ensureHand(rollsSoFar) {
+  if (rollsSoFar > 0 && handMeta.id) return;
+  handMeta = freshMeta();
+  handMeta.id = boardData.nextHandId || 1;
+  handMeta.startedAt = Date.now();
+  boardData.nextHandId = handMeta.id + 1;
+}
+function tierRank(name) {
+  return { cold: 0, warm: 1, hot: 2, blazing: 3 }[name] || 0;
+}
+function raiseTier(name) {
+  if (tierRank(name) > tierRank(handMeta.topTier)) handMeta.topTier = name;
+}
+function maxWorkingEdge(state) {
+  let max = null;
+  const consider = (spot, amount) => {
+    if (!amount) return;
+    const edge = E.edgeFor(spot, state.mode);
+    if (typeof edge === "number" && (max == null || edge > max)) max = edge;
+  };
+  const b = state.bets || {};
+  consider({ kind: "pass" }, b.pass);
+  consider({ kind: "dontPass" }, b.dontPass);
+  consider({ kind: "come" }, b.come);
+  consider({ kind: "dontCome" }, b.dontCome);
+  consider({ kind: "field" }, b.field);
+  consider({ kind: "any7" }, b.any7);
+  consider({ kind: "anyCraps" }, b.anyCraps);
+  consider({ kind: "ce" }, b.ce);
+  consider({ kind: "horn" }, b.horn);
+  consider({ kind: "small" }, b.small);
+  consider({ kind: "tall" }, b.tall);
+  consider({ kind: "all" }, b.all);
+  consider({ kind: "hardAllDay" }, b.hardAllDay);
+  Object.keys(b.place || {}).forEach((n) => consider({ kind: "place", number: Number(n) }, b.place[n]));
+  Object.keys(b.buy || {}).forEach((n) => consider({ kind: "buy", number: Number(n) }, b.buy[n]));
+  Object.keys(b.hardways || {}).forEach((n) => consider({ kind: "hardway", number: Number(n) }, b.hardways[n]));
+  Object.keys(b.repeaters || {}).forEach((n) => consider({ kind: "repeater", number: Number(n) }, b.repeaters[n]));
+  return max;
+}
+function noteHandRoll(before, settled, dice, hadBet, pointBefore, source, totalBefore, edgeCap, onTable, autoPressed) {
+  ensureHand(before.rolls);
+  if (hadBet) handMeta.betRolls += 1;
+  handMeta.sources[source] = true;
+  const length = before.rolls + 1;
+  const points = before.points + (settled.result === "point-made" ? 1 : 0);
+  const tier = E.blazingTier(E.blazingScore({ rolls: length, points }), points);
+  raiseTier(tier);
+  if (settled.result === "point-made" && pointBefore) {
+    if (handMeta.points.indexOf(pointBefore) < 0) handMeta.points.push(pointBefore);
+  }
+  const maxEdge = hadBet ? edgeCap : null;
+  const billyNumbers = [];
+  (settled.decisions || []).forEach((d) => {
+    if (d.result !== "win") return;
+    const m = /^(Place|Buy) (\d+)$/.exec(d.bet || "");
+    if (!m) return;
+    const n = Number(m[2]);
+    const kind = m[1] === "Buy" ? "buy" : "place";
+    if (game.billyMark && game.billyMark[kind] && game.billyMark[kind][n]) billyNumbers.push(n);
+  });
+  const armed = (boardData.progress && boardData.progress.armedCollect) || {};
+  let collectNumber = 0;
+  if (!autoPressed) {
+    (settled.decisions || []).forEach((d) => {
+      if (d.result !== "win") return;
+      const hit = /^(Place|Buy) (\d+)$/.exec(d.bet || "");
+      if (hit && armed[Number(hit[2])]) collectNumber = Number(hit[2]);
+    });
+  }
+  const ev = B.evaluateRoll({ badges: boardData.badges, progress: boardData.progress }, {
+    mode: game.mode,
+    handRolls: length,
+    hadBet,
+    result: settled.result,
+    sevenOut: settled.result === "seven-out",
+    tier,
+    total: settled.dice.total,
+    decisions: settled.decisions || [],
+    passPoint: settled.result === "point-made" ? pointBefore : 0,
+    billyHit: billyNumbers.length > 0,
+    billyNumbers,
+    collectNumber,
+    maxEdge,
+    edgeBroken: maxEdge != null && maxEdge > 2,
+    totalBefore,
+    totalAfter: E.netWorth(game),
+    inAction: onTable || 0,
+    now: Date.now(),
+    handId: handMeta.id,
+  });
+  boardData.badges = ev.store.badges;
+  boardData.progress = ev.store.progress;
+  if (ev.unlocked.length) queueUnlocks(ev.unlocked);
+  if (hadBet && settled.result === "seven-out") {
+    const day = new Date();
+    const key = day.getFullYear() + "-" + String(day.getMonth() + 1).padStart(2, "0") + "-" + String(day.getDate()).padStart(2, "0");
+    const daily = B.noteAction(boardData, { type: "practice-day", day: key, mode: game.mode, now: Date.now() });
+    boardData.badges = daily.store.badges;
+    boardData.progress = daily.store.progress;
+    if (daily.store.daily) boardData.daily = daily.store.daily;
+    if (daily.unlocked.length) queueUnlocks(daily.unlocked);
+  }
+}
+function queueUnlocks(ids) {
+  ids.forEach((id) => { if (badgeQueue.indexOf(id) < 0) badgeQueue.push(id); });
+  if (!badgeTimer) pumpBadges();
+}
+function pumpBadges() {
+  if (!settings.badgeToasts || !badgeQueue.length || rolling) {
+    badgeTimer = badgeQueue.length ? setTimeout(pumpBadges, 400) : 0;
+    return;
+  }
+  const id = badgeQueue.shift();
+  const def = B.badgeById(id);
+  if (!def) { pumpBadges(); return; }
+  showBadgeToast(def);
+  badgeTimer = setTimeout(() => { badgeTimer = 0; pumpBadges(); }, def.marquee ? 4500 : 3000);
+}
+function showBadgeToast(def) {
+  let host = document.getElementById("badge-toast");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "badge-toast";
+    document.body.appendChild(host);
+  }
+  const gold = def.tier === "gold" || def.tier === "legendary";
+  host.innerHTML = "<div class='badgetoast' data-act='badge' data-id='" + def.id + "'>" +
+    "<img class='art' src='" + B.artFile(def.id, "open") + "' alt=''>" +
+    (gold ? "<img class='billie' src='assets/mascots/billie/billie-C-" + (def.tier === "legendary" ? "winner" : "cheer") + ".svg' alt='Bubbles Billie'>" : "") +
+    "<div><b>Badge: " + esc(def.name) + "</b><div>" + esc(def.desc) + "</div>" +
+    (def.odds ? "<small>" + esc(def.odds) + "</small>" : "") + "</div></div>";
+  host.onclick = () => openBadge(def.id);
+}
+function ensureSession(now) {
+  let s = Sess.closeIfIdle(boardData.session, now);
+  if (!s || s.ended) {
+    s = Sess.startSession(boardData.session, E.netWorth(game), {
+      loss: settings.lossLimit,
+      win: settings.winGoal,
+    }, now);
+  }
+  boardData.session = s;
+}
+function noteSession(hadBet, settled) {
+  const now = Date.now();
+  ensureSession(now);
+  let s = Sess.noteRoll(boardData.session, hadBet);
+  if (settled.result === "seven-out") s = Sess.noteHand(s);
+  s = Sess.noteActivity(s, now);
+  const status = Sess.limitStatus(s, E.netWorth(game));
+  if (status.loss) s.lossHit = true;
+  if (status.win) s.winHit = true;
+  boardData.session = s;
+  const showLoss = status.loss && !s.promptedLoss;
+  const showWin = status.win && !s.promptedWin && !showLoss;
+  if (showLoss || showWin) {
+    if (showLoss) s.promptedLoss = true;
+    if (showWin) s.promptedWin = true;
+    boardData.session = s;
+    autoPause = "limit";
+    limitHold = true;
+    stopTimer();
+    const kind = showLoss ? "loss" : "win";
+    const net = status.net;
+    setTimeout(() => { if (limitHold) openLimitPrompt(kind, net); }, settled.result === "seven-out" ? 3000 : 2200);
+  }
+}
+function openLimitPrompt(kind, net) {
+  const abs = money(Math.abs(net));
+  const loss = kind === "loss";
+  const copy = loss
+    ? "You've reached the loss limit you set: −" + abs + " practice chips this session. This is a good spot to stop."
+    : "You hit your win goal: +" + abs + " practice chips. Want to lock it in?";
+  openSheet("<header><img src='assets/mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'><div><h2>" + (loss ? "Loss limit" : "Win goal") + "</h2></div></header><p>" + copy + "</p><div class='actions'><button class='go' data-act='end-session' data-reason='" + kind + "'>End session</button><button data-act='keep-playing'>Keep playing</button></div>");
+}
+function finishSession(reason) {
+  const now = Date.now();
+  limitHold = false;
+  autoPause = "end";
+  if (boardData.session && !boardData.session.ended) {
+    boardData.session = Sess.endSession(boardData.session, reason, now);
+    const s = boardData.session;
+    const ev = B.evaluateSession(boardData, {
+      sessionId: s.id,
+      betRolls: s.betRolls,
+      loosened: s.loosened,
+      endReason: s.endReason,
+      lossCents: s.lossCents,
+      winCents: s.winCents,
+      winPromptAfter20: !!s.promptedWin && s.betRolls >= 20,
+      lossPromptAfter20: !!s.promptedLoss && s.betRolls >= 20,
+      endedAtWin: reason === "win",
+      endedAtLoss: reason === "loss",
+      endedBeforeNextRoll: reason === "win" || reason === "loss",
+      rollAfterLoss: !!s.rollAfterLoss,
+      now,
+      mode: game.mode,
+    });
+    boardData.badges = ev.store.badges;
+    boardData.progress = ev.store.progress;
+    boardData.sessions = ev.store.sessions;
+    if (ev.unlocked.length) queueUnlocks(ev.unlocked);
+  }
+  saveBoard();
+  const s = boardData.session;
+  const net = s ? E.netWorth(game) - s.startChips : 0;
+  openSheet("<h2>Session summary</h2><p>" + (s ? s.rolls : 0) + " rolls · " + (s ? s.hands : 0) + " hands</p><p>" + money(s ? s.startChips : 0) + " → " + money(E.netWorth(game)) + " · " + (net >= 0 ? "+" : "−") + money(Math.abs(net)) + "</p><p>Longest hand on this device stays on the board.</p><p>Practice chips carry over. A new session starts with your next roll.</p><div class='actions'><button class='go' data-act='close'>Close</button></div>");
+  paint();
+}
+function resetTable() {
+  const ev = B.noteAction(boardData, { type: "reset-bankroll", total: E.STARTING_BANKROLL });
+  boardData.badges = ev.store.badges;
+  boardData.progress = ev.store.progress;
+  if (boardData.session && !boardData.session.ended) {
+    boardData.session = Sess.endSession(boardData.session, "reset", Date.now());
+  }
+  game = E.resetBankroll(game);
+  sessionRolls = [];
+  autoPause = "end";
+  emptyFelt = 0;
+  limitHold = false;
+  handMeta = freshMeta();
+  toast("Practice chips reset to $1,000.");
+  save();
+  saveBoard();
+  paint();
+}
+function setLimitKind(which, kind) {
+  const spec = which === "win" ? settings.winGoal : settings.lossLimit;
+  const before = { loss: settings.lossLimit, win: settings.winGoal };
+  spec.kind = kind === "amount" || kind === "pct" ? kind : "off";
+  const after = { loss: settings.lossLimit, win: settings.winGoal };
+  if (boardData.session && Sess.limitsLoosened(before, after, boardData.session)) {
+    boardData.session = Sess.markLoosened(boardData.session);
+    saveBoard();
+  }
+  save();
+  paint();
+}
+function stepLimit(which, field, dir) {
+  const spec = which === "win" ? settings.winGoal : settings.lossLimit;
+  const before = { loss: Object.assign({}, settings.lossLimit), win: Object.assign({}, settings.winGoal) };
+  if (field === "pct") {
+    const choices = which === "win" ? [10, 25, 50, 100] : [10, 20, 25, 50];
+    let i = choices.indexOf(spec.pct);
+    if (i < 0) i = 0;
+    spec.pct = choices[Math.max(0, Math.min(choices.length - 1, i + dir))];
+  } else {
+    spec.amount = Sess.clampAmount((spec.amount || 2500) + dir * Sess.LIMIT_STEP);
+  }
+  const after = { loss: settings.lossLimit, win: settings.winGoal };
+  if (boardData.session && Sess.limitsLoosened(before, after, boardData.session)) {
+    boardData.session = Sess.markLoosened(boardData.session);
+    saveBoard();
+  }
+  save();
+  paint();
+}
+function saveInitials(applyExisting) {
+  const raw = (document.getElementById("settings-initials") || {}).value || "";
+  const res = L.setInitials(boardData, raw, applyExisting);
+  const err = document.querySelector(".initerr");
+  if (!res.ok) {
+    if (err) err.textContent = res.error;
+    return;
+  }
+  boardData = res.data;
+  saveBoard();
+  toast(applyExisting ? "Initials updated on your rows." : "Initials saved for the next hand.");
+  paint();
+}
+function confirmResetRecords() {
+  openSheet("<h2>Reset badges and records</h2><p>This clears all badges and Longest Roll boards on this device.</p><div class='actions'><button data-act='close'>Cancel</button><button class='go' data-act='reset-records-yes'>Clear them</button></div>");
+}
+function wipeRecords() {
+  const session = boardData.session;
+  boardData = L.emptyData();
+  boardData.session = session;
+  handMeta = freshMeta();
+  saveBoard();
+  closeOverlay();
+  toast("Badges and boards cleared on this device.");
+  paint();
+}
+function measureChrome() {
+  const hud = document.getElementById("hud");
+  const dock = document.getElementById("dock");
+  if (hud && hud.offsetHeight) document.documentElement.style.setProperty("--hud-h", hud.offsetHeight + "px");
+  if (dock && dock.offsetHeight) document.documentElement.style.setProperty("--dock-h", dock.offsetHeight + "px");
+}
+function noteFair() {
+  const scope = fairScope === "last" ? "last" : fairScope === "all" ? "all" : "session";
+  const ev = B.noteAction(boardData, { type: "fair-scope", scope, sawTest: true, mode: game.mode, now: Date.now() });
+  boardData.badges = ev.store.badges;
+  boardData.progress = ev.store.progress;
+  if (ev.unlocked.length) queueUnlocks(ev.unlocked);
+}
+function fitFelt() {
+  const stage = document.getElementById("stage");
+  if (!stage || view !== "play") return;
+  const short = window.innerHeight <= 700 || window.innerWidth > window.innerHeight;
+  const felts = stage.querySelectorAll(".felt");
+  if (!short) {
+    felts.forEach((f) => f.classList.remove("scaled"));
+    return;
+  }
+  const s = stage.getBoundingClientRect();
+  let k = Math.min(s.width / 354, Math.max(160, s.height) / 471);
+  if (!(k > 0)) k = 0.78;
+  if (k < 0.78) k = 0.78;
+  if (k > 1) k = 1;
+  document.documentElement.style.setProperty("--felt-k", k.toFixed(3));
+  felts.forEach((f) => f.classList.add("scaled"));
+}
 function cubeMarkup(which) {
   const faces = [1, 2, 3, 4, 5, 6].map((n) => "<i class='f f" + n + "'></i>").join("");
   return "<div class='cube3d" + (which === "b" ? " b" : "") + "'><div class='cube' data-face='1'>" + faces + "</div></div>";
@@ -724,17 +1179,34 @@ function animateDice(dice) {
   const cubes = [...document.querySelectorAll("#dice-row .cube")];
   if (!cubes.length) return wait(reduce ? 180 : 1400);
   const faces = [dice.d1, dice.d2];
-  if (reduce) {
-    cubes.forEach((c, i) => { c.dataset.face = String(faces[i]); c.classList.remove("tumbling"); });
-    return wait(180);
-  }
-  cubes.forEach((c) => c.classList.add("tumbling"));
-  return wait(1040).then(() => {
-    cubes.forEach((c, i) => {
-      c.dataset.face = String(faces[i]);
-      c.classList.remove("tumbling");
+  cubes.forEach((c, i) => {
+    c.dataset.face = String(faces[i]);
+    c.classList.remove("tumbling");
+  });
+  if (reduce) return wait(180);
+  return new Promise((resolve) => {
+    let left = cubes.length;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      if (left > 0) return;
+      settled = true;
+      cubes.forEach((c) => c.classList.remove("tumbling"));
+      resolve();
+    };
+    cubes.forEach((c) => {
+      const onEnd = (ev) => {
+        if (ev.target !== c) return;
+        const name = ev.animationName || "";
+        if (name.indexOf("bb-tumble") !== 0) return;
+        c.removeEventListener("animationend", onEnd);
+        left -= 1;
+        finish();
+      };
+      c.addEventListener("animationend", onEnd);
     });
-    return wait(420);
+    requestAnimationFrame(() => cubes.forEach((c) => c.classList.add("tumbling")));
+    setTimeout(() => { left = 0; finish(); }, 1600);
   });
 }
 function syncDice() {
@@ -768,16 +1240,26 @@ function placeDice() {
   if (r.width < 20 || r.height < 20 || s.width < 20) return;
   const settledPagerLeft = s.left - page * s.width;
   const shift = settledPagerLeft - p.left;
-  const w = Math.max(120, Math.min(190, r.width * 0.42));
-  const left = r.left + shift + (r.width - w) / 2;
-  const top = r.top + r.height * 0.28;
+  const k = Math.min(r.width / 860, r.height / 1120);
+  const iw = 860 * k;
+  const ih = 1120 * k;
+  const ix = r.left + shift + (r.width - iw) / 2;
+  const iy = r.bottom - ih;
+  const die = Math.round(iw * 0.19);
   host.style.position = "fixed";
-  host.style.left = Math.round(left) + "px";
-  host.style.top = Math.round(top) + "px";
-  host.style.width = Math.round(w) + "px";
-  host.style.height = Math.round(r.height * 0.26) + "px";
   host.style.marginLeft = "0";
-  host.style.setProperty("--s", Math.round(Math.min(w * 0.42, 84)) + "px");
+  if (die < 28) {
+    host.style.visibility = "hidden";
+    return;
+  }
+  host.style.visibility = "";
+  const gap = Math.max(6, Math.round(die * 0.12));
+  const width = die * 2 + gap;
+  host.style.left = Math.round(ix + (iw - width) / 2) + "px";
+  host.style.top = Math.round(iy + ih * 0.66 - die) + "px";
+  host.style.width = Math.round(width) + "px";
+  host.style.height = Math.round(die * 1.05) + "px";
+  host.style.setProperty("--s", die + "px");
 }
 
 function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
@@ -829,8 +1311,7 @@ function showBigWin(settled) {
   el.innerHTML = "<div class='winlayer" + (reduce ? " reduce" : "") + "'>" +
     "<div class='sunburst' aria-hidden='true'></div>" +
     "<div class='spark' aria-hidden='true'>" + [0, 1, 2, 3, 4, 5, 6, 7].map((i) => "<i style='--a:" + i + "'></i>").join("") + "</div>" +
-    "<div class='winrow'><img src='assets/mascots/dealer-billy/billy-A-winner.svg' alt='Dealer Billy'>" +
-    "<div class='winstamp'><b>BIG WIN!</b><strong>" + amount + "</strong><p>PRACTICE CHIPS</p>" +
+    "<div class='winrow'><div class='winstamp'><b>BIG WIN!</b><strong>" + amount + "</strong><p>PRACTICE CHIPS</p>" +
     (lines.length ? "<em>" + lines.join("<br>") + "</em>" : "") + "</div>" +
     "<img src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'></div>" +
     burstChips(settled.net) +
@@ -846,7 +1327,7 @@ function addWinningChip() {
 }
 function sevenToast(settled, extra) {
   const net = settled.net || 0;
-  const line = net === 0 ? "Seven out. New shooter." : "Seven out. " + money(net).replace("-", "−");
+  const line = net === 0 ? "Seven out." : "Seven out. " + money(net).replace("-", "−");
   const el = document.getElementById("toast");
   if (!el) return;
   el.className = "toast show seven";
@@ -870,124 +1351,232 @@ function celebrate(settled, before) {
 }
 function rollHud() {
   const n = game.hand.rolls || 0;
-  const word = n === 1 ? "throw" : "throws";
-  return "<div class='hud-roll' aria-label='This roll, " + n + " " + word + "'><small>Roll</small><strong>" + n + "</strong></div>";
+  const word = n === 1 ? "roll" : "rolls";
+  return "<div class='hud-roll' aria-label='This hand, " + n + " " + word + "'><small>Roll</small><strong>" + n + "</strong></div>";
 }
-function nameFromForm() {
-  const nick = document.getElementById("nick");
-  const inits = [...document.querySelectorAll(".recordcard .init")].map((el) => el.value.trim()).join("");
-  if (nick && nick.value.trim()) return L.normalizeName(nick.value);
-  if (inits.length === 3) return L.normalizeName(inits);
-  return "";
-}
-function savePending(goBoard) {
-  if (!pendingRecord) return;
-  const name = nameFromForm();
-  const err = document.querySelector(".recorderr");
-  if (!name) {
-    if (err) { err.hidden = false; err.textContent = "Enter 3 initials or a nickname."; }
-    return;
+function recordHost() {
+  let el = document.getElementById("record");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "record";
+    document.body.appendChild(el);
   }
-  const res = L.commitRoll(boardData, Object.assign({ name }, pendingRecord));
+  return el;
+}
+function closeRecord() {
+  const el = document.getElementById("record");
+  if (el) el.innerHTML = "";
+  pendingRecord = null;
+  if (boardData.pending) {
+    boardData.pending = null;
+    saveBoard();
+  }
+}
+function initialsFromCard() {
+  return [...document.querySelectorAll(".recordcard .init")].map((el) => el.value.trim()).join("");
+}
+function postPending(initials, goBoard) {
+  if (!pendingRecord) return false;
+  const res = L.commitRoll(boardData, Object.assign({ initials }, pendingRecord));
+  const err = document.querySelector(".recorderr");
   if (!res.ok) {
     if (err) { err.hidden = false; err.textContent = res.error; }
-    return;
+    return false;
   }
   boardData = res.data;
   saveBoard();
-  const mode = res.entry.mode;
-  const scope = res.madeWeek ? "week" : "all";
   pendingRecord = null;
-  closeOverlay();
-  const where = res.madeWeek && res.madeAll ? "this week and all time" : res.madeWeek ? "this week" : "all time";
+  closeRecord();
+  const label = res.record ? "New longest roll this week: " + res.entry.rolls + " rolls." : "Made the board. " + res.entry.rolls + " rolls.";
   if (goBoard) {
-    boardMode = mode;
-    boardScope = scope;
+    boardMode = res.entry.mode;
+    boardScope = res.madeWeek ? "week" : "all";
     setView("leaderboard");
   }
-  toast(name + " · new record, " + where + ".");
+  toast(label);
+  return true;
+}
+function savePending(goBoard) {
+  const norm = L.normalizeInitials(initialsFromCard());
+  const err = document.querySelector(".recorderr");
+  if (norm.blocked) {
+    if (err) { err.hidden = false; err.textContent = "Try different letters."; }
+    return;
+  }
+  if (!norm.ok) {
+    if (err) { err.hidden = false; err.textContent = "Use 1 to 3 letters, A to Z."; }
+    return;
+  }
+  postPending(norm.value, goBoard);
+}
+function skipPending() {
+  postPending("", false);
 }
 function showRecordCard(preview) {
-  const el = document.getElementById("overlay");
-  if (!el) return;
+  const el = recordHost();
   stopTimer();
+  hideToast();
   const where = [
     preview.madeWeek ? "This week #" + preview.rankWeek : "",
     preview.madeAll ? "All time #" + preview.rankAll : "",
   ].filter(Boolean).join(" · ");
-  const saved = boardData.name || "";
-  const letters = saved.length <= 3 ? (saved + "   ").slice(0, 3).split("") : ["", "", ""];
-  const nick = saved.length > 3 ? saved : "";
-  const pb = preview.personalBest ? "<p class='pbbadge'>Personal best</p>" : "";
+  const title = preview.record ? "New record!" : "Made the board";
   const rolls = preview.throws === 1 ? "1 roll" : preview.throws + " rolls";
   const points = preview.points === 1 ? "1 point" : preview.points + " points";
   const mode = preview.mode === "crapless" ? "Crapless" : "Regular";
-  el.innerHTML = "<div class='recordlayer" + (motionOff() ? " reduce" : "") + "' role='dialog' aria-labelledby='record-title'>" +
-    "<div class='sunburst' aria-hidden='true'></div>" +
+  el.innerHTML = "<div class='recordlayer' role='dialog' aria-labelledby='record-title'>" +
     "<div class='recordcard'>" +
-    "<img class='record-billie' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'>" +
-    "<p class='record-speech' id='record-title'>New record!</p>" +
+    "<div class='recordtop'><img class='record-billie' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'>" +
+    "<p class='record-speech' id='record-title'>" + title + "</p></div>" +
     "<b class='recordcount'>" + preview.throws + "</b>" +
-    "<p class='recordmeta'>" + rolls + " · " + points + "</p>" +
-    "<p class='recordwhere'>" + esc(where) + " · " + mode + "</p>" +
-    pb +
-    "<p class='ask'>Three initials, or a nickname</p>" +
-    "<div class='inits'>" + letters.map((ch, i) =>
-      "<input class='init' maxlength='1' value='" + esc(ch.trim()) + "' aria-label='Initial " + (i + 1) + "' autocomplete='off' autocapitalize='characters'>").join("") +
+    "<p class='recordmeta'>" + rolls + " · " + points + " · " + mode + "</p>" +
+    "<p class='recordwhere'>" + esc(where) + "</p>" +
+    "<p class='ask'>Top 10! Add your initials? (Stays on this device.)</p>" +
+    "<div class='inits'>" + [0, 1, 2].map((i) =>
+      "<input class='init' maxlength='1' aria-label='Initial " + (i + 1) + "' autocomplete='off' autocapitalize='characters'>").join("") +
     "</div>" +
-    "<label class='nicklab'>Nickname<input id='nick' maxlength='12' value='" + esc(nick) + "' autocomplete='nickname' placeholder='Billie'></label>" +
     "<p class='recorderr' hidden></p>" +
-    "<div class='actions'><button class='go' data-act='save-record'>Save</button>" +
-    "<button class='ghost' data-act='save-record' data-goto='board'>See the board</button></div>" +
-    "<button class='skiplink' data-act='skip-record'>Not now</button></div></div>";
-  const first = el.querySelector(".init");
-  if (first && !nick) first.focus();
+    "<div class='actions'><button class='go' data-act='save-record'>SAVE</button>" +
+    "<button class='ghost' data-act='skip-record'>SKIP</button></div></div></div>";
 }
-function maybeRecord(before, settled) {
+function maybeRecord(before, settled, dice, hadBet) {
   if (settled.result !== "seven-out") return;
+  if (!hadBet) return;
+  if (dice && dice.source === "test") return;
   const done = L.completedRoll(before, settled.result);
   if (!done) return;
   const at = Date.now();
-  const preview = L.previewRoll(boardData, {
+  const sources = Object.keys(handMeta.sources || {});
+  const rollSource = sources.indexOf("auto") >= 0 && sources.indexOf("manual") >= 0 ? "mixed" : (sources[0] || "manual");
+  const candidate = {
     throws: done.throws,
     points: done.points,
     mode: game.mode,
     at,
-  });
-  if (!preview.madeWeek && !preview.madeAll) return;
-  pendingRecord = { throws: done.throws, points: done.points, mode: game.mode, at };
-  showRecordCard(preview);
+    handId: handMeta.id,
+    startedAt: handMeta.startedAt || at,
+    differentPoints: (handMeta.points || []).length,
+    betRolls: handMeta.betRolls || 0,
+    topBlazingTier: handMeta.topTier || "cold",
+    rollSource,
+    rngSource: dice && dice.source === "fallback" ? "fallback" : "secure",
+    sessionId: boardData.session ? boardData.session.id : 0,
+    hadBetOnSevenOut: true,
+  };
+  const preview = L.previewRoll(boardData, candidate);
+  if (!preview.madeWeek && !preview.madeAll) {
+    handMeta = freshMeta();
+    return;
+  }
+  if (boardData.initials && boardData.initials.asked) {
+    const res = L.commitRoll(boardData, Object.assign({ initials: boardData.initials.default || "" }, candidate));
+    if (res.ok) {
+      boardData = res.data;
+      saveBoard();
+      const line = res.record ? "New longest roll this week: " + res.entry.rolls + " rolls." : "Made the board. " + res.entry.rolls + " rolls.";
+      queueToast(line, "", settled.result === "seven-out" ? 3000 : 800);
+    }
+    handMeta = freshMeta();
+    return;
+  }
+  pendingRecord = candidate;
+  boardData.pending = candidate;
+  saveBoard();
+  clearTimeout(recordTimer);
+  recordTimer = setTimeout(() => {
+    hideToast();
+    showRecordCard(preview);
+  }, motionOff() ? 400 : 2900);
+  handMeta = freshMeta();
 }
 function leaderHTML() {
   const mode = boardMode === "crapless" ? "crapless" : "regular";
   const scope = boardScope === "all" ? "all" : "week";
-  const rows = L.ranked(boardData.entries, { mode, scope, now: Date.now() });
-  const best = L.bestEntry(boardData.entries, mode);
-  const modeName = mode === "crapless" ? "Crapless" : "Regular";
+  const now = Date.now();
+  const rows = L.ranked(boardData.entries, { mode, scope, now });
+  const you = (boardData.initials && boardData.initials.default) || "";
+  const medals = ["g", "s", "b"];
+  const emptyCopy = scope === "week"
+    ? "No finished hands yet this week. Every hand ends on a seven-out."
+    : "No finished hands yet. Every hand ends on a seven-out.";
   const list = rows.length ? "<ol class='boardlist'>" + rows.map((e, i) => {
-    const latest = e.id === boardData.highlightId;
-    const pb = best && e.id === best.id;
-    const pts = e.points === 1 ? "1 point" : e.points + " points";
-    return "<li class='boardrow" + (latest ? " latest" : "") + "'>" +
-      "<span class='rank'>" + (i + 1) + "</span>" +
+    const mine = (e.initials || "") === you;
+    const pts = e.points === 1 ? "1 pt" : e.points + " pts";
+    const tier = e.topBlazingTier || "cold";
+    return "<li class='boardrow" + (mine ? " you" : "") + "'>" +
+      "<span class='rank medal " + (medals[i] || "") + "'>" + (i + 1) + "</span>" +
       "<div class='boardmain'><b>" + esc(e.name) + "</b>" +
-      (pb ? "<i class='pbbadge'>Personal best</i>" : "") +
-      (latest ? "<i class='latesttag'>Latest</i>" : "") +
-      "<small>" + e.throws + (e.throws === 1 ? " roll" : " rolls") + " · " + pts + " · " + esc(L.formatWhen(e.at)) + " · " + modeName + "</small></div></li>";
-  }).join("") + "</ol>" : "<article class='card boardempty'><img src='assets/mascots/dealer-billy/billy-A-hello.svg' alt='Dealer Billy'><div><h3>No rolls yet</h3><p>A roll is every throw from the come-out until a seven-out. A made point keeps the dice. A 7 on the come-out does not end the roll.</p></div></article>";
-  const weekNote = scope === "week" ? "<p class='weeknote'>Resets Monday at 12:00 AM, on this device.</p>" : "<p class='weeknote'>Longest rolls saved on this device.</p>";
+      (mine ? "<i class='youtag'>YOU</i>" : "") +
+      "<small>" + e.throws + " rolls · " + pts + " · " + esc(L.formatWhen(e.at)) + " · " + esc(L.formatClock(e.at)) + "</small></div>" +
+      "<span class='tierchip " + tier + "'>" + tier + "</span></li>";
+  }).join("") + "</ol>" : "<article class='card boardempty'><img src='assets/mascots/billie/billie-C-hello.svg' alt='Bubbles Billie'><div><h3>No finished hands yet</h3><p>" + emptyCopy + "</p></div></article>";
+  const live = game.hand && game.hand.rolls > 0
+    ? "<p class='liverow'>THIS HAND · LIVE · " + game.hand.rolls + " rolls so far · " + game.hand.points + " pt" + (game.hand.points === 1 ? "" : "s") + "</p>"
+    : "";
+  const prev = scope === "week" ? L.lastWeekBest(boardData.entries, mode, now) : null;
+  const prevLine = prev ? "<p class='weeknote'>Last week's best: " + prev.throws + " rolls.</p>" : "";
+  const weekNote = scope === "week" ? "<p class='weeknote'>Resets Monday at 12:00 AM, on this device.</p>" : "";
   return "<section class='boardpage'><header class='boardhead'>" +
     "<img src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>" +
-    "<div><p class='kicker'>ON THIS DEVICE</p><h2>Longest rolls</h2>" +
-    "<p class='muted'>Throws by one shooter, come-out through seven-out. Regular and Crapless are separate.</p></div></header>" +
+    "<div><p class='kicker'>ON THIS DEVICE</p><h2 class='led'>HIGH HAND · " + (scope === "week" ? "THIS WEEK" : "ALL TIME") + "</h2>" +
+    "<p class='muted'>Rolls in one hand, come-out to seven-out.</p></div></header>" +
     "<div class='seg boardseg'>" +
     "<button class='" + (mode === "regular" ? "on" : "") + "' data-act='board-mode' data-mode='regular'>Regular</button>" +
     "<button class='" + (mode === "crapless" ? "on" : "") + "' data-act='board-mode' data-mode='crapless'>Crapless</button></div>" +
     "<div class='filters'>" +
     "<button class='" + (scope === "week" ? "on" : "") + "' data-act='board-scope' data-scope='week'>This week</button>" +
     "<button class='" + (scope === "all" ? "on" : "") + "' data-act='board-scope' data-scope='all'>All time</button></div>" +
-    weekNote + list +
+    weekNote + prevLine + list + live +
+    "<p class='boardfoot'>Long hands are random. They don't predict the next roll.</p>" +
+    badgeGallery() +
     "<button class='cta' data-act='view' data-view='play'>BACK TO THE TABLE</button></section>";
+}
+function badgeGallery() {
+  const filters = ["all", "regular", "crapless", "unlocked", "locked"];
+  const chips = "<div class='filters'>" + filters.map((f) => "<button class='" + (badgeFilter === f ? "on" : "") + "' data-act='badge-filter' data-filter='" + f + "'>" + f[0].toUpperCase() + f.slice(1) + "</button>").join("") + "</div>";
+  const unlocked = Object.keys(boardData.badges || {}).length;
+  const tiles = B.BADGES.filter((b) => {
+    const on = !!(boardData.badges && boardData.badges[b.id]);
+    if (badgeFilter === "regular") return b.mode !== "crapless";
+    if (badgeFilter === "crapless") return b.mode !== "regular";
+    if (badgeFilter === "unlocked") return on;
+    if (badgeFilter === "locked") return !on;
+    return true;
+  }).map((b) => {
+    const on = boardData.badges && boardData.badges[b.id];
+    const hidden = b.hidden && !on;
+    const state = hidden ? "hidden" : on ? "open" : "locked";
+    let prog = B.progressOf(boardData.progress, b.id);
+    if (b.id === "five_sessions_within_limits") {
+      const have = (boardData.sessions && boardData.sessions.withinLimits) || 0;
+      prog = { have, need: 5, text: have + " / 5" };
+    }
+    if (b.id === "daily_practice_3") {
+      const have = (boardData.daily && boardData.daily.streak) || 0;
+      prog = { have: Math.min(3, have), need: 3, text: have + " / 3" };
+    }
+    const bar = !on && !hidden && prog ? "<span class='badgebar'><i style='width:" + Math.round(100 * prog.have / prog.need) + "%'></i></span><small>" + esc(prog.text) + "</small>" : "";
+    const label = hidden ? "Hidden badge" : b.name;
+    return "<button class='badgetile' data-act='badge' data-id='" + b.id + "' aria-label='" + esc(label) + ", " + b.tier + ", " + (on ? "unlocked" : "locked") + "'>" +
+      "<img src='" + B.artFile(b.id, state) + "' alt=''><small>" + esc(label) + "</small>" + bar + "</button>";
+  }).join("");
+  return "<h2>Badges " + unlocked + " / " + B.BADGES.length + "</h2>" + chips + "<div class='badgegrid'>" + tiles + "</div>";
+}
+function openBadge(id) {
+  const b = B.badgeById(id);
+  if (!b) return;
+  const got = boardData.badges && boardData.badges[id];
+  if (b.hidden && !got) {
+    openSheet("<h2>Hidden badge</h2><p>" + b.tier + " · locked</p><p>Badges never change the odds or payouts.</p><div class='actions'><button class='go' data-act='close'>Close</button></div>");
+    return;
+  }
+  const when = got ? L.formatWhen(got.at) + " " + L.formatClock(got.at) : "Locked";
+  openSheet("<img src='" + B.artFile(b.id, got ? "open" : "locked") + "' alt='' width='96'>" +
+    "<h2>" + esc(b.name) + "</h2><p>" + b.tier + " · " + (b.mode === "both" ? "Both modes" : b.mode) + "</p>" +
+    "<p>" + esc(b.desc) + "</p><p>" + esc(b.rule) + "</p>" +
+    (b.odds ? "<p>" + esc(b.odds) + "</p>" : "") +
+    "<p>" + when + (got && got.count > 1 ? " · Earned " + got.count + " times" : "") + "</p>" +
+    "<p>Badges never change the odds or payouts. Every roll is random.</p><div class='actions'><button class='go' data-act='close'>Close</button></div>");
 }
 
 function blazeLesson(tier) {
@@ -1130,7 +1719,16 @@ function openTutor(step, force) {
 function advanceTutor() {
   if (!tour) { closeOverlay(); return; }
   tutorStep += 1;
-  if (tutorStep >= tutorSteps().length) { tour = false; closeOverlay(); return; }
+  if (tutorStep >= tutorSteps().length) {
+    tour = false;
+    const noted = B.noteAction(boardData, { type: "tour", mode: game.mode, now: Date.now() });
+    boardData.badges = noted.store.badges;
+    boardData.progress = noted.store.progress;
+    if (noted.unlocked.length) queueUnlocks(noted.unlocked);
+    saveBoard();
+    closeOverlay();
+    return;
+  }
   openTutor(tutorStep);
 }
 
@@ -1204,14 +1802,22 @@ function showRollToast(settled, extra) {
   toastTimer = setTimeout(hideToast, extra ? 3200 : 2500);
 }
 
+function intervalMs() {
+  const n = [10, 15, 20, 30].indexOf(settings.autoInterval) >= 0 ? settings.autoInterval : 15;
+  return n * 1000;
+}
 function startTimer() {
   stopTimer();
-  if (!settings.autoRoll || view !== "play" || rolling || document.querySelector(".overlay, .recordlayer")) return;
+  if (!settings.autoRoll || autoPause || limitHold || view !== "play" || rolling) return;
+  if (document.hidden) return;
+  if (document.querySelector(".overlay, .recordcard, .coach")) return;
   timerStart = performance.now();
+  const ms = intervalMs();
   const loop = (now) => {
-    const p = Math.min(1, (now - timerStart) / 15000);
+    if (autoPause || document.hidden) return;
+    const p = Math.min(1, (now - timerStart) / ms);
     document.querySelectorAll(".ring").forEach((ring) => { ring.style.setProperty("--p", (p * 100).toFixed(2) + "%"); });
-    if (p >= 1) { doRoll(); return; }
+    if (p >= 1) { doRoll("auto"); return; }
     timerRAF = requestAnimationFrame(loop);
   };
   timerRAF = requestAnimationFrame(loop);
@@ -1225,6 +1831,12 @@ function toggleSetting(key) {
   if (key === "tutorTrack") return;
   settings[key] = !settings[key];
   if (key === "workingComeOut") game.placeWorkingOnComeOut = settings.workingComeOut;
+  if (key === "autoRoll" && settings.autoRoll) {
+    if ([10, 15, 20, 30].indexOf(settings.autoInterval) < 0) settings.autoInterval = 15;
+    autoPause = "";
+    emptyFelt = 0;
+  }
+  if (key === "autoRoll" && !settings.autoRoll) autoPause = "";
   if (key === "sound") A.setMuted(!settings.sound);
   if (key === "reduced") document.documentElement.classList.toggle("reduce", settings.reduced);
   save();
@@ -1254,8 +1866,9 @@ function paint() {
     snap();
     document.querySelectorAll(".page").forEach((p, i) => { if (scrolls[i]) p.scrollTop = scrolls[i]; });
     if (coachOn) markSpotlight();
-    requestAnimationFrame(placeDice);
+    requestAnimationFrame(() => { placeDice(); fitFelt(); measureChrome(); });
   } else {
+    if (view === "fair") noteFair();
     const diceHost = document.getElementById("dice-row");
     if (diceHost) { diceHost.hidden = true; }
     document.getElementById("panel").innerHTML = panelHTML();
@@ -1266,7 +1879,7 @@ function hudHTML() {
   const on = E.tableTotal(game);
   const pointName = game.point === 6 ? "SIX" : game.point === 9 ? "NINE" : (game.point || "");
   const puck = game.phase === "point"
-    ? "<img class='puckimg' src='assets/icons/puck-on.svg' alt=''><span class='pointname'>POINT " + pointName + "</span>"
+    ? "<img class='puckimg' src='assets/icons/puck-on.svg' alt=''><span class='pointname'><span class='pointword'>POINT </span>" + pointName + "</span>"
     : "<img class='puckimg' src='assets/icons/puck-off.svg' alt='Puck off'>";
   const dice = game.lastDice ? "<span class='lastdice'>" + miniDie(game.lastDice.d1) + miniDie(game.lastDice.d2) + "</span>" : "";
   const mode = "<div class='seg modeseg'>" +
@@ -1280,6 +1893,7 @@ function hudHTML() {
     "<div class='hud-bank'><small>On table</small><strong>" + money(on) + "</strong></div>" +
     rollHud() +
     "<div class='hud-puck'>" + puck + "</div>" + dice + heaterHTML(false) +
+    limitChip() +
     "<button class='fairchip' data-act='view' data-view='fair' aria-label='Fair Dice'>FAIR</button></div>";
 }
 
@@ -1602,7 +2216,7 @@ function dockHTML() {
   const powerSub = rolling ? "after a hit" : (st.powerOk ? "+" + money(st.powerAdd) + " → " + money((st.stake || 0) + (st.powerAdd || 0)) + " · whole win" : (st.powerReason || "after a hit"));
   const undo = taps ? "<button class='undodisc' data-act='undo'" + (rolling ? " disabled" : "") + " aria-label='Undo press'>↺</button>" : "";
   const clear = taps ? "<button class='clearchip' data-act='clear'" + (rolling ? " disabled" : "") + " aria-label='Clear presses'>×</button>" : "";
-  const secs = settings.autoRoll ? "AUTO 15s" : "MANUAL";
+  const secs = !settings.autoRoll ? "MANUAL" : autoPause ? "PAUSED" : "AUTO " + (settings.autoInterval || 15) + "s";
   let context = "";
   if (page === 0) {
     context = "<div class='context leftkeys'><button class='key' data-act='same'>SAME BET</button><button class='key' data-act='addchip'>ADD A CHIP</button><button class='key' data-act='takedown'>TAKE DOWN</button></div>";
@@ -1616,14 +2230,43 @@ function dockHTML() {
       "<button class='key' data-act='reset'>RESET</button>" +
       "<button class='key betskey' data-act='bets'>BETS ▴</button></div>";
   }
-  const stop = game.strategy ? "<button class='key stopkey' data-act='stop-strategy'>Stop " + game.strategy.id + "</button>" : "";
+  const stop = game.strategy ? stratOpts() + "<button class='key stopkey' data-act='stop-strategy'>Stop " + game.strategy.id + "</button>" : "";
+  const pauseNote = autoPause === "empty" ? "Auto-roll paused · nothing on the felt"
+    : autoPause === "short" ? "Auto-roll paused · not enough practice chips for your bets"
+      : autoPause === "away" ? "Auto-roll paused while you were away"
+        : autoPause === "limit" ? "Auto-roll paused"
+          : autoPause ? "Auto-roll paused" : "";
+  const resume = pauseNote ? "<button class='key resumekey' data-act='resume'>RESUME<small>" + pauseNote + "</small></button>" : "";
   return "<div class='dockgrid'><div class='dockleft'><div class='rack'><div class='trough'>" + chips + "</div></div>" +
     "<div class='presspair'><div class='presswrap'><button class='press-btn" + (st.pressOk && !rolling ? " live" : "") + "' data-act='press'" + (rolling || !st.pressOk ? " disabled" : "") + "><span class='pl1'>" + pressLine + "</span><small>" + pressSub + "</small></button>" + undo + clear + "</div>" +
     "<button class='press-btn power" + (st.powerOk && !rolling ? " live" : "") + "' data-act='power'" + (rolling || !st.powerOk ? " disabled" : "") + "><span class='pl1'>" + powerLine + "</span><small>" + powerSub + "</small></button></div></div>" +
     "<button class='roll-btn' data-act='roll' aria-label='Roll the dice'><span class='kicker'>" + secs + "</span><span class='roll-face'>ROLL</span><span class='ring'></span></button></div>" +
-    context + stop;
+    context + stop + resume;
 }
 
+function stratOpts() {
+  const s = game.strategy;
+  if (!s) return "";
+  const data = s.data || (s.data = {});
+  if (s.id === "B13") {
+    const odds = data.odds || "max";
+    const cap = Math.max(0, Math.floor(Number(data.cap) || 0));
+    const oddsBtns = [["max", "Max odds"], ["2", "2x"], ["1", "1x"], ["flat", "Flat"]].map(([id, label]) =>
+      "<button class='" + (odds === id ? "on" : "") + "' data-act='strat-odds' data-level='" + id + "'>" + label + "</button>").join("");
+    const capBtns = [0, 1, 2, 3, 4, 5].map((n) =>
+      "<button class='" + (cap === n ? "on" : "") + "' data-act='strat-cap' data-cap='" + n + "'>" + (n ? "Cap " + n : "Uncapped") + "</button>").join("");
+    return "<div class='stropts'>" + oddsBtns + capBtns + "</div>";
+  }
+  if (s.id === "B14") {
+    const start = data.start === 8 ? 8 : 6;
+    const ext = !!data.extend;
+    return "<div class='stropts'>" +
+      "<button class='" + (start === 6 ? "on" : "") + "' data-act='strat-start' data-start='6'>Start 6</button>" +
+      "<button class='" + (start === 8 ? "on" : "") + "' data-act='strat-start' data-start='8'>Start 8</button>" +
+      "<button class='" + (ext ? "on" : "") + "' data-act='strat-extend' data-on='" + (ext ? "0" : "1") + "'>" + (ext ? "Crapless extension on" : "Crapless extension off") + "</button></div>";
+  }
+  return "";
+}
 function panelHTML() {
   if (view === "home") return homeHTML();
   if (view === "fair") return fairHTML();
@@ -1646,9 +2289,9 @@ function homeHTML() {
     "<p class='choose'>CHOOSE YOUR RULES</p>" +
     "<div class='modes'><button class='mode-card on' data-act='play' data-mode='regular'><i class='starttag'>START HERE</i><b>Regular</b><span>Pass, Don't, odds 3-4-5x.</span>" + edgeChip(0.37) + "<small>Pass + odds</small></button>" +
     "<button class='mode-card' data-act='play' data-mode='crapless'><b>Crapless</b><span>Only a come-out 7 wins. No Don't. No ATS.</span>" + edgeChip(1.26) + "<small>Pass + odds</small></button></div>" +
-    "<button class='cta' data-act='play' data-mode='regular'><b>PLAY REGULAR</b><small>15-SECOND BET TIMER · AUTO ROLL</small></button>" +
+    "<button class='cta' data-act='play' data-mode='regular'><b>PLAY REGULAR</b><small>TAP ROLL · AUTO-ROLL OPTIONAL IN SETTINGS</small></button>" +
     "<div class='ghostrow'><button class='ghost' data-act='tour'>TAKE THE TUTOR TOUR</button><button class='ghost' data-act='billy-help'>WHAT'S BILLY'S WAY?</button></div>" +
-    "<button class='ghost boardlink' data-act='view' data-view='leaderboard'>LONGEST ROLLS</button>" +
+    "<button class='ghost boardlink' data-act='view' data-view='leaderboard'>BADGES AND LONGEST ROLLS</button>" +
     "<div class='disclaimer'><b>Education only. Play money only.</b> No real gambling, no deposits, no cash-out, no prizes. Every bankroll on this table is practice chips. 18+.</div></section>";
 }
 
@@ -1700,7 +2343,7 @@ function premiumHTML() {
     ["B-23", "Repeater stay-up options", "All off"],
     ["B-24", "Repeaters in Crapless", regular ? "On" : "On"],
     ["B-25", "Crapless Place 2/12 · 3/11", regular ? "Regular only" : "11:2 · 11:4"],
-    ["B-26", "Bet timer", "15 s · free in Settings"],
+    ["B-26", "Auto-roll", "Off by default · free in Settings"],
     ["B-28", "Auto-press after each hit", "Off · free in Settings"],
     ["B-29", "Hop pays", "15 / 30 to 1"],
     ["B-30", "Show the dice on each roll", "Off · free in Settings"],
@@ -1712,15 +2355,38 @@ function premiumHTML() {
     "<div class='filters'>" + presets.map((name) => "<button class='" + (premiumPreset === name ? "on" : "") + "' data-act='preset' data-preset='" + name + "'>" + name + "</button>").join("") + "</div>" +
     "<article class='card'><h3>Edge Preview</h3><p class='lock'>Locked</p><p>" + preview[premiumPreset] + "</p><p class='muted'>A Premium unlock would animate the old edge to the new one. Example: Field 5.56% → 2.78%.</p></article>" +
     rows.map(([id, label, value]) => "<div class='setting'><div><b>" + id + " " + label + "</b><div class='muted'>" + (regular ? "Regular" : "Crapless") + " · Standard</div></div><span class='lock'>" + value + "</span></div>").join("") +
-    "<article class='card'><h3>With Premium you could preview</h3><p>Your casino's odds and payouts. Live house-edge preview. Presets. Fair Dice CSV export. Hard Way All Day 150–200 for 1. Repeater pay tables.</p><p class='muted'>Shooter skill simulation is not in Bubble Craps.</p></article>";
+    "<article class='card'><h3>With Premium you could preview</h3><p>Your casino's odds and payouts. Live house-edge preview. Presets. Fair Dice CSV export. Hard Way All Day 150–200 for 1. Repeater pay tables.</p><p class='muted'>Table-style dice setting is not in Bubble Craps.</p></article>";
 }
 
+function limitSetting(which, label) {
+  const spec = which === "win" ? settings.winGoal : settings.lossLimit;
+  const kinds = [["off", "Off"], ["amount", "Amount"], ["pct", "%"]];
+  const pcts = which === "win" ? [10, 25, 50, 100] : [10, 20, 25, 50];
+  if (spec.kind === "pct" && pcts.indexOf(spec.pct) < 0) spec.pct = pcts[0];
+  const detail = spec.kind === "amount" ? money(spec.amount || 2500) : spec.kind === "pct" ? spec.pct + "%" : "Off";
+  return "<div class='setting stackpress'><div><b>" + label + "</b><div class='muted'>" + detail + ". Checked after each roll.</div></div><div class='seg'>" +
+    kinds.map(([id, name]) => "<button class='" + (spec.kind === id ? "on" : "") + "' data-act='limit-kind' data-which='" + which + "' data-kind='" + id + "'>" + name + "</button>").join("") +
+    "</div>" + (spec.kind === "off" ? "" : "<div class='stepper'><button class='step' data-act='limit-step' data-which='" + which + "' data-field='" + (spec.kind === "pct" ? "pct" : "amount") + "' data-dir='-1' aria-label='Lower " + label + "'>−</button><b>" + detail + "</b><button class='step' data-act='limit-step' data-which='" + which + "' data-field='" + (spec.kind === "pct" ? "pct" : "amount") + "' data-dir='1' aria-label='Raise " + label + "'>+</button></div>") +
+    "</div>";
+}
+function longestPosted() {
+  const a = L.bestEntry(boardData.entries, "regular");
+  const b = L.bestEntry(boardData.entries, "crapless");
+  return Math.max(a ? a.rolls : 0, b ? b.rolls : 0);
+}
 function settingsHTML() {
   const row = (key, label, detail) => "<div class='setting'><div><b>" + label + "</b><div class='muted'>" + detail + "</div></div><button class='switch" + (settings[key] ? " on" : "") + "' data-act='setting' data-key='" + key + "' role='switch' aria-checked='" + settings[key] + "' aria-label='" + label + "'><i></i></button></div>";
   return "<h2>Settings</h2>" +
     row("sound", "Sound", "Dome pop, dice, chips, wins") +
     row("haptics", "Haptics", "Vibration where the phone allows it") +
-    row("autoRoll", "Auto roll", "15 seconds, then the machine rolls. ROLL always works.") +
+    row("autoRoll", "Auto-roll", "Off until you turn it on. ROLL always works.") +
+    "<div class='setting stackpress'><div><b>Auto-roll interval</b><div class='muted'>10, 15, 20, or 30 seconds. 15 the first time you turn it on.</div></div><div class='seg'>" +
+    [10, 15, 20, 30].map((sec) => "<button class='" + (settings.autoInterval === sec ? "on" : "") + "' data-act='interval' data-sec='" + sec + "'>" + sec + "s</button>").join("") +
+    "</div></div>" +
+    limitSetting("loss", "Loss limit") +
+    limitSetting("win", "Win goal") +
+    "<div class='setting stackpress'><div><b>Leaderboard initials</b><div class='muted'>1 to 3 letters, A to Z. Stays on this device.</div></div><input id='settings-initials' maxlength='3' value='" + esc((boardData.initials && boardData.initials.default) || "") + "' aria-label='Leaderboard initials'></div>" +
+    "<p class='initerr'></p><div class='actions'><button class='go' data-act='initials-save'>Save initials</button><button data-act='initials-apply'>Apply to my existing entries</button></div>" +
     row("workingComeOut", "Place and Buy working on come-out", "Off is Standard") +
     row("blazing", "Blazing meter", "Cosmetic only. Dice have no memory. It never changes odds or bets.") +
     row("showDice", "Show the dice on each roll", "Jumps to the dome, then back") +
@@ -1732,6 +2398,8 @@ function settingsHTML() {
     "<div class='setting stacked'><div><b>Tutor track</b><div class='muted'>Beginner or experienced</div></div></div><div class='seg trackseg'><button class='" + (settings.tutorTrack === "beginner" ? "on" : "") + "' data-act='track' data-track='beginner'>Beginner</button><button class='" + (settings.tutorTrack === "experienced" ? "on" : "") + "' data-act='track' data-track='experienced'>Experienced</button></div>" +
     "<button class='cta' data-act='bank-reset'>Reset bankroll to $1,000</button>" +
     "<button class='ghost' data-act='fair-reset'>Reset Fair Dice history</button>" +
+    "<button class='ghost' data-act='end-session' data-reason='end'>End session</button>" +
+    "<button class='ghost' data-act='reset-records'>Reset badges and records</button>" +
     "<p class='muted'>RNG: " + (E.getRngSource() === "fallback" ? "basic (fallback)" : "secure") + ". Dice use your device's secure random generator, with rejection sampling so every face is equal.</p>";
 }
 
@@ -1791,7 +2459,7 @@ function fairHTML() {
     "<article class='card'><h3>Above and below expected</h3><p>" + (rolls.length ? hi.t + ": " + (hi.d >= 0 ? "+" : "") + hi.d.toFixed(1) + " vs expected · " + lo.t + ": " + lo.d.toFixed(1) : "Roll to fill this in.") + "</p></article>" +
     (function () {
       const st = F.streakStats(rolls);
-      return "<article class='card'><h3>Streaks</h3><p>Longest run without a 7: " + st.longestDry + ". Current run without a 7: " + st.currentDry + ".</p><p>Longest hand before a seven-out: " + st.longestHand + " rolls. This hand: " + st.currentHand + ".</p><p>" + repeat + "</p><p class='muted'>A long gap is not a sign the next roll is different. A 7 is still 1 in 6.</p></article>";
+      return "<article class='card'><h3>Streaks</h3><p>Longest run without a 7: " + st.longestDry + ". Current run without a 7: " + st.currentDry + ".</p><p>In these rolls, longest hand: " + st.longestHand + " rolls. This hand: " + (game.hand.rolls || 0) + ". Longest hand all time: " + longestPosted() + ".</p><p>" + repeat + "</p><p class='muted'>A long gap is not a sign the next roll is different. A 7 is still 1 in 6.</p></article>";
     })() +
     "<p>Every roll uses your device's secure random generator. Each die is a fair 1 to 6, and the two dice are independent. Nothing on this screen, not your bets, your streak, or the Blazing meter, can change the next roll.</p>" +
     "<p class='muted'>RNG: " + (E.getRngSource() === "fallback" ? "basic (fallback)" : "secure") + ".</p>" +
@@ -1803,7 +2471,15 @@ function fairHTML() {
 
 load();
 boardData = L.readStore(boardStore);
+if (!settings.lossLimit) settings.lossLimit = { kind: "off", amount: 2500, pct: 25 };
+if (!settings.winGoal) settings.winGoal = { kind: "off", amount: 2500, pct: 25 };
+if (boardData.session) boardData.session = Sess.closeIfIdle(boardData.session, Date.now());
 game.placeWorkingOnComeOut = !!settings.workingComeOut;
 A.setMuted(!settings.sound);
 mount();
+if (boardData.pending && !(boardData.initials && boardData.initials.asked)) {
+  pendingRecord = boardData.pending;
+  const preview = L.previewRoll(boardData, pendingRecord);
+  if (preview.madeWeek || preview.madeAll) showRecordCard(preview);
+}
 if (view === "play") startTimer();

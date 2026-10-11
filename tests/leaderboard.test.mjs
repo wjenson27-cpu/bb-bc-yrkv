@@ -144,37 +144,37 @@ test("this week starts Monday at local midnight and the previous week drops off"
 test("top 10 orders by throws, then points, then earlier date, per mode", () => {
   const now = atLocal(2026, 10, 11, 12);
   const rows = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 2; i <= 12; i++) {
     rows.push({
-      throws: i + 1,
+      throws: i,
       points: 0,
       mode: "regular",
       at: now + i,
-      name: "R" + String(i + 1).padStart(2, "0"),
+      name: "N" + String.fromCharCode(64 + i),
     });
   }
   rows.push({ throws: 9, points: 4, mode: "regular", at: now + 100, name: "PTS" });
-  rows.push({ throws: 9, points: 4, mode: "regular", at: now + 50, name: "EARLY" });
-  rows.push({ throws: 40, points: 6, mode: "crapless", at: now, name: "CRAP" });
+  rows.push({ throws: 9, points: 4, mode: "regular", at: now + 50, name: "EAR" });
+  rows.push({ throws: 40, points: 6, mode: "crapless", at: now, name: "CRP" });
 
   let data = L.emptyData();
   for (const row of rows) {
     const res = L.commitRoll(data, row);
-    assert.equal(res.ok, true, row.name);
+    assert.equal(res.ok, true, row.name + " " + (res.error || ""));
     data = res.data;
   }
 
   const top = L.ranked(data.entries, { mode: "regular", scope: "all", now });
   assert.equal(top.length, 10);
-  assert.equal(top[0].name, "R12");
-  assert.equal(top[1].name, "R11");
-  assert.equal(top[2].name, "R10");
+  assert.equal(top[0].name, "NL");
+  assert.equal(top[1].name, "NK");
+  assert.equal(top[2].name, "NJ");
   const nine = top.filter((e) => e.throws === 9).map((e) => e.name);
-  assert.deepEqual(nine, ["EARLY", "PTS", "R09"]);
-  assert.ok(!top.some((e) => e.name === "R01" || e.name === "R02" || e.name === "CRAP"));
+  assert.deepEqual(nine, ["EAR", "PTS", "NI"]);
+  assert.ok(!top.some((e) => e.name === "NB" || e.name === "NC" || e.name === "CRP"));
 
   const missed = L.commitRoll(data, {
-    throws: 2, points: 0, mode: "regular", at: now + 200, name: "NOPE",
+    throws: 2, points: 0, mode: "regular", at: now + 200, name: "NOP",
   });
   assert.equal(missed.ok, false);
   assert.equal(missed.data.entries.length, data.entries.length);
@@ -185,13 +185,13 @@ test("top 10 orders by throws, then points, then earlier date, per mode", () => 
   assert.equal(tied.ok, false);
 
   const bump = L.commitRoll(data, {
-    throws: top[9].throws, points: top[9].points + 1, mode: "regular", at: now + 300, name: "BUMP",
+    throws: top[9].throws, points: top[9].points + 1, mode: "regular", at: now + 300, name: "BMP",
   });
   assert.equal(bump.ok, true);
   assert.ok(bump.rankAll > 0 && bump.rankAll <= 10);
 
   const crap = L.ranked(data.entries, { mode: "crapless", scope: "all", now });
-  assert.deepEqual(crap.map((e) => e.name), ["CRAP"]);
+  assert.deepEqual(crap.map((e) => e.name), ["CRP"]);
   assert.equal(L.ranked(data.entries, { mode: "crapless", scope: "week", now }).length, 1);
 });
 
@@ -223,11 +223,32 @@ test("a longer roll is a personal best and the latest entry stays highlighted", 
   assert.equal(L.readStore(L.memoryStore({ [L.STORE_KEY]: "{" })).entries.length, 0);
 });
 
-test("initials and nicknames normalize to a short arcade name", () => {
+test("initials are 1 to 3 letters, blank is allowed, and the blocklist refuses a save", () => {
   assert.equal(L.normalizeName(" bil "), "BIL");
-  assert.equal(L.normalizeName("bubbles"), "BUBBLES");
-  assert.equal(L.normalizeName("  billie  bubs  "), "BILLIE BUBS");
+  assert.equal(L.normalizeName("bubbles"), "");
+  assert.equal(L.normalizeName("  billie  bubs  "), "");
   assert.equal(L.normalizeName(""), "");
   assert.equal(L.normalizeName("!!!"), "");
-  assert.equal(L.normalizeName("ABCDEFGHIJKLMNOP"), "ABCDEFGHIJKL");
+  assert.equal(L.normalizeInitials("FUK").blocked, true);
+  const now = atLocal(2026, 10, 11, 12);
+  const skipped = L.commitRoll(L.emptyData(), {
+    throws: 12, points: 1, mode: "regular", at: now, initials: "",
+  });
+  assert.equal(skipped.ok, true);
+  assert.equal(skipped.entry.name, "—");
+  assert.equal(skipped.entry.initials, "");
+  assert.equal(skipped.data.initials.asked, true);
+  const blocked = L.commitRoll(L.emptyData(), {
+    throws: 12, points: 1, mode: "regular", at: now, initials: "FUK",
+  });
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.error, /Try different letters/);
+  const idle = L.commitRoll(L.emptyData(), {
+    throws: 12, points: 1, mode: "regular", at: now, initials: "BIL", hadBetOnSevenOut: false,
+  });
+  assert.equal(idle.ok, false);
+  const testRoll = L.commitRoll(L.emptyData(), {
+    throws: 12, points: 1, mode: "regular", at: now, initials: "BIL", rngSource: "test",
+  });
+  assert.equal(testRoll.ok, false);
 });

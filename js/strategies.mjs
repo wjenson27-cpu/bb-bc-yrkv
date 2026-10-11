@@ -1,5 +1,5 @@
 /**
- * App 1 strategy cards B1–B12 and auto-bet maintenance.
+ * App 1 strategy cards B1–B14 and auto-bet maintenance.
  */
 import {
   TABLE_MIN,
@@ -137,6 +137,26 @@ export const STRATEGIES = [
     bankroll: "About 100 to 130 units Regular, 160 to 210 Crapless.",
     how: "One unit across. Regular buys 4, 5, 9, 10 and places 6 and 8. Crapless also buys 2, 3, 11, 12. Each spot is its own bet. A 7 takes them all.",
   },
+  {
+    id: "B13",
+    name: "Continuous Come",
+    mode: "both",
+    filter: ["all", "regular", "crapless"],
+    edge: "0.37% Regular with max odds · 1.26% Crapless",
+    risk: "High in Regular · Very High in Crapless",
+    bankroll: "About 250 units Regular at max odds. Stop-loss 30%.",
+    how: "Pass plus odds, then a new Come bet with odds on every point roll. Uncapped unless you set a cap. Each Come bet is a new Pass Line. A new one every roll means about one flat bet per roll.",
+  },
+  {
+    id: "B14",
+    name: "Hit and Split",
+    mode: "both",
+    filter: ["all", "regular", "crapless"],
+    edge: "1.52% at the start · 1.69% once across",
+    risk: "Medium, then Medium-High",
+    bankroll: "20 starts ($240). Stop-loss 6 starts or 40%.",
+    how: "Start Place 6 or 8 at $12. Each hit splits the win onto the next numbers until you are across, then collect. Splitting re-bets the win on new numbers. Same odds per bet, more at risk on a 7. Auto-press stays off while this is running.",
+  },
 ];
 
 export function strategyById(id) {
@@ -150,6 +170,7 @@ function unitFromChip(chip) {
 function tryPlace(state, spot, amount, out) {
   if (amount <= 0 || amount > state.bankroll) {
     out.skipped.push({ ...spot, reason: "Not enough practice chips." });
+    if (amount > state.bankroll) out.short = true;
     return state;
   }
   const res = placeBet(state, spot, amount);
@@ -205,6 +226,160 @@ function fillComeOdds(state, out) {
 
 function comePointCount(state) {
   return Object.values(state.bets.comeBets).filter((s) => s && s.amount).length;
+}
+
+function oddsCap(line, point, level) {
+  if (!line || !point || level === "flat") return 0;
+  if (level === "1" || level === "1x") return line;
+  if (level === "2" || level === "2x") return line * 2;
+  return maxPassOdds(line, point);
+}
+
+function fillExact(state, spot, need, out) {
+  if (need <= 0) return state;
+  if (need > state.bankroll) {
+    out.short = true;
+    out.skipped.push({ ...spot, reason: "Not enough practice chips." });
+    return state;
+  }
+  return tryPlace(state, spot, need, out);
+}
+
+function fillPassOddsLevel(state, out, level) {
+  if (state.phase !== "point" || !state.bets.pass) return state;
+  const cap = oddsCap(state.bets.pass, state.point, level);
+  return fillExact(state, { kind: "passOdds" }, cap - state.bets.passOdds, out);
+}
+
+function fillComeOddsLevel(state, out, level) {
+  let next = state;
+  Object.keys(next.bets.comeBets).forEach((key) => {
+    const n = Number(key);
+    const slot = next.bets.comeBets[n];
+    if (!slot || !slot.amount) return;
+    const cap = oddsCap(slot.amount, n, level);
+    const need = cap - (slot.odds || 0);
+    next = fillExact(next, { kind: "comeOdds", number: n }, need, out);
+  });
+  return next;
+}
+
+function b14HasBets(state) {
+  return [2, 3, 4, 5, 6, 8, 9, 10, 11, 12].some((n) => (state.bets.place[n] || 0) > 0 || (state.bets.buy[n] || 0) > 0);
+}
+
+function b14Reset(data) {
+  data.step = 0;
+  data.partial = "";
+  data.across = false;
+  data.collected = 0;
+  data.regressDone = false;
+}
+
+function b14TakeAll(state) {
+  let next = state;
+  [2, 3, 4, 5, 6, 8, 9, 10, 11, 12].forEach((n) => {
+    ["place", "buy"].forEach((kind) => {
+      if (next.bets[kind][n]) {
+        const res = removeBet(next, { kind, number: n });
+        if (res.ok) next = res.state;
+      }
+    });
+  });
+  return next;
+}
+
+function b14OnHits(state, data, wins, out) {
+  const profit = wins.reduce((sum, d) => sum + (d.profit || 0), 0);
+  const start = data.start;
+  const numOf = (d) => {
+    const m = /^(Place|Buy) (\d+)$/.exec(d.bet || "");
+    return m ? Number(m[2]) : 0;
+  };
+  if (data.across) {
+    const startHit = wins.some((d) => numOf(d) === start);
+    if (startHit && !data.regressDone && (state.bets.place[start] || 0) >= 1200) {
+      const res = removeBet(state, { kind: "place", number: start }, 600);
+      if (res.ok) state = res.state;
+      data.regressDone = true;
+      data.collected = (data.collected || 0) + 1;
+      out.message = "Regressed " + start + " to $6. The win stays in chips.";
+    }
+    wins.forEach((d) => {
+      const n = numOf(d);
+      if (!n || n === start) return;
+      const kind = String(d.bet).indexOf("Buy") === 0 ? "buy" : "place";
+      if ((state.bets[kind][n] || 0) > 0) {
+        const res = removeBet(state, { kind, number: n });
+        if (res.ok) state = res.state;
+        data.collected = (data.collected || 0) + 1;
+      }
+    });
+    if ((data.collected || 0) >= 2) {
+      state = b14TakeAll(state);
+      b14Reset(data);
+      data.down = true;
+      data.sawComeOut = state.phase === "come-out";
+      out.message = "Two collected hits. The ladder comes down and starts again on the next point.";
+    }
+    return state;
+  }
+  const other = start === 6 ? 8 : 6;
+  const step = data.step || 0;
+  if (step === 0) {
+    state = fillExact(state, { kind: "place", number: other }, 600, out);
+    data.step = 1;
+    out.message = "Split the win: Place " + other + " $6. The rest stays in chips.";
+    return state;
+  }
+  const pairs = [[5, 9], [4, 10]];
+  if (data.extend) pairs.push([3, 11], [2, 12]);
+  const pair = pairs[step - 1];
+  if (!pair) {
+    data.across = true;
+    return state;
+  }
+  const [a, b] = pair;
+  if (data.partial) {
+    const left = data.partial === "a" ? b : a;
+    state = fillExact(state, { kind: "buy", number: left }, 500, out);
+    data.partial = "";
+    data.step = step + 1;
+  } else if (profit < 1000) {
+    state = fillExact(state, { kind: "buy", number: a }, 500, out);
+    data.partial = "a";
+    out.message = "Win under $10. Buy " + a + " $5 now. The pair finishes on the next hit.";
+  } else {
+    state = fillExact(state, { kind: "buy", number: a }, 500, out);
+    state = fillExact(state, { kind: "buy", number: b }, 500, out);
+    data.step = step + 1;
+  }
+  const done = data.extend ? 5 : 3;
+  if (!data.partial && (data.step || 0) >= done) data.across = true;
+  return state;
+}
+
+function maintainB14(state, strat, out) {
+  const data = strat.data;
+  data.start = data.start === 8 ? 8 : 6;
+  const sig = String((state.lastDice && state.lastDice.total) || "") + ":" + ((state.stats && state.stats.rolls) || 0);
+  if (data.down) {
+    if (state.phase === "come-out") data.sawComeOut = true;
+    if (data.sawComeOut && state.phase === "point") {
+      data.down = false;
+      data.sawComeOut = false;
+    } else return state;
+  }
+  if (!b14HasBets(state) && (data.step || 0) > 0) b14Reset(data);
+  if (data.seenSig !== sig) {
+    data.seenSig = sig;
+    const wins = (state.lastDecisions || []).filter((d) => d.result === "win" && /^(Place|Buy) \d+$/.test(d.bet || ""));
+    if (wins.length) state = b14OnHits(state, data, wins, out);
+  }
+  if (state.phase === "point" && (data.step || 0) === 0 && !data.across && !data.partial && !(state.bets.place[data.start] > 0)) {
+    state = fillExact(state, { kind: "place", number: data.start }, 1200, out);
+  }
+  return state;
 }
 
 function ensureData(state, id) {
@@ -367,6 +542,19 @@ export function autoBet(state, id, chipCents, opts = {}) {
     }
     next = fillComeOdds(next, out);
   }
+  if (id === "B13") {
+    const data = strat.data;
+    const level = data.odds || "max";
+    const cap = Math.max(0, Math.floor(Number(data.cap) || 0));
+    if (next.phase === "come-out") next = topUp(next, { kind: "pass" }, TABLE_MIN, out);
+    else {
+      next = fillPassOddsLevel(next, out, level);
+      next = fillComeOddsLevel(next, out, level);
+      const working = comePointCount(next) + (next.bets.come ? 1 : 0);
+      if (!(cap > 0 && working >= cap) && !next.bets.come) next = tryPlace(next, { kind: "come" }, TABLE_MIN, out);
+    }
+  }
+  if (id === "B14") next = maintainB14(next, strat, out);
   if (id === "B12") {
     const want = billysWayAmounts(chip);
     const buys = (state.mode === "crapless" ? [2, 3, 4, 5, 9, 10, 11, 12] : [4, 5, 9, 10]).filter((n) => numbersFor(next).includes(n));
@@ -389,7 +577,7 @@ export function autoBet(state, id, chipCents, opts = {}) {
 export function applyAutoPress(state) {
   const cfg = state.autoPress || { mode: "off", max: 3, counts: {} };
   if (!cfg.mode || cfg.mode === "off") return { ok: false, state, skipped: true };
-  if (state.strategy && state.strategy.id === "B5") return { ok: false, state, skipped: true };
+  if (state.strategy && (state.strategy.id === "B5" || state.strategy.id === "B14")) return { ok: false, state, skipped: true };
   const lw = state.lastWin;
   if (!lw) return { ok: false, state, error: "after a hit" };
   const marked = state.billyMark && state.billyMark[lw.kind] && state.billyMark[lw.kind][lw.number];

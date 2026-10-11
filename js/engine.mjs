@@ -758,10 +758,10 @@ export function contractsWorking(state) {
 }
 
 export function switchMode(state, mode) {
-  if (contractsWorking(state)) {
+  if ((state.hand && state.hand.rolls > 0) || contractsWorking(state)) {
     return {
       ok: false,
-      error: "Finish this hand first. A point, Pass, or Come bet stays up until it wins or loses.",
+      error: "Finish this hand first. A hand ends on a seven-out. (Or Reset bankroll to start fresh.)",
       state,
     };
   }
@@ -860,7 +860,7 @@ function setPressContext(state, total, decisions, working) {
   const buyStake = state.bets.buy[total] || 0;
   const placeStake = state.bets.place[total] || 0;
   if (!working) {
-    if (buyStake || placeStake) state.pressBlock = "bets off";
+    if (buyStake || placeStake) state.pressBlock = state.phase === "come-out" ? "Off on come-out" : "bets off";
     else state.pressBlock = "no bet on " + total;
     return;
   }
@@ -1016,6 +1016,28 @@ function placeWorking(state) {
   if (state.betsOff) return false;
   if (state.phase === "come-out" && !state.placeWorkingOnComeOut) return false;
   return true;
+}
+
+function moneyMap(map) {
+  return Object.keys(map || {}).some((key) => {
+    const v = map[key];
+    if (typeof v === "number") return v > 0;
+    return !!(v && ((v.amount || 0) > 0 || (v.odds || 0) > 0));
+  });
+}
+
+/** True when at least one bet would settle on this roll. Parked Place/Buy do not count. */
+export function hadWorkingBet(state) {
+  const b = state.bets || {};
+  if (b.pass > 0 || b.passOdds > 0 || b.dontPass > 0 || b.dontPassOdds > 0) return true;
+  if (b.come > 0 || b.dontCome > 0) return true;
+  if (b.field > 0 || b.any7 > 0 || b.anyCraps > 0 || b.ce > 0 || b.horn > 0) return true;
+  if (b.small > 0 || b.tall > 0 || b.all > 0 || b.hardAllDay > 0) return true;
+  if (moneyMap(b.comeBets) || moneyMap(b.dontComeBets)) return true;
+  if (moneyMap(b.hops) || moneyMap(b.repeaters)) return true;
+  if (hardwaysWorking(state) && moneyMap(b.hardways)) return true;
+  if (placeWorking(state) && (moneyMap(b.place) || moneyMap(b.buy))) return true;
+  return false;
 }
 
 function hardwaysWorking(state) {

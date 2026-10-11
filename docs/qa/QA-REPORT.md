@@ -69,7 +69,7 @@ The middle board order is ATS, numbers, Come, Field, props, then Pass last. The 
 
 The Play view hides the tab bar. Home is a button in the HUD. There is no second bankroll bar. PRESS and POWER PRESS show the live amount and the reason they are off. Undo is a ↺ disc on PRESS. Bets Off, Billy's Way, and Reset stay under the dock. ROLL does not overlap those keys.
 
-A seven-out is a toast (`Seven-out · new shooter` when nothing was lost). A small win is the roll toast. A big win overlay stops above the dock, dismisses itself, and does not call the auto-roll stop. Place 6 and 8 post in $6 units.
+A seven-out is a toast with Dealer Billy (`Seven out.`). A small win is the roll toast. A big win overlay stops above the dock, dismisses itself, and does not call the auto-roll stop. Place 6 and 8 post in $6 units.
 
 Landscape phones (500px tall or shorter) keep the chip and on-table row in the top bar and keep the legal line on its own 26px row. The dock is a right column. Wide desktop windows still center the phone column, now on a felt backdrop.
 
@@ -91,6 +91,21 @@ Both reviewers failed the previous build. This pass fixes the failures they coul
 - Landscape shows Chips and On table, and the legal line is fully on screen.
 - Last 20 reads oldest to newest, with the newest chip marked. Fair Dice prints the verdict that matches the test (Need more rolls, Looks fair, A bit unusual, Rare result). The first time auto-press is turned on, a tip explains it. A $500 chip on Place 6 or 8 posts $498, the largest $6 unit under the table max.
 
+## Run 6
+
+Both reviewers failed runs 4 and 5. This pass follows the re-review specs and spec rev 11.
+
+- The initials card is a layer between the HUD and the dock. It does not cover ROLL. SKIP posts the hand as "—". "New record!" is only rank 1. A pending hand survives reload. Player-facing Bubble copy does not say "shooter".
+- At 375×667 and 844×390 the felt scales as one 354×471 piece (scale 0.78) and the page scrolls so the Pass Line stays reachable. At 390×844 and 430×932 the felt stays the flex layout. Row gaps stay positive. The bankroll stays on screen with a point on.
+- Landscape dice sit inside the contained hood, on the air bed. The grey shine behind the glass is hidden. A tumble sets the rolled faces first, eases through two bounces, and ends on that rest pose. Warm, Hot, and Blazing glow on the die faces.
+- BIG WIN uses Billie only. PRESS stays two lines after a press. A click that follows a swipe is swallowed once, then the next press works.
+- A hand posts only when a bet was working on the seven-out. Test-forced rolls (`window.__bbRng`, localhost only) are not posted.
+- Auto-roll is off by default. Session loss limit and win goal are off by default. Regular and Crapless switch only before the first roll of a hand.
+- B13 Continuous Come and B14 Hit and Split are in the library. The dock shows the optional cap, odds level, start number, and crapless extension while that strategy is running.
+- The Rolls screen has the LED board (medals, tier, YOU, live hand) and the 30-badge gallery. Badge art is in `assets/badges/`.
+
+69 tests pass. `robots` meta `noindex, nofollow` is still on the page. Compare shots for this pass are `docs/qa/compare/run6-*`.
+
 ## Still short of the mockups
 
 The felt is the right material and order. It is still denser than mockup 15, and felt cells are under 44px so the Pass Line fits. Dock, chips, and bet-panel steppers are at least 44px.
@@ -111,4 +126,4 @@ The rules review found a C&E overpay and a progress-banking hole, plus several m
 - B8 can post a new Buy 4/5/9/10 set after it takes the first one down. B11 pauses after 100 rolls, not 99.
 - PRESS and POWER PRESS show why they are grey, including while the dice are tumbling. The $500 cap toast only shows when the bet lands on the table max.
 
-51 tests pass, including the browser swipe and the mouse-click PRESS check. `robots` meta `noindex, nofollow` is still on the page.
+69 tests pass, including the browser swipe, the mouse-click PRESS check, B13, B14, the longest-roll rules, and the badge conditions. `robots` meta `noindex, nofollow` is still on the page.
