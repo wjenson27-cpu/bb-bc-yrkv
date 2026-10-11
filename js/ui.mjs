@@ -298,7 +298,7 @@ function mount() {
   diceHost.className = "dice-live";
   diceHost.hidden = true;
   document.body.appendChild(diceHost);
-  window.addEventListener("resize", () => { placeDice(); fitFelt(); });
+  window.addEventListener("resize", () => { placeDice(); fitFelt(); measureChrome(); });
   document.body.addEventListener("click", (e) => {
     if (e.target.closest("#record")) onClick(e);
   });
@@ -2274,6 +2274,7 @@ function paint() {
     const diceHost = document.getElementById("dice-row");
     if (diceHost) { diceHost.hidden = true; }
     document.getElementById("panel").innerHTML = panelHTML();
+    requestAnimationFrame(() => measureChrome());
   }
 }
 

@@ -39,9 +39,9 @@ body:has(#overlay img[src*="mascots/"]) .dome-cast { visibility: hidden; }
   #hud .heater.compact .segs i,
   #hud .heater.compact .segs i:last-child {
     display: block;
-    width: 10px;
-    height: 4px;
-    flex: 0 0 4px;
+    width: 12px;
+    height: 5px;
+    flex: 0 0 5px;
   }
 }
 

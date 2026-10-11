@@ -195,6 +195,7 @@ test("strips, landscape coach, heat sheet, and phone HUD", async (t) => {
           const inside = (a, b) => a.left >= b.left - 0.6 && a.right <= b.right + 0.6 && a.top >= b.top - 0.6 && a.bottom <= b.bottom + 0.6;
           const faces = [...document.querySelectorAll("#hud .lastdice .dieface")].map((el) => el.getBoundingClientRect());
           const badge = document.querySelector("#hud .lastdice .readbadge").getBoundingClientRect();
+          const row = document.querySelector("#hud .hud-row2").getBoundingClientRect();
           const segs = [...document.querySelectorAll("#hud .heater.compact .segs i")];
           const boxes = segs.map((el) => {
             const r = el.getBoundingClientRect();
@@ -204,7 +205,7 @@ test("strips, landscape coach, heat sheet, and phone HUD", async (t) => {
               w: r.width,
               h: r.height,
               on: el.classList.contains("on"),
-              inView: r.left >= -0.5 && r.right <= innerWidth + 0.5 && r.width > 0 && r.height > 0,
+              inView: r.left >= -0.5 && r.right <= innerWidth + 0.5 && r.top >= row.top - 0.5 && r.bottom <= row.bottom + 0.5 && r.width >= 8 && r.height >= 4,
             };
           });
           return {

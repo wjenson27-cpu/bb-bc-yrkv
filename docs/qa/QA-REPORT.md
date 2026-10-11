@@ -171,9 +171,23 @@ The ON puck sits on the corner of the number box, clear of the numeral. The Blaz
 
 89 tests pass. `robots` meta `noindex, nofollow` is still on the page.
 
-Still later: Premium scaled and custom ladders, the rest of the tutor rows, long-press bet preview, the wide layout, cent flooring, the fairness-card scroll for #25, practice-day counting for #26, and the Table Craps turn log.
+## Run 11
 
-Still later: Premium scaled and custom Power Press ladders, the rest of the tutor state table, long-press bet preview, the wide layout, and the fairness-card scroll for badge #25.
+Both reviewers failed run 10 on the tile clip, the landscape coach, and the heat-sheet mascot. Measured in Chromium. Compare shots are `docs/qa/compare/run11-*`.
+
+Each Last 20 tile is 30px with no border, and each face is a fixed 14px, so the two dice sit on one row. At 375, 390, and 430 the dome strip is 309×34 and shows pips; both faces in a sample tile share the same top. All 36 pairs were checked at 320, 375, 390, and 430: each face rect sits inside its tile and the file is `face-N.svg` (the art has N pip circles). A strip under 309px uses totals, so the 320px dome (304px wide) does not crop the end tiles. Fair Dice Last 20 at 390 is two rows of pip tiles, 336px wide, and a lower row does not cover the one above it. The latest tile’s gold outline is inset.
+
+A short landscape coach is at most 600px wide and stops 200px short of the right edge. At 844×390 and 932×430 the ROLL hit target is the roll face, and the hand count goes from 0 to 1 while the card stays open.
+
+The first Hot lesson on the dome is one mascot. The dome Billy is `visibility: hidden` while any overlay image from `assets/mascots/` is up. Compare: `docs/qa/compare/run11-heat-sheet.jpg`.
+
+The phone HUD keeps all four Blazing segments. Under 440px they stack beside the flame, so Hot (3) and Blazing (4) still differ, and the row does not clip them. After a 6-6 with the point on 10, FAIR’s right edge is 369 at 375, 373 at 390, and 413 at 430. The last-roll pill is wide enough for both dice and the total.
+
+ROLL stays available during BIG WIN. The banner, including its pips, is cleared at the start of the next roll. The Hard 4 tag is 16px and does not run under Billie. The coach kicker changes from POINT IS ON to COME-OUT when a roll changes the phase. “Ended on” stays on one line, and the readout no longer stretches across the record card. At 375, Spin the Block’s title ends before VIEW.
+
+91 tests pass. `robots` meta `noindex, nofollow` is still on the page.
+
+Still open: R7-6 (B5 coach edge), R6-7 (badge timing #1–#4), R6-10 (#25 fairness scroll), R6-11 (#26 practice days), R6-14 (test rolls unlocking badges on localhost), P2-11 (tutor rows), P2-18 (long-press preview), P2-19 (layout at 1400px and up), P2-21 (cent flooring), P2-N8 (first-time auto-press card), R5-4 (pinned current-hand row), Premium B-31 Scaled and Custom ladders and a variable table max, the Table Craps turn log, and Spin the Block’s marquee facts line still appending the Low/High Rolls pay and edge. The spec header still says rev 13b.
 
 ## Still short of the mockups
 
