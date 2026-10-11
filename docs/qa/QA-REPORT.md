@@ -111,4 +111,4 @@ The rules review found a C&E overpay and a progress-banking hole, plus several m
 - B8 can post a new Buy 4/5/9/10 set after it takes the first one down. B11 pauses after 100 rolls, not 99.
 - PRESS and POWER PRESS show why they are grey, including while the dice are tumbling. The $500 cap toast only shows when the bet lands on the table max.
 
-49 tests pass, including the browser swipe, after the design review as well. `robots` meta `noindex, nofollow` is still on the page.
+51 tests pass, including the browser swipe and the mouse-click PRESS check. `robots` meta `noindex, nofollow` is still on the page.
