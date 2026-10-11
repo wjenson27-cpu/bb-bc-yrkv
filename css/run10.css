@@ -49,9 +49,6 @@ body.bigwin.mascot-toast #badge-toast { visibility: visible; pointer-events: aut
   margin-right: 8px;
   flex: 0 0 auto;
 }
-@media (max-width: 400px) {
-  .hud-row2 .heater.compact .segs i:last-child { display: none; }
-}
 
 .lastdice .readout { padding-right: 6px; }
 
