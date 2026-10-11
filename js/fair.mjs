@@ -160,5 +160,29 @@ export function streakStats(rolls) {
       /* hand already closed */
     }
   });
-  return { longestDry, longestHand, currentDry: dry, currentHand: hand };
+  return { longestDry, longestHand, currentDry: dry, currentHand: hand, ...mostRepeatedInHand(rolls) };
+}
+
+/** Highest count of one total inside a single hand (between seven-outs). */
+export function mostRepeatedInHand(rolls) {
+  let best = 0;
+  let total = null;
+  let counts = {};
+  const flush = () => {
+    Object.keys(counts).forEach((key) => {
+      if (counts[key] > best) {
+        best = counts[key];
+        total = Number(key);
+      }
+    });
+    counts = {};
+  };
+  rolls.forEach((r) => {
+    const t = r.total != null ? r.total : r.d1 + r.d2;
+    counts[t] = (counts[t] || 0) + 1;
+    const sevenOut = r.result === "seven-out" || (r.phaseBefore === "point" && t === 7);
+    if (sevenOut) flush();
+  });
+  flush();
+  return { mostRepeats: best, mostRepeatTotal: total };
 }

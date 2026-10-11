@@ -10,6 +10,8 @@ import {
   placeBet,
   placeBillysWay,
   removeBet,
+  press,
+  powerPress,
   billysWayAmounts,
 } from "./engine.mjs";
 
@@ -66,7 +68,7 @@ export const STRATEGIES = [
   },
   {
     id: "B6",
-    name: "Crapless Line + Odds",
+    name: "Crapless Line + Odds: \"Make the line pay\"",
     mode: "crapless",
     filter: ["all", "crapless"],
     edge: "5.38% flat · 1.26% with max odds",
@@ -76,7 +78,7 @@ export const STRATEGIES = [
   },
   {
     id: "B7",
-    name: "Crapless 6/8 Only",
+    name: "Crapless 6/8 Only, Avoid 2/3/11/12",
     mode: "crapless",
     filter: ["all", "crapless"],
     edge: "1.52% on 6/8. Pass 5.38% flat.",
@@ -216,7 +218,7 @@ function ensureData(state, id) {
  * Place or repair the strategy's bets. Call before a roll.
  * Does not stack a fresh unit every roll; it maintains the recipe.
  */
-export function autoBet(state, id, chipCents) {
+export function autoBet(state, id, chipCents, opts = {}) {
   const card = strategyById(id);
   const out = { placed: [], skipped: [], message: "" };
   if (!card) return { ok: false, state, ...out, message: "Unknown strategy." };
@@ -235,7 +237,7 @@ export function autoBet(state, id, chipCents) {
   const bet = unitFromChip(chip);
   let next = structuredClone(state);
   const strat = ensureData(next, id);
-  strat.rolls = (strat.rolls || 0) + 1;
+  if (opts.count !== false) strat.rolls = (strat.rolls || 0) + 1;
   if (id === "B11" && strat.rolls > 100) {
     next.strategy = strat;
     return { ok: true, state: next, ...out, paused: true, message: "100-roll limit. Budget grind is paused." };
@@ -267,34 +269,62 @@ export function autoBet(state, id, chipCents) {
   }
   if (id === "B5") {
     const data = strat.data;
-    const hit = (next.lastDecisions || []).some((d) => d.result === "win" && (d.bet === "Place 6" || d.bet === "Place 8"));
-    if (!data.opened) {
-      [6, 8].forEach((n) => {
-        if ((next.bets.place[n] || 0) < 1800) next = tryPlace(next, { kind: "place", number: n }, 1800 - (next.bets.place[n] || 0), out);
-      });
-      if ((next.bets.place[6] || 0) >= 1800 && (next.bets.place[8] || 0) >= 1800) data.opened = true;
-    } else if (!data.regressed && hit) {
-      [6, 8].forEach((n) => {
-        const have = next.bets.place[n] || 0;
-        if (have > 600) {
-          const res = removeBet(next, { kind: "place", number: n }, have - 600);
-          if (res.ok) next = res.state;
+    const mode = (next.autoPress && next.autoPress.mode) || "off";
+    const cap = mode === "off" ? 3 : Math.min(5, Math.max(1, Number(next.autoPress.max) || 3));
+    if (data.stopped) {
+      out.paused = true;
+      out.message = "Three opening spreads lost. Place 6/8 regression is paused.";
+    } else {
+      const p6 = next.bets.place[6] || 0;
+      const p8 = next.bets.place[8] || 0;
+      if (data.opened && p6 === 0 && p8 === 0) {
+        data.losses = (data.losses || 0) + 1;
+        data.opened = false;
+        data.regressed = false;
+        data.presses = { 6: 0, 8: 0 };
+        if (data.losses >= 3) {
+          data.stopped = true;
+          out.paused = true;
+          out.message = "Three opening spreads lost. Place 6/8 regression is paused.";
         }
-      });
-      data.regressed = true;
-      data.presses = { 6: 0, 8: 0 };
-      out.message = "Regressed 6 and 8 to $6.";
-    } else if (data.regressed && hit) {
-      data.presses = data.presses || { 6: 0, 8: 0 };
-      (next.lastDecisions || []).forEach((d) => {
-        if (d.result !== "win") return;
-        const n = d.bet === "Place 6" ? 6 : d.bet === "Place 8" ? 8 : 0;
-        if (!n || data.presses[n] >= 3) return;
-        if (next.bankroll >= 600 && (next.bets.place[n] || 0) + 600 <= 50000) {
-          next = tryPlace(next, { kind: "place", number: n }, 600, out);
-          data.presses[n] += 1;
+      }
+      const hit = (next.lastDecisions || []).some((d) => d.result === "win" && (d.bet === "Place 6" || d.bet === "Place 8"));
+      if (!data.stopped && !data.opened) {
+        [6, 8].forEach((n) => {
+          if ((next.bets.place[n] || 0) < 1800) next = tryPlace(next, { kind: "place", number: n }, 1800 - (next.bets.place[n] || 0), out);
+        });
+        if ((next.bets.place[6] || 0) >= 1800 && (next.bets.place[8] || 0) >= 1800) data.opened = true;
+      } else if (!data.stopped && !data.regressed && hit) {
+        [6, 8].forEach((n) => {
+          const have = next.bets.place[n] || 0;
+          if (have > 600) {
+            const res = removeBet(next, { kind: "place", number: n }, have - 600);
+            if (res.ok) next = res.state;
+          }
+        });
+        data.regressed = true;
+        data.presses = { 6: 0, 8: 0 };
+        out.message = "Regressed 6 and 8 to $6.";
+      } else if (!data.stopped && data.regressed && hit) {
+        data.presses = data.presses || { 6: 0, 8: 0 };
+        const n = (next.lastDecisions || []).reduce((found, d) => {
+          if (d.result !== "win") return found;
+          if (d.bet === "Place 6") return 6;
+          if (d.bet === "Place 8") return 8;
+          return found;
+        }, 0);
+        if (n && (data.presses[n] || 0) < cap) {
+          const res = mode === "power" ? powerPress(next) : press(next);
+          if (res.ok) {
+            next = res.state;
+            data.presses[n] += 1;
+            const stake = next.bets.place[n];
+            const prefix = mode === "off" ? "PRESS" : "Auto " + (mode === "power" ? "POWER PRESS" : "PRESS");
+            const back = mode === "power" ? ", " + formatMoney(res.back) + " to chips" : "";
+            out.message = prefix + " " + n + " +" + formatMoney(res.added) + " → " + formatMoney(stake) + back;
+          }
         }
-      });
+      }
     }
   }
   if (id === "B7") {
@@ -305,16 +335,22 @@ export function autoBet(state, id, chipCents) {
   }
   if (id === "B8") {
     const data = strat.data;
-    data.hits = data.hits || 0;
-    const buyHit = (next.lastDecisions || []).filter((d) => d.result === "win" && /^Buy (4|5|9|10)$/.test(d.bet)).length;
-    data.hits += buyHit;
-    if (data.hits >= 3) {
+    if (!data.seen) data.seen = true;
+    else if (!data.resting) {
+      const buyHit = (next.lastDecisions || []).filter((d) => d.result === "win" && /^Buy (4|5|9|10)$/.test(d.bet)).length;
+      data.hits = (data.hits || 0) + buyHit;
+    }
+    if (data.resting) {
+      if (next.phase === "come-out") data.resting = false;
+    } else if ((data.hits || 0) >= 3) {
       [4, 5, 9, 10].forEach((n) => {
         if (next.bets.buy[n]) {
           const res = removeBet(next, { kind: "buy", number: n });
           if (res.ok) next = res.state;
         }
       });
+      data.hits = 0;
+      data.resting = true;
       out.message = "Three outside hits. Buys taken down.";
     } else if (next.phase === "point") {
       [4, 5, 9, 10].forEach((n) => {
@@ -344,6 +380,39 @@ export function autoBet(state, id, chipCents) {
   }
   next.strategy = strat;
   return { ok: true, state: next, ...out };
+}
+
+/**
+ * Press the Billy's Way spot that just won. B5 applies the same setting itself.
+ * Does not change the bet's original amount.
+ */
+export function applyAutoPress(state) {
+  const cfg = state.autoPress || { mode: "off", max: 3, counts: {} };
+  if (!cfg.mode || cfg.mode === "off") return { ok: false, state, skipped: true };
+  if (state.strategy && state.strategy.id === "B5") return { ok: false, state, skipped: true };
+  const lw = state.lastWin;
+  if (!lw) return { ok: false, state, error: "after a hit" };
+  const marked = state.billyMark && state.billyMark[lw.kind] && state.billyMark[lw.kind][lw.number];
+  if (!marked) return { ok: false, state, error: "not a Billy's Way spot" };
+  const counts = { ...(cfg.counts || {}) };
+  const key = lw.kind + ":" + lw.number;
+  const cap = Math.min(5, Math.max(1, Number(cfg.max) || 3));
+  if ((counts[key] || 0) >= cap) return { ok: false, state, error: "auto-press cap" };
+  const res = cfg.mode === "power" ? powerPress(state) : press(state);
+  if (!res.ok) return { ok: false, state, error: res.error };
+  counts[key] = (counts[key] || 0) + 1;
+  res.state.autoPress = { mode: cfg.mode, max: cap, counts };
+  const stake = res.state.bets[lw.kind][lw.number];
+  const verb = cfg.mode === "power" ? "POWER PRESS" : "PRESS";
+  const back = cfg.mode === "power" ? ", " + formatMoney(res.back) + " to chips" : "";
+  return {
+    ok: true,
+    state: res.state,
+    added: res.added,
+    back: res.back,
+    atMax: !!res.atMax,
+    message: "Auto " + verb + " " + lw.number + " +" + formatMoney(res.added) + " → " + formatMoney(stake) + back,
+  };
 }
 
 export function clearStrategy(state) {

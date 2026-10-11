@@ -118,6 +118,8 @@ export function createGame(options = {}) {
     originals: { place: emptyMap(NUMBERS, 0), buy: emptyMap(NUMBERS, 0) },
     progress: { small: {}, tall: {}, all: {}, hardAllDay: {} },
     repeaterCount: emptyMap(NUMBERS, 0),
+    billyMark: { place: {}, buy: {} },
+    autoPress: { mode: "off", max: 3, counts: {} },
     pressStack: [],
     lastWin: null,
     pressBlock: "after a hit",
@@ -291,6 +293,40 @@ export function blazingScore(hand) {
   return (hand?.rolls || 0) + 3 * (hand?.points || 0);
 }
 
+/** Copy for a tier change. Cosmetic only: it never feeds the rules. */
+export function blazeMoment(before, after, result) {
+  const prev = before || { rolls: 0, points: 0 };
+  const next = after || { rolls: 0, points: 0 };
+  const prevTier = blazingTier(blazingScore(prev), prev.points);
+  const nextTier = blazingTier(blazingScore(next), next.points);
+  if (result === "seven-out") {
+    const length = (prev.rolls || 0) + 1;
+    const hot = prevTier === "hot" || prevTier === "blazing";
+    return {
+      tier: "cold",
+      prevTier,
+      cooled: prevTier !== "cold",
+      text: prevTier === "cold" ? "" : "Cooled off. New hand, same odds.",
+      handNote: hot
+        ? "That was a " + length + "-roll hand. Long hands happen; so do quick ones. Dice have no memory."
+        : "",
+      lessonTier: null,
+    };
+  }
+  if (nextTier !== prevTier && nextTier !== "cold") {
+    const rolls = next.rolls || 0;
+    let text = "";
+    if (nextTier === "warm") text = "Warm: this hand has lasted " + rolls + " rolls so far.";
+    else if (nextTier === "hot") {
+      text = "Hot hand: " + rolls + " rolls so far. About 3 hands in 10 get this far. The next roll is still random: a 7 is 1 in 6.";
+    } else {
+      text = "Blazing: " + rolls + " rolls this hand. About 1 hand in 12 gets here. Fun to watch; it doesn't change the odds.";
+    }
+    return { tier: nextTier, prevTier, cooled: false, text, handNote: "", lessonTier: nextTier };
+  }
+  return { tier: nextTier, prevTier, cooled: false, text: "", handNote: "", lessonTier: null };
+}
+
 export function hopPayTo1(key) {
   return HARD_HOPS.includes(key) ? 30 : 15;
 }
@@ -374,6 +410,7 @@ function spotMin(kind) {
   if (kind === "hop") return HOP_MIN;
   if (kind === "small" || kind === "tall" || kind === "all" || kind === "hardAllDay") return 100;
   if (kind === "horn") return 400;
+  if (kind === "ce") return 200;
   if (kind === "passOdds" || kind === "dontPassOdds" || kind === "comeOdds" || kind === "dontComeOdds") return 1;
   return TABLE_MIN;
 }
@@ -541,9 +578,13 @@ function validate(state, spot, amount, removing) {
     }
   } else if (kind === "horn") {
     if (!removing && amount % 400 !== 0) return "Horn is posted in $4 units.";
-  } else if (
-    ["field", "any7", "anyCraps", "ce", "small", "tall", "all", "hardAllDay"].includes(kind)
-  ) {
+  } else if (kind === "ce") {
+    if (!removing && amount % 200 !== 0) return "C&E is posted in $2 units.";
+  } else if (kind === "small" || kind === "tall" || kind === "all" || kind === "hardAllDay") {
+    if (!removing && lampsLit(state, kind)) {
+      return "This bet already has lamps lit. Take it down to change the stake.";
+    }
+  } else if (kind === "field" || kind === "any7" || kind === "anyCraps") {
     /* ok */
   } else {
     return "Unknown bet.";
@@ -559,6 +600,11 @@ function validate(state, spot, amount, removing) {
     if (next > max) return "Maximum is " + formatMoney(max) + ".";
   }
   return null;
+}
+
+function lampsLit(state, kind) {
+  const lamps = (state.progress && state.progress[kind]) || {};
+  return Object.keys(lamps).some((key) => lamps[key]);
 }
 
 function setOriginal(state, spot) {
@@ -590,7 +636,7 @@ export function placeBet(state, spot, amount, opts = {}) {
     next.progress[s.kind] = {};
   }
   if (s.kind === "repeater" && prior === 0) next.repeaterCount[s.number] = 0;
-  if (s.kind === "place" || s.kind === "buy") setOriginal(next, s);
+  if ((s.kind === "place" || s.kind === "buy") && !opts.keepOriginal) setOriginal(next, s);
   next.bankroll -= amount;
   if (next.bankroll < 0) next.bankroll = 0;
   return { ok: true, state: next };
@@ -624,6 +670,10 @@ export function removeBet(state, spot, amount, opts = {}) {
     take = Math.floor(take / 400) * 400;
     if (!take) return { ok: false, error: "Horn comes down in $4 units.", state };
   }
+  if (s.kind === "ce" && take !== current && take % 200 !== 0) {
+    take = Math.floor(take / 200) * 200;
+    if (!take) return { ok: false, error: "C&E comes down in $2 units.", state };
+  }
   if (s.kind === "dontPass") {
     const odds = next.bets.dontPassOdds;
     const flatTake = take;
@@ -647,11 +697,14 @@ export function removeBet(state, spot, amount, opts = {}) {
     return { ok: true, state: next };
   }
   addAmount(next, s, -take);
-  if ((s.kind === "small" || s.kind === "tall" || s.kind === "all" || s.kind === "hardAllDay") && amountOf(next, s) === 0) {
+  if (s.kind === "small" || s.kind === "tall" || s.kind === "all" || s.kind === "hardAllDay") {
     next.progress[s.kind] = {};
   }
-  if (s.kind === "repeater" && amountOf(next, s) === 0) next.repeaterCount[s.number] = 0;
-  if (s.kind === "place" || s.kind === "buy") setOriginal(next, s);
+  if (s.kind === "repeater") next.repeaterCount[s.number] = 0;
+  if (s.kind === "place" || s.kind === "buy") {
+    setOriginal(next, s);
+    if (amountOf(next, s) === 0 && next.billyMark && next.billyMark[s.kind]) next.billyMark[s.kind][s.number] = false;
+  }
   next.bankroll += take;
   return { ok: true, state: next, kind: s.kind, dont: DONT_KINDS.has(s.kind) };
 }
@@ -676,6 +729,7 @@ export function resetLayout(state) {
   next.originals = { place: emptyMap(NUMBERS, 0), buy: emptyMap(NUMBERS, 0) };
   next.progress = { small: {}, tall: {}, all: {}, hardAllDay: {} };
   next.repeaterCount = emptyMap(NUMBERS, 0);
+  next.billyMark = { place: {}, buy: {} };
   next.pressStack = [];
   next.lastWin = null;
   next.pressBlock = "after a hit";
@@ -691,7 +745,22 @@ export function resetBankroll(state) {
   return next;
 }
 
+export function contractsWorking(state) {
+  if (state.phase === "point" && state.point) return true;
+  const b = state.bets;
+  if (b.pass > 0 || b.dontPass > 0 || b.come > 0 || b.dontCome > 0) return true;
+  const live = (map) => Object.keys(map || {}).some((key) => map[key] && map[key].amount > 0);
+  return live(b.comeBets) || live(b.dontComeBets);
+}
+
 export function switchMode(state, mode) {
+  if (contractsWorking(state)) {
+    return {
+      ok: false,
+      error: "Finish this hand first. A point, Pass, or Come bet stays up until it wins or loses.",
+      state,
+    };
+  }
   const cleared = resetLayout(state);
   cleared.mode = mode === "crapless" ? "crapless" : "regular";
   cleared.phase = "come-out";
@@ -700,7 +769,7 @@ export function switchMode(state, mode) {
   cleared.lastDice = null;
   cleared.lastDecisions = [];
   cleared.lastNarrative = "";
-  return cleared;
+  return { ok: true, state: cleared };
 }
 
 function billysBuyNumbers(state) {
@@ -733,22 +802,29 @@ export function placeBillysWay(state, chipCents) {
       placed.push({ kind: "place", number: n, amount: place });
     } else skipped.push({ kind: "place", number: n, reason: res.error });
   });
+  next.billyMark = next.billyMark || { place: {}, buy: {} };
+  placed.forEach((p) => {
+    next.billyMark[p.kind][p.number] = true;
+  });
   return { ok: placed.length > 0, state: next, placed, skipped, buy, place };
 }
 
-export function takeDownBillysWay(state, chipCents) {
-  const { buy, place } = billysWayAmounts(chipCents || 500);
+export function takeDownBillysWay(state) {
   let next = state;
-  billysBuyNumbers(state).forEach((n) => {
-    const have = next.bets.buy[n] || 0;
-    const take = Math.min(have, buy);
-    if (take > 0) next = removeBet(next, { kind: "buy", number: n }, take).state;
-  });
-  BILLY_PLACE.forEach((n) => {
-    const have = next.bets.place[n] || 0;
-    const take = Math.min(have, place);
-    if (take > 0) next = removeBet(next, { kind: "place", number: n }, take).state;
-  });
+  const mark = state.billyMark || { buy: {}, place: {} };
+  const clearKind = (kind) => {
+    Object.keys(mark[kind] || {}).forEach((key) => {
+      if (!mark[kind][key]) return;
+      const n = Number(key);
+      const have = next.bets[kind][n] || 0;
+      if (have > 0) {
+        const res = removeBet(next, { kind, number: n });
+        if (res.ok) next = res.state;
+      }
+    });
+  };
+  clearKind("buy");
+  clearKind("place");
   return next;
 }
 
@@ -877,13 +953,16 @@ export function powerPress(state) {
   const next = clone(state);
   applyPressAdd(next, st.kind, st.number, st.powerAdd, "power");
   next.lastWin.powerUsed = true;
-  const capped = st.powerAdd < Math.floor(next.lastWin.profit / st.unit) * st.unit;
+  const full = Math.floor(next.lastWin.profit / st.unit) * st.unit;
+  const capped = st.powerAdd < full;
+  const landed = amountOf(next, { kind: st.kind, number: st.number });
   return {
     ok: true,
     state: next,
     added: st.powerAdd,
     back: st.powerBack,
     capped,
+    atMax: landed >= TABLE_MAX,
     label: pressStatus(next).powerLabel,
   };
 }
@@ -951,8 +1030,10 @@ function settleOneRoll(state, d1, d2, decisions) {
     else loseDown(state, decisions, "Any Craps", b.anyCraps, () => { b.anyCraps = 0; });
   }
   if (b.ce) {
-    if (total === 2 || total === 3 || total === 12) payStay(state, decisions, "C&E", b.ce, b.ce * 7);
-    else if (total === 11) payStay(state, decisions, "C&E", b.ce, b.ce * 15);
+    // Split bet: half on Any Craps at 7 to 1, half on 11 at 15 to 1.
+    // Net on the whole stake is 3 to 1 (craps) and 7 to 1 (11).
+    if (total === 2 || total === 3 || total === 12) payStay(state, decisions, "C&E", b.ce, b.ce * 3);
+    else if (total === 11) payStay(state, decisions, "C&E", b.ce, b.ce * 7);
     else loseDown(state, decisions, "C&E", b.ce, () => { b.ce = 0; });
   }
   if (b.horn) {
@@ -1070,12 +1151,14 @@ function settlePlaceBuy(state, total, decisions, working) {
       if (p) {
         state.bets.place[n] = 0;
         state.originals.place[n] = 0;
+        if (state.billyMark) state.billyMark.place[n] = false;
         pushDecision(decisions, "Place " + n, "lose", p, 0);
       }
       const buy = state.bets.buy[n];
       if (buy) {
         state.bets.buy[n] = 0;
         state.originals.buy[n] = 0;
+        if (state.billyMark) state.billyMark.buy[n] = false;
         pushDecision(decisions, "Buy " + n, "lose", buy, 0);
       }
     });

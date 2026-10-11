@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as E from "../js/engine.mjs";
 import { chiSquareP, totalsTest, facesTest } from "../js/fair.mjs";
-import { autoBet, STRATEGIES } from "../js/strategies.mjs";
+import { autoBet, applyAutoPress, STRATEGIES } from "../js/strategies.mjs";
+import { resolveSwipe } from "../js/swipe.mjs";
 
 const $ = (n) => Math.round(n * 100);
 
@@ -438,12 +439,19 @@ test("hardways, any 7, any craps, horn, and C&E", () => {
   assert.equal(res.decisions.find((d) => d.bet === "Horn").profit, $(12));
   assert.equal(E.placeBet(game(), { kind: "horn" }, $(2)).ok, false);
 
-  g = E.placeBet(game(), { kind: "ce" }, $(5)).state;
+  assert.equal(E.placeBet(game(), { kind: "ce" }, $(5)).ok, false);
+  assert.equal(E.placeBet(game(), { kind: "ce" }, $(1)).ok, false);
+  g = E.placeBet(game(), { kind: "ce" }, $(10)).state;
   res = roll(g, 11);
-  assert.equal(res.decisions.find((d) => d.bet === "C&E").profit, $(75));
-  res = roll(E.placeBet(game(), { kind: "ce" }, $(5)).state, 2, true);
-  assert.equal(res.decisions.find((d) => d.bet === "C&E").profit, $(35));
-  res = roll(E.placeBet(game(), { kind: "ce" }, $(5)).state, 7);
+  assert.equal(res.decisions.find((d) => d.bet === "C&E").profit, $(70));
+  assert.equal(res.state.bets.ce, $(10));
+  res = roll(E.placeBet(game(), { kind: "ce" }, $(10)).state, 2, true);
+  assert.equal(res.decisions.find((d) => d.bet === "C&E").profit, $(30));
+  res = roll(E.placeBet(game(), { kind: "ce" }, $(10)).state, 3);
+  assert.equal(res.decisions.find((d) => d.bet === "C&E").profit, $(30));
+  res = roll(E.placeBet(game(), { kind: "ce" }, $(10)).state, 12, true);
+  assert.equal(res.decisions.find((d) => d.bet === "C&E").profit, $(30));
+  res = roll(E.placeBet(game(), { kind: "ce" }, $(4)).state, 7);
   assert.equal(res.state.bets.ce, 0);
 });
 
@@ -824,4 +832,222 @@ test("reset returns bets and bankroll reset restores $1,000", () => {
   g = E.resetBankroll(g);
   assert.equal(g.bankroll, $(1000));
   assert.equal(g.stats.rolls, 0);
+});
+
+test("Hard Way All Day and ATS reject added chips once a lamp is lit, and any takedown clears lamps", () => {
+  let g = E.placeBet(game(), { kind: "hardAllDay" }, $(5)).state;
+  g = roll(g, 4, true).state;
+  assert.equal(g.progress.hardAllDay[4], true);
+  const add = E.placeBet(g, { kind: "hardAllDay" }, $(100));
+  assert.equal(add.ok, false);
+  assert.match(add.error, /lamps/);
+  const partial = E.removeBet(g, { kind: "hardAllDay" }, $(1));
+  assert.equal(partial.ok, true);
+  assert.equal(partial.state.bets.hardAllDay, $(4));
+  assert.deepEqual(partial.state.progress.hardAllDay, {});
+  assert.equal(E.placeBet(partial.state, { kind: "hardAllDay" }, $(1)).ok, true);
+
+  g = E.placeBet(game(), { kind: "small" }, $(2)).state;
+  g = roll(g, 6).state;
+  assert.equal(g.progress.small[6], true);
+  assert.equal(E.placeBet(g, { kind: "small" }, $(1)).ok, false);
+  const cut = E.removeBet(g, { kind: "small" }, $(1));
+  assert.equal(cut.state.bets.small, $(1));
+  assert.deepEqual(cut.state.progress.small, {});
+
+  g = E.placeBet(game(), { kind: "tall" }, $(1)).state;
+  g = roll(g, 8).state;
+  assert.equal(E.placeBet(g, { kind: "tall" }, $(1)).ok, false);
+  g = E.placeBet(game(), { kind: "all" }, $(1)).state;
+  g = roll(g, 9).state;
+  assert.equal(E.placeBet(g, { kind: "all" }, $(5)).ok, false);
+});
+
+test("a Repeater takedown clears the tally", () => {
+  let g = E.placeBet(game(), { kind: "repeater", number: 6 }, $(5)).state;
+  g = roll(g, 6).state;
+  assert.equal(g.repeaterCount[6], 1);
+  assert.equal(E.placeBet(g, { kind: "repeater", number: 6 }, $(1)).ok, false);
+  const cut = E.removeBet(g, { kind: "repeater", number: 6 }, $(1));
+  assert.equal(cut.state.bets.repeaters[6], $(4));
+  assert.equal(cut.state.repeaterCount[6], 0);
+  assert.equal(E.placeBet(cut.state, { kind: "repeater", number: 6 }, $(1)).ok, true);
+});
+
+test("mode switch refuses while a point or Pass or Come bet is working", () => {
+  let g = point(E.placeBet(game(), { kind: "pass" }, $(10)).state, 4);
+  const bank = g.bankroll;
+  const blocked = E.switchMode(g, "crapless");
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.state.point, 4);
+  assert.equal(blocked.state.bets.pass, $(10));
+  assert.equal(blocked.state.bankroll, bank);
+  assert.equal(E.contractsWorking(blocked.state), true);
+
+  g = E.placeBet(game(), { kind: "pass" }, $(10)).state;
+  assert.equal(E.switchMode(g, "regular").ok, false);
+
+  g = point(E.placeBet(game(), { kind: "pass" }, $(5)).state, 6);
+  g = E.placeBet(g, { kind: "come" }, $(5)).state;
+  assert.equal(E.switchMode(g, "crapless").ok, false);
+  assert.equal(g.bets.come, $(5));
+
+  const open = E.switchMode(game(), "crapless");
+  assert.equal(open.ok, true);
+  assert.equal(open.state.mode, "crapless");
+  assert.equal(open.state.phase, "come-out");
+  assert.equal(open.state.bankroll, $(1000));
+});
+
+test("auto-press adds to a Billy's Way win and leaves the original bet", () => {
+  let g = point(game(), 4);
+  g = E.placeBillysWay(g, $(5)).state;
+  assert.equal(g.billyMark.place[8], true);
+  assert.equal(g.originals.place[8], $(6));
+  g.autoPress = { mode: "power", max: 2, counts: {} };
+  g = roll(g, 8).state;
+  let pressed = applyAutoPress(g);
+  assert.equal(pressed.ok, true);
+  assert.equal(pressed.state.bets.place[8], $(12));
+  assert.equal(pressed.state.originals.place[8], $(6));
+  assert.match(pressed.message, /Auto POWER PRESS 8 \+\$6 → \$12, \$1 to chips/);
+  g = roll(pressed.state, 8).state;
+  pressed = applyAutoPress(g);
+  assert.equal(pressed.ok, true);
+  assert.equal(pressed.state.originals.place[8], $(6));
+  g = roll(pressed.state, 8).state;
+  pressed = applyAutoPress(g);
+  assert.equal(pressed.ok, false);
+  assert.match(pressed.error, /cap/);
+
+  g = point(game(), 5);
+  g = E.placeBet(g, { kind: "place", number: 6 }, $(6)).state;
+  g.autoPress = { mode: "press", max: 3, counts: {} };
+  g = roll(g, 6).state;
+  assert.equal(applyAutoPress(g).ok, false);
+  assert.equal(g.bets.place[6], $(6));
+});
+
+test("B5 reopens after a seven-out, pauses after three losses, and presses onto the original", () => {
+  let g = point(game("regular", $(5000)), 9);
+  let res = autoBet(g, "B5", $(5));
+  assert.equal(res.state.bets.place[6], $(18));
+  g = roll(res.state, 7).state;
+  res = autoBet(g, "B5", $(5));
+  assert.equal(res.state.bets.place[6], $(18));
+  assert.equal(res.state.bets.place[8], $(18));
+  assert.equal(res.paused, undefined);
+
+  g = point(res.state, 9);
+  g = roll(g, 7).state;
+  res = autoBet(g, "B5", $(5));
+  g = point(res.state, 9);
+  g = roll(g, 7).state;
+  res = autoBet(g, "B5", $(5));
+  assert.equal(res.paused, true);
+  assert.equal(res.state.bets.place[6], 0);
+  res = autoBet(res.state, "B5", $(5));
+  assert.equal(res.state.bets.place[6], 0);
+
+  g = point(game("regular", $(5000)), 9);
+  res = autoBet(g, "B5", $(5));
+  g = roll(res.state, 6).state;
+  res = autoBet(g, "B5", $(5));
+  assert.equal(res.state.bets.place[6], $(6));
+  assert.equal(res.state.originals.place[6], $(6));
+  g = roll(res.state, 6).state;
+  res = autoBet(g, "B5", $(5));
+  assert.equal(res.state.bets.place[6], $(12));
+  assert.equal(res.state.originals.place[6], $(6));
+  assert.match(res.message, /PRESS 6/);
+
+  g.autoPress = { mode: "power", max: 3, counts: {} };
+  g = roll(res.state, 8).state;
+  g.autoPress = { mode: "power", max: 3, counts: {} };
+  res = autoBet(g, "B5", $(5));
+  assert.equal(res.state.bets.place[8], $(12));
+  assert.equal(res.state.originals.place[8], $(6));
+  assert.match(res.message, /Auto POWER PRESS 8/);
+});
+
+test("B8 can post a new set after three hits, and ignores a win already on the log", () => {
+  let g = point(game("crapless", $(2000)), 6);
+  g.lastDecisions = [{ result: "win", bet: "Buy 4", profit: 1000 }];
+  let res = autoBet(g, "B8", $(5));
+  assert.equal(res.state.strategy.data.hits || 0, 0);
+  assert.equal(res.state.bets.buy[4], $(5));
+  for (let i = 0; i < 3; i++) {
+    g = res.state;
+    g.lastDecisions = [{ result: "win", bet: "Buy 4" }];
+    res = autoBet(g, "B8", $(5));
+  }
+  assert.equal(res.state.bets.buy[4], 0);
+  assert.match(res.message, /taken down/);
+  res = autoBet(res.state, "B8", $(5));
+  assert.equal(res.state.bets.buy[4], 0);
+  g = res.state;
+  g.phase = "come-out";
+  g.point = null;
+  res = autoBet(g, "B8", $(5));
+  g = point(res.state, 8);
+  res = autoBet(g, "B8", $(5));
+  assert.equal(res.state.bets.buy[4], $(5));
+});
+
+test("B11 counts 100 rolls before it pauses", () => {
+  let res = autoBet(game(), "B11", $(5), { count: false });
+  assert.equal(res.state.strategy.rolls, 0);
+  assert.equal(res.state.bets.pass, $(5));
+  for (let i = 0; i < 100; i++) {
+    res = autoBet(res.state, "B11", $(5));
+    assert.notEqual(res.paused, true);
+  }
+  assert.equal(res.state.strategy.rolls, 100);
+  res = autoBet(res.state, "B11", $(5));
+  assert.equal(res.paused, true);
+  assert.match(res.message, /100-roll/);
+});
+
+test("blaze lessons name the tier and say the dice have no memory", () => {
+  const warm = E.blazeMoment({ rolls: 3, points: 0 }, { rolls: 4, points: 0 }, "roll");
+  assert.equal(warm.lessonTier, "warm");
+  assert.match(warm.text, /Warm: this hand has lasted 4 rolls so far/);
+  const hot = E.blazeMoment({ rolls: 11, points: 0 }, { rolls: 12, points: 0 }, "roll");
+  assert.equal(hot.lessonTier, "hot");
+  assert.match(hot.text, /Hot hand: 12 rolls so far/);
+  assert.match(hot.text, /1 in 6/);
+  const blazing = E.blazeMoment({ rolls: 23, points: 0 }, { rolls: 24, points: 0 }, "roll");
+  assert.equal(blazing.lessonTier, "blazing");
+  assert.match(blazing.text, /doesn't change the odds/);
+  const cool = E.blazeMoment({ rolls: 13, points: 1 }, { rolls: 0, points: 0 }, "seven-out");
+  assert.equal(cool.cooled, true);
+  assert.match(cool.text, /Cooled off\. New hand, same odds/);
+  assert.match(cool.handNote, /Dice have no memory/);
+  const natural = E.blazeMoment({ rolls: 2, points: 0 }, { rolls: 3, points: 0 }, "natural");
+  assert.equal(natural.text, "");
+});
+
+test("power press reports the table cap only when the bet lands on it", () => {
+  let g = point(game("regular", $(2000)), 6);
+  g = E.placeBet(g, { kind: "place", number: 8 }, $(420)).state;
+  g = roll(g, 8).state;
+  const res = E.powerPress(g);
+  assert.equal(res.ok, true);
+  assert.equal(res.capped, true);
+  assert.equal(res.atMax, false);
+  assert.ok(res.state.bets.place[8] < $(500));
+});
+
+test("swipe resolution uses a horizontal threshold", () => {
+  assert.equal(resolveSwipe(1, -10, 0), 1);
+  assert.equal(resolveSwipe(1, -80, 10), 2);
+  assert.equal(resolveSwipe(1, 80, 5), 0);
+  assert.equal(resolveSwipe(1, 80, 90), 1);
+  assert.equal(resolveSwipe(0, 80, 0), 0);
+  assert.equal(resolveSwipe(2, -80, 0), 2);
+});
+
+test("strategy names keep the spec subtitles", () => {
+  assert.match(STRATEGIES.find((s) => s.id === "B6").name, /Make the line pay/);
+  assert.match(STRATEGIES.find((s) => s.id === "B7").name, /Avoid 2\/3\/11\/12/);
 });

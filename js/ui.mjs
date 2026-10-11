@@ -2,6 +2,7 @@ import * as E from "./engine.mjs";
 import * as S from "./strategies.mjs";
 import * as F from "./fair.mjs";
 import * as A from "./audio.mjs";
+import { resolveSwipe } from "./swipe.mjs";
 
 const STORE = "bb-bubble-craps-v1";
 const CHIP_FILE = { 100: "1", 500: "5", 2500: "25", 10000: "100", 50000: "500" };
@@ -27,6 +28,10 @@ const settings = {
   tutorOn: true,
   reduced: false,
   chip: 500,
+  blazing: true,
+  autoPress: "off",
+  autoPressMax: 3,
+  seenBlaze: {},
 };
 let game = E.createGame();
 let view = "home";
@@ -44,6 +49,11 @@ let allRolls = [];
 let tutorStep = 0;
 let tour = false;
 let mutedTips = {};
+let seenTips = {};
+let lastNet = 0;
+let swallowClick = false;
+let premiumSet = "regular";
+let premiumPreset = "Standard";
 
 const app = document.getElementById("app");
 const reducedMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -58,8 +68,10 @@ function load() {
     if (data.game && data.game.bets && data.game.bets.hops) {
       game = data.game;
       game.placeWorkingOnComeOut = !!settings.workingComeOut;
-      game.hardwaysWorkingOnComeOut = settings.hardwaysComeOut !== false;
-      game.comeOddsOffOnComeOut = settings.comeOddsOff !== false;
+      game.hardwaysWorkingOnComeOut = true;
+      game.comeOddsOffOnComeOut = true;
+      if (!game.billyMark) game.billyMark = { place: {}, buy: {} };
+      if (!game.autoPress) game.autoPress = { mode: "off", max: 3, counts: {} };
     }
   } catch {
     /* keep defaults */
@@ -85,37 +97,62 @@ function haptic(pattern) {
 }
 function motionOff() { return settings.reduced || reducedMQ.matches; }
 
-function chipSrc(cents) {
-  return "assets/chips/chip-" + (CHIP_FILE[cents] || "5") + "-value.svg";
+function chipSrc(cents, mark) {
+  return "assets/chips/chip-" + (CHIP_FILE[cents] || "5") + (mark ? "-value-mark" : "-value") + ".svg";
 }
 function chipHTML(cents) {
-  return '<img alt="" width="44" height="44" src="' + chipSrc(cents) + '">';
+  return '<img alt="" width="48" height="48" src="' + chipSrc(cents, true) + '">';
 }
-function pipsHTML(face) {
+function breakChips(cents, cap) {
+  const denoms = [50000, 10000, 2500, 500, 100];
+  const chips = [];
+  let left = Math.max(0, cents || 0);
+  for (const d of denoms) {
+    const n = Math.min(cap, Math.floor(left / d));
+    for (let i = 0; i < n && chips.length < cap; i++) chips.push(d);
+    left -= Math.floor(left / d) * d;
+    if (chips.length >= cap) break;
+  }
+  return chips;
+}
+function chipStack(cents) {
+  if (!cents) return "";
+  const chips = breakChips(cents, 4);
+  if (!chips.length) return "";
+  return "<span class='stack' aria-hidden='true'>" + chips.map((c, i) =>
+    "<img alt='' src='" + chipSrc(c, false) + "' style='--i:" + i + "'>").join("") + "</span>";
+}
+const ADJ = { 1: [2, 3], 2: [6, 3], 3: [1, 2], 4: [1, 5], 5: [1, 3], 6: [2, 4] };
+function pipGrid(face) {
   const on = PIPS[face] || [];
   let html = "";
-  for (let i = 0; i < 9; i++) html += '<i class="' + (on.includes(i) ? "on" : "") + '"></i>';
+  for (let i = 0; i < 9; i++) html += "<i class='pip" + (on.includes(i) ? " on" : "") + "'></i>";
   return html;
 }
-function faceSpans(face) {
-  const on = PIPS[face] || [];
-  let html = "";
-  for (let i = 0; i < 9; i++) html += "<span class=\"pip" + (on.includes(i) ? " on" : "") + "\"></span>";
-  return html;
+function isoDie(face, id) {
+  const f = face || 1;
+  const pair = ADJ[f] || ADJ[1];
+  return "<div class='iso' id='" + id + "' data-face='" + f + "' aria-label='Die showing " + f + "'>" +
+    "<div class='iso-side'>" + pipGrid(pair[1]) + "</div>" +
+    "<div class='iso-top'>" + pipGrid(f) + "</div>" +
+    "<div class='iso-front'>" + pipGrid(pair[0]) + "</div></div>";
 }
-function flatDie(face, id) {
-  return '<div class="die2d" id="' + id + '" aria-label="Die showing ' + face + '">' + pipsHTML(face) + "</div>";
+function paintDie(el, face) {
+  const pair = ADJ[face] || ADJ[1];
+  const top = el.querySelector(".iso-top");
+  const front = el.querySelector(".iso-front");
+  const side = el.querySelector(".iso-side");
+  if (top) top.innerHTML = pipGrid(face);
+  if (front) front.innerHTML = pipGrid(pair[0]);
+  if (side) side.innerHTML = pipGrid(pair[1]);
+  el.dataset.face = String(face);
+  el.setAttribute("aria-label", "Die showing " + face);
 }
 function miniDie(face) {
-  return '<div class="mini-die" aria-hidden="true">' + pipsHTML(face) + "</div>";
-}
-function edgeDot(kind, number, pair) {
-  const edge = E.edgeFor({ kind, number, pair }, game.mode);
-  const cls = E.edgeClass(edge);
-  return cls ? '<i class="edge ' + cls + '" title="' + edge + '% house edge"></i>' : "";
+  return '<div class="mini-die" aria-hidden="true">' + pipGrid(face) + "</div>";
 }
 function stakeLabel(cents) {
-  return cents ? '<span class="amt">' + money(cents) + "</span>" : "";
+  return cents ? chipStack(cents) + '<span class="amt">' + money(cents) + "</span>" : "";
 }
 
 function mount() {
@@ -134,28 +171,50 @@ function mount() {
   app.addEventListener("click", onClick);
   const stage = document.getElementById("stage");
   let sx = 0;
+  let sy = 0;
   let dx = 0;
+  let dy = 0;
   let tracking = false;
+  let fromButton = false;
   stage.addEventListener("pointerdown", (e) => {
-    if (e.target.closest("button, a, input")) return;
+    if (e.button != null && e.button !== 0) return;
     tracking = true;
+    fromButton = !!e.target.closest("button, a, input, [data-act]");
     sx = e.clientX;
+    sy = e.clientY;
     dx = 0;
+    dy = 0;
+    try { stage.setPointerCapture(e.pointerId); } catch { /* already gone */ }
   });
   stage.addEventListener("pointermove", (e) => {
-    if (!tracking || motionOff()) return;
+    if (!tracking) return;
     dx = e.clientX - sx;
+    dy = e.clientY - sy;
+    if (motionOff()) return;
+    if (Math.abs(dx) < 12 || Math.abs(dx) <= Math.abs(dy)) return;
     const pager = document.getElementById("pager");
+    if (!pager) return;
     pager.style.transition = "none";
     pager.style.transform = "translateX(calc(" + (-page * 100 / 3) + "% + " + dx + "px))";
   });
-  stage.addEventListener("pointerup", () => {
+  stage.addEventListener("pointerup", (e) => {
     if (!tracking) return;
     tracking = false;
-    if (dx <= -48 && page < 2) page += 1;
-    else if (dx >= 48 && page > 0) page -= 1;
+    try { stage.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
+    const next = resolveSwipe(page, dx, dy);
+    const moved = next !== page;
+    if (moved && fromButton) swallowClick = true;
+    page = next;
     dx = 0;
+    dy = 0;
     snap();
+    if (moved) {
+      paint();
+      if (page === 0 && settings.tutorOn && !seenTips.side && !mutedTips.side) {
+        seenTips.side = true;
+        toast("Side bets are one swipe left: Repeaters, hops, Horn, Any Craps, and C&E.");
+      }
+    }
   });
   stage.addEventListener("pointercancel", () => { tracking = false; snap(); });
   document.addEventListener("keydown", (e) => {
@@ -168,12 +227,15 @@ function mount() {
 
 function snap() {
   const pager = document.getElementById("pager");
+  const stage = document.getElementById("stage");
+  if (stage) stage.dataset.page = String(page);
   if (!pager) return;
   pager.style.transition = motionOff() ? "none" : "";
   pager.style.transform = "translateX(" + (-page * 100 / 3) + "%)";
 }
 
 function onClick(e) {
+  if (swallowClick) { swallowClick = false; return; }
   const t = e.target.closest("[data-act]");
   if (!t || t.disabled) return;
   A.unlock();
@@ -189,12 +251,32 @@ function onClick(e) {
   if (act === "roll") { doRoll(); return; }
   if (act === "press") { doPress(); return; }
   if (act === "power") { doPower(); return; }
-  if (act === "undo") { const r = E.undoPress(game); if (r.ok) { game = r.state; A.chip(); } save(); paint(); return; }
-  if (act === "clear") { const r = E.clearPress(game); if (r.ok) game = r.state; save(); paint(); return; }
+  if (act === "undo") {
+    if (rolling) return;
+    const r = E.undoPress(game);
+    if (r.ok) { game = r.state; A.chip(); }
+    save();
+    paint();
+    return;
+  }
+  if (act === "clear") {
+    if (rolling) return;
+    const r = E.clearPress(game);
+    if (r.ok) game = r.state;
+    save();
+    paint();
+    return;
+  }
   if (act === "betsoff") { game = E.setBetsOff(game, !game.betsOff); toast(game.betsOff ? "Bets Off. Place and Buy sit out." : "Bets on. Place and Buy are working."); save(); paint(); return; }
   if (act === "billy") { doBilly(); return; }
+  if (act === "billy-down") { doBillyDown(); return; }
   if (act === "reset") { game = E.resetLayout(game); toast("Bets returned to your practice chips."); save(); paint(); return; }
-  if (act === "tab") { betTab = t.dataset.tab; paint(); return; }
+  if (act === "tab") {
+    if (t.dataset.tab === "repeaters") { page = 0; snap(); paint(); return; }
+    betTab = t.dataset.tab;
+    paint();
+    return;
+  }
   if (act === "toast-go") { page = 2; hideToast(); snap(); paint(); return; }
   if (act === "tutor") { openTutor(t.dataset.step ? Number(t.dataset.step) : tutorStep); return; }
   if (act === "tips") { settings.tutorOn = !settings.tutorOn; save(); paint(); if (settings.tutorOn) openTutor(0); return; }
@@ -203,7 +285,22 @@ function onClick(e) {
   if (act === "close") { closeOverlay(); return; }
   if (act === "gotit") { advanceTutor(); return; }
   if (act === "why") { openSheet(whySheet()); return; }
-  if (act === "mute-tip") { mutedTips[currentTip().id] = true; settings.tutorOn = false; save(); closeOverlay(); return; }
+  if (act === "mute-tip") { mutedTips[currentTip().id] = true; save(); closeOverlay(); return; }
+  if (act === "auto-press") { settings.autoPress = t.dataset.mode; syncAutoPress(); save(); paint(); return; }
+  if (act === "auto-max") {
+    settings.autoPressMax = Math.min(5, Math.max(1, (settings.autoPressMax || 3) + Number(t.dataset.dir)));
+    syncAutoPress();
+    save();
+    paint();
+    return;
+  }
+  if (act === "preset") {
+    premiumPreset = t.dataset.preset;
+    toast("Premium · locked. The live table stays on Standard rules.");
+    paint();
+    return;
+  }
+  if (act === "ruleset") { premiumSet = t.dataset.set; paint(); return; }
   if (act === "filter") { learnFilter = t.dataset.filter; paint(); return; }
   if (act === "strategy") { runStrategy(t.dataset.id); return; }
   if (act === "stop-strategy") { game.strategy = null; toast("Auto-bet stopped."); save(); paint(); return; }
@@ -226,9 +323,11 @@ function setView(next) {
 }
 
 function startMode(mode) {
-  if (game.mode !== mode || view === "home") {
-    if (E.tableTotal(game) || game.phase !== "come-out") game = E.switchMode(game, mode);
-    else game.mode = mode === "crapless" ? "crapless" : "regular";
+  const want = mode === "crapless" ? "crapless" : "regular";
+  if (game.mode !== want) {
+    const res = E.switchMode(game, want);
+    if (!res.ok) toast(res.error);
+    else game = res.state;
   }
   view = "play";
   page = 1;
@@ -240,7 +339,9 @@ function startMode(mode) {
 
 function switchMode(mode) {
   if (game.mode === mode) return;
-  game = E.switchMode(game, mode);
+  const res = E.switchMode(game, mode);
+  if (!res.ok) { toast(res.error); return; }
+  game = res.state;
   if (mode === "crapless" && betTab === "lay") betTab = "place";
   toast(mode === "crapless" ? "Crapless rules. Don't bets and ATS are off." : "Regular rules.");
   save();
@@ -265,6 +366,15 @@ function addBet(ds) {
     if (posted !== amount) note = "Horn uses $4 units. " + money(amount - posted) + " stayed in practice chips.";
     amount = posted;
   }
+  if (spot.kind === "ce") {
+    const posted = Math.floor(amount / 200) * 200;
+    if (!posted) {
+      toast("C&E is posted in $2 units. A $1 chip is short.");
+      return;
+    }
+    if (posted !== amount) note = "C&E uses $2 units. " + money(amount - posted) + " stayed in practice chips.";
+    amount = posted;
+  }
   const res = E.placeBet(game, spot, amount);
   if (!res.ok) { toast(res.error); return; }
   game = res.state;
@@ -273,7 +383,15 @@ function addBet(ds) {
   const edge = E.edgeFor(spot, game.mode);
   if (note) toast(note);
   else if (settings.tutorOn && edge > 5 && !mutedTips["edge-" + spot.kind]) {
-    toast(E.describeSpot(spot) + " · " + edge + "% house edge. Lowest edge is not the same as a win.");
+    toast(E.describeSpot(spot) + " · " + edge + "% house edge. Long shot with a high house edge.");
+  }
+  if (settings.tutorOn && spot.kind === "hop" && !seenTips.hop && !mutedTips.hop) {
+    seenTips.hop = true;
+    toast("A hop is one exact pair on the next roll. A hardway stays up for the pair or a 7.");
+  }
+  if (settings.tutorOn && spot.kind === "place" && (spot.number === 2 || spot.number === 12 || spot.number === 3 || spot.number === 11) && !seenTips.b9 && !mutedTips.b9) {
+    seenTips.b9 = true;
+    toast("Place " + spot.number + " costs more than Buy. Open B9 in Learn for the comparison.");
   }
   save();
   paint();
@@ -327,7 +445,24 @@ function doBilly() {
   paint();
 }
 
+function doBillyDown() {
+  game = E.takeDownBillysWay(game);
+  A.chip();
+  toast("Billy's Way taken down.");
+  save();
+  paint();
+}
+
+function syncAutoPress() {
+  game.autoPress = {
+    mode: settings.autoPress || "off",
+    max: settings.autoPressMax || 3,
+    counts: (game.autoPress && game.autoPress.counts) || {},
+  };
+}
+
 function doPress() {
+  if (rolling) { toast("Press is available after a hit."); return; }
   const res = E.press(game);
   if (!res.ok) { toast("Press: " + res.error); return; }
   game = res.state;
@@ -340,12 +475,13 @@ function doPress() {
 }
 
 function doPower() {
+  if (rolling) { toast("Power Press is available after a hit."); return; }
   const res = E.powerPress(game);
   if (!res.ok) { toast("Power Press: " + res.error); return; }
   game = res.state;
   A.press();
   haptic(16);
-  toast((res.capped ? "Capped at $500. " : "") + "Power Press +" + money(res.added) + ". " + money(res.back) + " stays in your chips.");
+  toast((res.atMax ? "Capped at $500. " : "") + "Power Press +" + money(res.added) + ". " + money(res.back) + " stays in your chips.");
   if (settings.tutorOn) openTutor(0, "power");
   save();
   paint();
@@ -362,7 +498,8 @@ function runStrategy(id) {
   game.strategy = { id, rolls: 0, data: {} };
   view = "play";
   page = 1;
-  const res = S.autoBet(game, id, settings.chip);
+  syncAutoPress();
+  const res = S.autoBet(game, id, settings.chip, { count: false });
   game = res.state;
   toast(res.message || card.name + " is placing bets for you. Cancel any time.");
   save();
@@ -375,11 +512,13 @@ async function doRoll() {
   rolling = true;
   stopTimer();
   A.setMuted(!settings.sound);
+  syncAutoPress();
   if (game.strategy && game.strategy.id) {
     const maintained = S.autoBet(game, game.strategy.id, settings.chip);
     game = maintained.state;
     if (maintained.message) toast(maintained.message);
   }
+  const handBefore = { rolls: game.hand.rolls, points: game.hand.points };
   const dice = E.rollDice();
   const from = page;
   if (settings.showDice) { returnPage = from; page = 2; }
@@ -391,6 +530,15 @@ async function doRoll() {
   await animateDice(dice);
   const settled = E.settle(game, dice.d1, dice.d2);
   game = settled.state;
+  lastNet = settled.net;
+  syncAutoPress();
+  if (!(game.strategy && game.strategy.id === "B5")) {
+    const pressed = S.applyAutoPress(game);
+    if (pressed.ok) {
+      game = pressed.state;
+      toast(pressed.message);
+    }
+  }
   rememberRoll(settled);
   if (settled.net > 0) { A.win(); haptic([12, 40, 16]); }
   else if (settled.result === "seven-out") { A.seven(); haptic(40); }
@@ -402,6 +550,7 @@ async function doRoll() {
   snap();
   if (page !== 2) showRollToast(settled);
   celebrate(settled);
+  noteBlaze(handBefore, settled);
   maybeTutor(settled);
   rolling = false;
   save();
@@ -426,29 +575,31 @@ function rememberRoll(settled) {
 
 function animateDice(dice) {
   const reduce = motionOff();
-  const ms = reduce ? 160 : 1200;
-  const els = [...document.querySelectorAll("#dice-row .die2d")];
+  const ms = reduce ? 180 : 1100;
+  const els = [...document.querySelectorAll("#dice-row .iso")];
   if (!els.length) return wait(ms);
   const start = performance.now();
   let lastSwap = 0;
   return new Promise((resolve) => {
     const tick = (now) => {
       const t = now - start;
-      if (!reduce && t < ms - 220) {
-        const lift = Math.sin((t / ms) * Math.PI) * 46;
+      if (!reduce && t < ms - 240) {
+        const lift = Math.sin((t / ms) * Math.PI) * 42;
         els.forEach((el, i) => {
-          const spin = (t / 7) * (i ? -1 : 1);
+          const spin = (t / 5) * (i ? -1 : 1);
           el.style.transform = "translateY(" + (-lift) + "px) rotate(" + spin + "deg)";
-          if (now - lastSwap > 70) el.innerHTML = pipsHTML(1 + Math.floor((t / 60 + i * 3) % 6));
+          if (now - lastSwap > 80) paintDie(el, 1 + Math.floor((t / 70 + i * 3) % 6));
         });
-        lastSwap = now - lastSwap > 70 ? now : lastSwap;
+        if (now - lastSwap > 80) lastSwap = now;
         requestAnimationFrame(tick);
       } else {
         const faces = [dice.d1, dice.d2];
         els.forEach((el, i) => {
-          el.innerHTML = pipsHTML(faces[i]);
-          el.style.transform = "translateY(0) rotate(0deg)";
-          el.setAttribute("aria-label", "Die showing " + faces[i]);
+          paintDie(el, faces[i]);
+          el.style.transform = "";
+          el.classList.remove("settled");
+          void el.offsetWidth;
+          el.classList.add("settled");
         });
         resolve();
       }
@@ -459,27 +610,78 @@ function animateDice(dice) {
 
 function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-function celebrate(settled) {
-  const big = settled.net >= 2500 || settled.decisions.some((d) => d.rearmed);
-  const seven = settled.result === "seven-out";
-  if (!big && !seven && settled.net <= 0) return;
-  if (!big && !seven) {
-    /* minor win: Billie stays in the toast */
-    return;
+function burstChips(cents) {
+  const chips = breakChips(Math.abs(cents), 6);
+  if (!chips.length) chips.push(500);
+  return "<div class='burst' aria-hidden='true'>" + chips.map((c, i) => {
+    const x = Math.round((i - (chips.length - 1) / 2) * 34);
+    return "<img alt='' src='" + chipSrc(c, true) + "' style='--i:" + i + ";--x:" + x + "px'>";
+  }).join("") + "</div>";
+}
+function perDollar(decision) {
+  if (!decision.stake) return money(decision.profit);
+  return money(Math.round(decision.profit / (decision.stake / 100)));
+}
+function bonusCopy(decision) {
+  const each = perDollar(decision);
+  if (decision.bet === "Hard Way All Day") return "Hard Way All Day! +" + each + " per $1. Bet stays up, lamps reset.";
+  if (decision.bet === "Low Rolls" || decision.bet === "High Rolls" || decision.bet === "Roll 'Em All") {
+    return decision.bet + "! +" + each + " per $1. Bet stays up, lamps reset.";
   }
+  if (decision.bet.indexOf("Repeater") === 0) return decision.bet + "! +" + each + " per $1. Bet stays up, tally reset.";
+  return decision.bet + " stays up.";
+}
+function celebrate(settled) {
+  const seven = settled.result === "seven-out";
+  const rearmed = settled.decisions.filter((d) => d.rearmed && d.result === "win");
+  const show = seven || settled.net >= 500 || rearmed.length > 0;
+  if (!show) return;
   const pose = seven
     ? "assets/mascots/billie/billie-C-sevenout.svg"
     : (settled.net >= 10000 ? "assets/mascots/billie/billie-C-winner.svg" : "assets/mascots/billie/billie-C-cheer.svg");
   const title = seven ? "Seven-out" : "Winner";
   const line = seven
     ? "That hand is over. Long hands happen; so do quick ones. Dice have no memory."
-    : settled.narrative;
+    : (rearmed.length ? rearmed.map(bonusCopy).join(" ") : settled.narrative);
+  const badge = rearmed.length > 1 ? "<span class='lock'>×" + rearmed.length + "</span> " : "";
+  const sparks = seven ? "" : "<div class='spark' aria-hidden='true'>" +
+    [0, 1, 2, 3, 4, 5, 6, 7].map((i) => "<i style='--a:" + i + "'></i>").join("") + "</div>";
+  const chips = seven ? "" : burstChips(settled.net);
   openSheet(
-    "<div class='celebrate-body'><img src='" + pose + "' alt='Bubbles Billie'><strong>" +
-    (settled.net >= 0 ? "+" : "") + money(settled.net) + "</strong><p>" + title + ". " + line +
-    "</p><p class='muted'>Practice chips</p><div class='actions'><button class='go' data-act='close'>Keep playing</button></div></div>",
+    "<div class='cele'>" + sparks + "<img src='" + pose + "' alt='Bubbles Billie cheering'>" +
+    "<strong>" + badge + (settled.net >= 0 ? "+" : "") + money(settled.net) + "</strong>" + chips +
+    "<p>" + title + ". " + line + "</p><p class='muted'>Practice chips</p>" +
+    "<div class='actions'><button class='go' data-act='close'>Keep playing</button></div></div>",
     true
   );
+}
+
+function blazeLesson(tier) {
+  if (settings.tutorTrack === "experienced") {
+    return "The Blazing meter = hand length so far, not a signal. Your edge per roll is the same at roll 1 and roll 20. Size bets by your bankroll plan, not the meter. Dice have no memory.";
+  }
+  return "The Blazing meter just shows how long this hand has lasted. It can't predict the next roll. Dice have no memory.";
+}
+function noteBlaze(before, settled) {
+  if (settings.blazing === false) return;
+  const moment = E.blazeMoment(before, settled.state.hand, settled.result);
+  settings.seenBlaze = settings.seenBlaze || {};
+  const first = moment.lessonTier && !settings.seenBlaze[moment.lessonTier];
+  const parts = [moment.text, moment.handNote].filter(Boolean);
+  if (first && !document.querySelector(".overlay")) {
+    settings.seenBlaze[moment.lessonTier] = true;
+    save();
+    openSheet(
+      "<header><img src='assets/mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'><div><p class='tag'>BLAZING METER</p><h2>" + moment.lessonTier + "</h2></div></header><p>" + (moment.text ? moment.text + " " : "") + blazeLesson(moment.lessonTier) + "</p><div class='actions'><button class='go' data-act='close'>Got it</button></div>"
+    );
+    return;
+  }
+  if (first) {
+    settings.seenBlaze[moment.lessonTier] = true;
+    parts.push("Dice have no memory.");
+    save();
+  }
+  if (parts.length) toast(parts.join(" "));
 }
 
 function maybeTutor(settled) {
@@ -635,8 +837,6 @@ function toggleSetting(key) {
   if (key === "tutorTrack") return;
   settings[key] = !settings[key];
   if (key === "workingComeOut") game.placeWorkingOnComeOut = settings.workingComeOut;
-  if (key === "hardwaysComeOut") game.hardwaysWorkingOnComeOut = settings.hardwaysComeOut;
-  if (key === "comeOddsOff") game.comeOddsOffOnComeOut = settings.comeOddsOff;
   if (key === "sound") A.setMuted(!settings.sound);
   if (key === "reduced") document.documentElement.classList.toggle("reduce", settings.reduced);
   save();
@@ -677,8 +877,10 @@ function hudHTML() {
 }
 
 function blazeMini() {
+  if (settings.blazing === false) return "";
   const tier = E.blazingTier(E.blazingScore(game.hand), game.hand.points);
-  return "<small title='Cosmetic meter. It never changes odds or advice.'>" + tier.toUpperCase() + "</small>";
+  const label = "Hand: " + game.hand.rolls + " rolls · " + game.hand.points + " point" + (game.hand.points === 1 ? "" : "s") + " · " + tier.toUpperCase();
+  return "<small title='Cosmetic meter. It never changes odds or advice.'>" + label + "</small>";
 }
 
 function tabsHTML() {
@@ -723,7 +925,6 @@ function spotButton(opts) {
     (opts.number != null ? " data-number='" + opts.number + "'" : "") +
     (opts.pair ? " data-pair='" + opts.pair + "'" : "") +
     " aria-label='" + opts.label + (stake ? ", " + money(stake) : "") + "'>" +
-    edgeDot(opts.kind, opts.number, opts.pair) +
     "<small>" + opts.pay + "</small><b>" + opts.name + "</b>" + stakeLabel(stake) + (opts.extra || "") + "</button>";
 }
 
@@ -751,32 +952,27 @@ function boardHTML() {
   const nums = E.numbersFor(game);
   const numHTML = nums.map((n) => {
     const come = game.bets.comeBets[n];
-    return "<div class='numbox'><button class='half" + (b.buy[n] ? " has" : "") + "' data-act='bet' data-kind='buy' data-number='" + n + "' aria-label='Buy " + n + (b.buy[n] ? ", " + money(b.buy[n]) : "") + "'>BUY" +
-      (b.buy[n] ? "<div>" + money(b.buy[n]) + "</div>" : "") + "</button><div class='face'>" + n +
+    return "<div class='numbox'><button class='half buy" + (b.buy[n] ? " has" : "") + "' data-act='bet' data-kind='buy' data-number='" + n + "' aria-label='Buy " + n + (b.buy[n] ? ", " + money(b.buy[n]) : "") + "'><span>BUY</span>" +
+      chipStack(b.buy[n]) + "</button><div class='face'>" + n +
       (come && come.amount ? "<div class='cmark'>C " + money(come.amount) + "</div>" : "") +
-      "</div><button class='half" + (b.place[n] ? " has" : "") + "' data-act='bet' data-kind='place' data-number='" + n + "' aria-label='Place " + n + (b.place[n] ? ", " + money(b.place[n]) : "") + "'>PLACE" +
-      (b.place[n] ? "<div>" + money(b.place[n]) + "</div>" : "") + "</button></div>";
+      "</div><button class='half place" + (b.place[n] ? " has" : "") + "' data-act='bet' data-kind='place' data-number='" + n + "' aria-label='Place " + n + (b.place[n] ? ", " + money(b.place[n]) : "") + "'><span>PLACE</span>" +
+      chipStack(b.place[n]) + "</button></div>";
   }).join("");
-  const dont = crapless ? "" : spotButton({ kind: "dontPass", name: "DON'T", pay: "BAR 12", stake: b.dontPass, label: "Don't Pass" }) +
-    spotButton({ kind: "dontPassOdds", name: "LAY", pay: "6x", stake: b.dontPassOdds, label: "Lay odds" });
+  const dont = crapless ? "" : spotButton({ kind: "dontPass", name: "DON'T PASS", pay: "BAR 12", stake: b.dontPass, label: "Don't Pass" }) +
+    spotButton({ kind: "dontPassOdds", name: "LAY ODDS", pay: "6x", stake: b.dontPassOdds, label: "Lay odds" });
   return "<div class='seg mode-switch'><button class='" + (game.mode === "regular" ? "on" : "") + "' data-act='mode' data-mode='regular'>Regular</button><button class='" + (game.mode === "crapless" ? "on" : "") + "' data-act='mode' data-mode='crapless'>Crapless</button></div><div class='felt'>" +
     "<div class='prop'><div class='box2'>" + horn + "</div><div class='midcol'>" +
     spotButton({ kind: "any7", cls: "bigred", name: "BIG RED", pay: "4 TO 1", stake: b.any7, label: "Big Red any seven" }) +
     spotButton({ kind: "hardAllDay", cls: "hwad", name: "ALL DAY", pay: "165 FOR 1", stake: b.hardAllDay, label: "Hard Way All Day", extra: "<span class='lamps'>" + lamps + "</span>" }) +
-    "</div><div class='box2'>" + hards + "</div></div>" +
-    "<div class='band three'>" +
-    spotButton({ kind: "anyCraps", name: "ANY CRAPS", pay: "7 TO 1", stake: b.anyCraps, label: "Any Craps" }) +
-    spotButton({ kind: "horn", name: "HORN", pay: "$4 UNITS", stake: b.horn, label: "Horn four way" }) +
-    spotButton({ kind: "ce", name: "C & E", pay: "C 7 · E 15", stake: b.ce, label: "C and E" }) +
-    "</div>" + ats +
+    "</div><div class='box2'>" + hards + "</div></div>" + ats +
     "<div class='nums " + (crapless ? "crap" : "reg") + "'>" + numHTML + "</div>" +
     "<div class='band" + (crapless ? "" : " two") + "'>" +
-    spotButton({ kind: "come", name: "COME", pay: crapless ? "7 WINS" : "7 / 11", stake: b.come, label: "Come" }) +
+    spotButton({ kind: "come", name: "COME", pay: crapless ? "7 WINS" : "7 · 11", stake: b.come, label: "Come" }) +
     (crapless ? "" : spotButton({ kind: "dontCome", name: "DON'T COME", pay: "BAR 12", stake: b.dontCome, label: "Don't Come" })) +
     "</div>" +
-    "<div class='band'>" + spotButton({ kind: "field", cls: "field", name: "FIELD", pay: "2 AND 12 PAY 2:1", stake: b.field, label: "Field" }) + "</div>" +
-    "<div class='band " + (crapless ? "two" : "four") + "'>" +
-    spotButton({ kind: "pass", name: "PASS", pay: "LINE", stake: b.pass, label: "Pass Line" }) +
+    "<div class='band fieldband'>" + spotButton({ kind: "field", cls: "field", name: "FIELD", pay: "2 AND 12 PAY 2:1", stake: b.field, label: "Field" }) + "</div>" +
+    "<div class='band passline " + (crapless ? "two" : "four") + "'>" +
+    spotButton({ kind: "pass", name: "PASS LINE", pay: "1 TO 1", stake: b.pass, label: "Pass Line" }) +
     spotButton({ kind: "passOdds", name: "ODDS", pay: "3-4-5x", stake: b.passOdds, label: "Pass odds" }) +
     dont + "</div></div>" +
     "<div class='keys'><button class='key" + (game.betsOff ? " on" : "") + "' data-act='betsoff'>BETS OFF</button>" +
@@ -792,7 +988,7 @@ function bonusLamps(kind) {
 
 function betPanelHTML() {
   const crapless = game.mode === "crapless";
-  const tabs = ["place", "buy", ...(crapless ? [] : ["lay"]), "odds"];
+  const tabs = ["place", "buy", ...(crapless ? [] : ["lay"]), "odds", "repeaters"];
   if (!tabs.includes(betTab)) betTab = "place";
   const ledLast = game.lastDice ? game.lastDice.d1 + "·" + game.lastDice.d2 : "—";
   let rows = "";
@@ -802,7 +998,9 @@ function betPanelHTML() {
       const stake = game.bets[kind][n] || 0;
       const pay = kind === "place" ? placePayLabel(n) : buyPayLabel(n);
       const edge = E.edgeFor({ kind, number: n }, game.mode);
-      return rowHTML(kind, n, n, pay + " · " + edge + "%", stake);
+      const orig = (game.originals && game.originals[kind] && game.originals[kind][n]) || 0;
+      const origLabel = orig ? " · orig " + money(orig) : "";
+      return rowHTML(kind, n, n, pay + " · " + edge + "%" + origLabel, stake);
     }).join("");
   } else if (betTab === "odds") {
     rows = oddsRows();
@@ -829,15 +1027,25 @@ function layoutExtras() {
   add("anyCraps", null, "Any Craps", "7 to 1", b.anyCraps);
   add("ce", null, "C & E", "stays up when it wins", b.ce);
   add("horn", null, "Horn", "comes down in $4 units", b.horn);
-  [4, 6, 8, 10].forEach((n) => add("hardway", n, "Hard " + n, "one roll pair", b.hardways[n]));
+  [4, 6, 8, 10].forEach((n) => add("hardway", n, "Hard " + n, "stays up until a 7 or the easy way", b.hardways[n]));
   if (game.mode !== "crapless") {
     add("small", null, "Low Rolls", "31 for 1", b.small);
     add("tall", null, "High Rolls", "31 for 1", b.tall);
     add("all", null, "Roll 'Em All", "156 for 1", b.all);
   }
   add("hardAllDay", null, "Hard Way All Day", "165 for 1 · minus clears the lamps", b.hardAllDay);
-  if (!rows.length) return "";
-  return "<p class='also'>Also on the layout</p>" + rows.join("");
+  const billy = billyUp()
+    ? "<button class='ghost' data-act='billy-down'>Take down Billy's Way</button>"
+    : "";
+  if (!rows.length && !billy) return "";
+  return (rows.length ? "<p class='also'>Also on the layout</p>" + rows.join("") : "") + billy;
+}
+
+function billyUp() {
+  const mark = game.billyMark;
+  if (!mark) return false;
+  const live = (kind) => Object.keys(mark[kind] || {}).some((n) => mark[kind][n] && (game.bets[kind][n] || 0) > 0);
+  return live("place") || live("buy");
 }
 
 function rowHTML(kind, number, title, sub, stake, pair) {
@@ -890,13 +1098,19 @@ function layRows() {
 }
 
 function sideHTML() {
+  const b = game.bets;
+  const oneRoll = "<div class='oneroll'>" +
+    spotButton({ kind: "anyCraps", name: "ANY CRAPS", pay: "7 TO 1", stake: b.anyCraps, label: "Any Craps" }) +
+    spotButton({ kind: "horn", name: "HORN", pay: "$4 UNITS", stake: b.horn, label: "Horn four way" }) +
+    spotButton({ kind: "ce", name: "C & E", pay: "C 3:1 · E 7:1", stake: b.ce, label: "C and E, 3 to 1 on craps, 7 to 1 on 11" }) +
+    "</div>";
   const reps = E.NUMBERS.map((n) => {
     const need = E.REPEATER_NEEDS[n];
     const have = game.repeaterCount[n] || 0;
     const pips = Array.from({ length: need }, (_, i) => (i < have ? "●" : "○")).join("");
     const stake = game.bets.repeaters[n] || 0;
     return "<article class='rep'><header><b>" + n + "</b><small>" + E.REPEATER_FOR[n] + " FOR 1</small></header>" +
-      "<div class='pips'>" + pips + " " + have + "/" + need + "</div>" +
+      "<div class='pips'>" + pips + " " + have + "/" + need + "</div><small>needs " + need + "×</small>" +
       "<small class='" + E.edgeClass(E.REPEATER_EDGE[n]) + "'>" + E.REPEATER_EDGE[n] + "% · " + (stake ? money(stake) : "no bet") + "</small>" +
       "<div class='row'><button data-act='bet' data-kind='repeater' data-number='" + n + "'>Add</button>" +
       "<button data-act='take' data-kind='repeater' data-number='" + n + "'>Take</button></div></article>";
@@ -910,41 +1124,46 @@ function sideHTML() {
       (stake ? "<div>" + money(stake) + "</div>" : "") + "</button>" +
       (stake ? "<button data-act='take' data-kind='hop' data-pair='" + key + "' aria-label='Take down hop " + key + "'>Take</button>" : "") + "</div>";
   }).join("");
-  return "<h2>Repeaters</h2><p class='sub'>A number before a 7. Any 7 loses, including a come-out 7. $1 to $25. <button data-act='for'>For 1?</button></p><div class='reps'>" + reps + "</div>" +
-    "<h2>Hops</h2><p class='sub'>One exact pair on the next roll. Hard hops 30 to 1. Easy hops 15 to 1. The four Horn numbers are the same bet as the board.</p><div class='hops'>" + hops + "</div>";
+  return "<h2>One roll</h2><p class='sub'>Horn, Any Craps, and C&amp;E live here so the felt can breathe. They stay up when they win.</p>" + oneRoll +
+    "<h2>Repeaters</h2><p class='sub'>A number before a 7. Any 7 loses, including a come-out 7. $1 to $25. <button data-act='for'>For 1?</button></p><div class='reps'>" + reps + "</div>" +
+    "<h2>Hops</h2><p class='sub'>One exact pair on the next roll. Hard hops 30 to 1. Easy hops 15 to 1. Aces, Ace-deuce, Yo, and Midnight are the same bets as the Horn box.</p><div class='hops'>" + hops + "</div>";
 }
 
 function domeHTML() {
-  const d1 = game.lastDice ? game.lastDice.d1 : 1;
-  const d2 = game.lastDice ? game.lastDice.d2 : 1;
-  const bubbles = [12, 28, 44, 61, 73, 18].map((left, i) => "<i class='bubble' style='left:" + left + "%;width:" + (10 + i * 3) + "px;height:" + (10 + i * 3) + "px;animation-delay:" + (i * 0.6) + "s'></i>").join("");
+  const d1 = game.lastDice ? game.lastDice.d1 : 5;
+  const d2 = game.lastDice ? game.lastDice.d2 : 2;
+  const bubbles = [14, 28, 46, 62, 74, 36, 54].map((left, i) =>
+    "<i class='bubble' style='left:" + left + "%;width:" + (8 + (i % 4) * 4) + "px;height:" + (8 + (i % 4) * 4) + "px;animation-delay:" + (i * 0.45) + "s'></i>").join("");
   const tier = E.blazingTier(E.blazingScore(game.hand), game.hand.points);
   const tiers = ["cold", "warm", "hot", "blazing"];
   const active = tiers.indexOf(tier);
-  const meter = "<div class='meter' title='Cosmetic meter. It never changes odds or advice.'>" +
+  const meter = settings.blazing === false ? "" : "<div class='meter' title='Cosmetic meter. It never changes odds or advice.'>" +
     tiers.map((name, i) => "<i class='" + (i <= active ? "on-" + tier : "") + "'></i>").join("") +
-    "<span>" + tier.toUpperCase() + "</span></div>";
+    "<span>Hand: " + game.hand.rolls + " rolls · " + game.hand.points + " point" + (game.hand.points === 1 ? "" : "s") + " · " + tier.toUpperCase() + "</span></div>";
   const hist = game.history.map((h) => "<span class='rchip" + (h.total === 7 ? " seven" : "") + "'>" + h.total + "</span>").join("");
   const hit = game.lastWin ? (game.lastWin.kind === "buy" ? "Buy " : "Place ") + game.lastWin.number + " +" + money(game.lastWin.profit) : "";
-  const line = game.lastDice ? game.lastDice.line : "Waiting for a roll";
-  return "<div class='dome-screen'><div class='dome-stage'><div class='dome'>" + bubbles +
-    "<div class='dice-row' id='dice-row'>" + flatDie(d1, "die-a") + flatDie(d2, "die-b") + "</div></div></div>" +
-    "<div class='result-line'>" + line + "<small>" + (game.lastNarrative || "Secure random dice. The tumble is only the picture.") + "</small></div>" +
-    "<div style='display:flex;justify-content:center'>" + (game.phase === "point" ? "<div class='puck on'>" + game.point + "</div>" : "<div class='puck off'>OFF</div>") + "</div>" +
-    meter + "<p class='muted' style='margin:0'>Hand " + game.hand.rolls + " rolls · " + game.hand.points + " points. A 7 is always 1 in 6.</p>" +
+  const line = game.lastDice ? game.lastDice.line : "READY";
+  const tone = lastNet > 0 ? " win" : lastNet < 0 ? " lose" : "";
+  return "<div class='dome-screen'><div class='machine'><div class='dome'><div class='bowl'>" + bubbles + "</div>" +
+    "<div class='dice-row' id='dice-row'>" + isoDie(d1, "die-a") + isoDie(d2, "die-b") + "</div>" +
+    "<div class='glass' aria-hidden='true'></div></div>" +
+    "<div class='machine-base'><div class='readout" + tone + "'><b>" + line + "</b><span>" +
+    (game.lastNarrative || "Secure random dice. The tumble is the picture.") + "</span></div></div></div>" +
+    "<div class='dome-meta'><div class='puck-wrap'>" + (game.phase === "point" ? "<div class='puck on'>" + game.point + "</div>" : "<div class='puck off'>OFF</div>") + "</div>" +
+    meter + "<p class='muted handnote'>Hand " + game.hand.rolls + " rolls · " + game.hand.points + " points. A 7 is always 1 in 6.</p>" +
     "<div class='hitline'>" + hit + "</div>" +
-    "<div class='rollstrip' aria-label='Last rolls'>" + hist + "</div></div>";
+    "<div class='rollstrip' aria-label='Last rolls'>" + hist + "</div></div></div>";
 }
 
 function dockHTML() {
   const st = E.pressStatus(game);
   const chips = E.CHIPS.map((c) => "<button class='chip-btn" + (settings.chip === c ? " on" : "") + "' data-act='chip' data-cents='" + c + "' aria-label='$" + (c / 100) + " chip'>" + chipHTML(c) + "</button>").join("");
-  const undo = game.pressStack.length ? "<div class='undo'><button data-act='undo'>UNDO</button><button data-act='clear'>CLEAR</button></div>" : "";
-  const kicker = !st.pressOk ? "<span class='why'>" + (st.pressReason || "") + "</span>" : "";
-  return "<div class='pressline'>" + (st.pressOk ? st.label : "PRESS") + " " + kicker + "</div>" +
-    "<div class='rollrow'><button class='press-btn' data-act='press'" + (st.pressOk ? "" : " disabled") + ">PRESS</button>" +
-    "<button class='roll-btn' data-act='roll' aria-label='Roll the dice'>ROLL<span class='ring'></span></button>" +
-    "<button class='press-btn' data-act='power'" + (st.powerOk ? "" : " disabled") + ">POWER<br>PRESS</button></div>" + undo +
+  const hint = rolling ? "after a hit" : (st.pressOk ? st.label : (st.pressReason || "Same bet, bigger swing"));
+  const powerHint = rolling ? "after a hit" : (st.powerOk ? st.powerLabel : (st.powerReason || "after a hit"));
+  const undo = game.pressStack.length ? "<div class='undo'><button data-act='undo'" + (rolling ? " disabled" : "") + ">UNDO</button><button data-act='clear'" + (rolling ? " disabled" : "") + ">CLEAR</button></div>" : "";
+  return "<div class='rollrow'><button class='press-btn' data-act='press'" + (rolling || !st.pressOk ? " disabled" : "") + "><b>PRESS</b><small>" + hint + "</small></button>" +
+    "<button class='roll-btn' data-act='roll' aria-label='Roll the dice'><span class='roll-face'>ROLL</span><span class='ring'></span></button>" +
+    "<button class='press-btn power' data-act='power'" + (rolling || !st.powerOk ? " disabled" : "") + "><b>POWER</b><b>PRESS</b><small>" + powerHint + "</small></button></div>" + undo +
     "<div class='rack'>" + chips + "</div>" +
     "<div class='bankbar'><span>Practice chips <strong>" + money(game.bankroll) + "</strong></span><span>On table <strong>" + money(E.tableTotal(game)) + "</strong></span>" +
     (game.strategy ? "<button data-act='stop-strategy'>Stop " + game.strategy.id + "</button>" : "") + "</div>";
@@ -961,7 +1180,7 @@ function panelHTML() {
 
 function homeHTML() {
   return "<section class='home'><img class='logo' src='assets/logos/billybubs-bubble-craps-color-dark.svg' alt='Billy Bubs Bubble Craps'>" +
-    "<div class='home-dome' aria-hidden='true'>" + flatDie(5, "home-d1") + flatDie(2, "home-d2") + "</div>" +
+    "<div class='home-dome' aria-hidden='true'>" + isoDie(5, "home-d1") + isoDie(2, "home-d2") + "</div>" +
     "<div class='disclaimer'><b>Education only. Play money only.</b> No real gambling, no deposits, no cash-out, no prizes. Every bankroll on this table is practice chips. 18+.</div>" +
     "<div class='modes'><button class='mode-card' data-act='play' data-mode='regular'><b>Regular</b><span>Pass, Don't, odds 3-4-5x. The lower house edge.</span></button>" +
     "<button class='mode-card' data-act='play' data-mode='crapless'><b>Crapless</b><span>Only a come-out 7 wins. 2, 3, 11, and 12 are points. No Don't. No ATS.</span></button></div>" +
@@ -980,21 +1199,53 @@ function learnHTML() {
 }
 
 function premiumHTML() {
+  const presets = ["Standard", "MGM", "Caesars", "Custom", "Downtown 10x"];
+  const preview = {
+    Standard: "Field 5.56% · Pass + max odds 0.37% Regular · 1.26% Crapless",
+    MGM: "Field 5.56% · Odds 3-4-5x · Pass+Odds 0.37%",
+    Caesars: "Field 5.56% → 2.78% · Crapless odds 1-2-3-4-5x",
+    Custom: "Saved table. Locked on this build. Field 5.56% → 2.78%",
+    "Downtown 10x": "Pass+Odds 0.37% → 0.18% · Odds 10x",
+  };
+  const regular = premiumSet === "regular";
   const rows = [
-    ["Field 2 and 12", "2:1"],
-    ["Odds, Regular", "3-4-5x"],
-    ["Odds, Crapless", "3-3-3-4-5x"],
-    ["Lay odds", "6x flat"],
-    ["Buy commission", "5% on wins only"],
-    ["Hard Way All Day", "165 for 1"],
-    ["ATS", "31 / 31 / 156 for 1"],
-    ["Repeater pays", "Standard 40–90 for 1"],
-    ["Hop pays", "15 / 30 to 1"],
-    ["Fair Dice CSV", "Locked"],
-    ["Saved presets", "Standard only"],
+    ["B-1", "Field 2 pays", "2:1"],
+    ["B-2", "Field 12 pays", "2:1"],
+    ["B-3", "Odds limit, Regular", "3-4-5x"],
+    ["B-4", "Odds limit, Crapless", "3-3-3-4-5x"],
+    ["B-5", "Lay odds limit", regular ? "Win 3/4/5x (lay ≤ 6x)" : "Not in Crapless"],
+    ["B-6", "Buy commission timing", "On win only"],
+    ["B-7", "Buy commission rounding", "Exact 5%, floored to the cent"],
+    ["B-8", "Buy available on", "All numbers"],
+    ["B-9", "Place/Buy working on come-out", "Off · free in Settings"],
+    ["B-10", "Hardways working on come-out", "On"],
+    ["B-11", "Don't Pass bar", regular ? "Bar 12" : "Not in Crapless"],
+    ["B-12", "Table minimum", "$5"],
+    ["B-13", "Table maximum", "$500"],
+    ["B-14", "Starting practice bankroll", "$1,000"],
+    ["B-15", "Horn payouts", "30:1 / 15:1"],
+    ["B-16", "Any 7 / Big Red", "4:1"],
+    ["B-17", "Hardway payouts", "US 7:1 / 9:1"],
+    ["B-18", "Side-bet toggles", regular ? "All on, including ATS" : "All on · ATS off"],
+    ["B-19", "Hard Way All Day pay", "165 for 1 · 21.43%"],
+    ["B-20", "ATS comes down after a hit", regular ? "Off (stays up)" : "Not in Crapless"],
+    ["B-21", "ATS pay table", regular ? "31 / 31 / 156 for 1" : "Not in Crapless"],
+    ["B-22", "Repeater pay table", "Standard 40/50/65/80/90"],
+    ["B-23", "Repeater stay-up options", "All off"],
+    ["B-24", "Repeaters in Crapless", regular ? "On" : "On"],
+    ["B-25", "Crapless Place 2/12 · 3/11", regular ? "Regular only" : "11:2 · 11:4"],
+    ["B-26", "Bet timer", "15 s · free in Settings"],
+    ["B-28", "Auto-press after each hit", "Off · free in Settings"],
+    ["B-29", "Hop pays", "15 / 30 to 1"],
+    ["B-30", "Show the dice on each roll", "Off · free in Settings"],
   ];
-  return "<h2>Premium</h2><p class='lock'>Locked preview · no purchase</p><p>Standard rules are on. Custom rules are a preview of what a Premium unlock would change. This test build does not sell anything.</p>" +
-    rows.map(([k, v]) => "<div class='setting'><div><b>" + k + "</b><div class='muted'>Standard</div></div><span class='lock'>" + v + "</span></div>").join("") +
+  return "<h2>Premium</h2><p class='lock'>Locked preview · no purchase</p><p>Every setting is visible. None of them change the live table. Standard rules stay on. This test build does not sell anything.</p>" +
+    "<div class='seg'>" +
+    "<button class='" + (regular ? "on" : "") + "' data-act='ruleset' data-set='regular'>Regular</button>" +
+    "<button class='" + (!regular ? "on" : "") + "' data-act='ruleset' data-set='crapless'>Crapless</button></div>" +
+    "<div class='filters'>" + presets.map((name) => "<button class='" + (premiumPreset === name ? "on" : "") + "' data-act='preset' data-preset='" + name + "'>" + name + "</button>").join("") + "</div>" +
+    "<article class='card'><h3>Edge Preview</h3><p class='lock'>Locked</p><p>" + preview[premiumPreset] + "</p><p class='muted'>A Premium unlock would animate the old edge to the new one. Example: Field 5.56% → 2.78%.</p></article>" +
+    rows.map(([id, label, value]) => "<div class='setting'><div><b>" + id + " " + label + "</b><div class='muted'>" + (regular ? "Regular" : "Crapless") + " · Standard</div></div><span class='lock'>" + value + "</span></div>").join("") +
     "<article class='card'><h3>With Premium you could preview</h3><p>Your casino's odds and payouts. Live house-edge preview. Presets. Fair Dice CSV export. Hard Way All Day 150–200 for 1. Repeater pay tables.</p><p class='muted'>Shooter skill simulation is not in Bubble Craps.</p></article>";
 }
 
@@ -1005,9 +1256,12 @@ function settingsHTML() {
     row("haptics", "Haptics", "Vibration where the phone allows it") +
     row("autoRoll", "Auto roll", "15 seconds, then the machine rolls. ROLL always works.") +
     row("workingComeOut", "Place and Buy working on come-out", "Off is Standard") +
-    row("hardwaysComeOut", "Hardways working on come-out", "On is Standard") +
-    row("comeOddsOff", "Come odds off on come-out", "On is Standard. The flat Come still works.") +
+    row("blazing", "Blazing meter", "Cosmetic only. Dice have no memory. It never changes odds or bets.") +
     row("showDice", "Show the dice on each roll", "Jumps to the dome, then back") +
+    "<div class='setting'><div><b>Auto-press after each hit</b><div class='muted'>Billy's Way and the B5 coach. Off, PRESS, or POWER PRESS. Same odds, more at risk.</div></div><div class='seg'>" +
+    ["off", "press", "power"].map((mode) => "<button class='" + (settings.autoPress === mode ? "on" : "") + "' data-act='auto-press' data-mode='" + mode + "'>" + (mode === "off" ? "Off" : mode === "press" ? "PRESS" : "POWER") + "</button>").join("") +
+    "</div></div>" +
+    "<div class='setting'><div><b>Auto-press max per number</b><div class='muted'>1 to 5. Default follows the coach at 3 when auto-press is Off.</div></div><div class='row'><button class='step' data-act='auto-max' data-dir='-1' aria-label='Lower auto-press max'>−</button><b>" + (settings.autoPressMax || 3) + "</b><button class='step' data-act='auto-max' data-dir='1' aria-label='Raise auto-press max'>+</button></div></div>" +
     row("reduced", "Reduced motion", "Cross-fade instead of sliding and tumbling") +
     "<div class='setting'><div><b>Tutor track</b><div class='muted'>Beginner or experienced</div></div><div class='seg'><button class='" + (settings.tutorTrack === "beginner" ? "on" : "") + "' data-act='track' data-track='beginner'>Beginner</button><button class='" + (settings.tutorTrack === "experienced" ? "on" : "") + "' data-act='track' data-track='experienced'>Experienced</button></div></div>" +
     "<button class='cta' data-act='bank-reset'>Reset bankroll to $1,000</button>" +
@@ -1039,17 +1293,25 @@ function fairHTML() {
     bars.push("<div class='barline'><span>" + t + "</span><div class='track'><span style='width:" + w + "%'></span><em style='left:" + (F.expectedRate(t) / (6 / 36) * 100) + "%'></em></div><span>" + got + "</span></div>");
   }
   const readout = test.readout;
+  const hardCounts = { 4: 0, 6: 0, 8: 0, 10: 0 };
+  rolls.forEach((r) => {
+    if (r.d1 === r.d2 && hardCounts[r.total] != null) hardCounts[r.total] += 1;
+  });
+  const hardLine = [4, 6, 8, 10].map((n) => n + ": " + hardCounts[n] + " (fair " + (rolls.length / 36).toFixed(1) + ")").join(" · ");
+  const repeat = rolls.length && F.streakStats(rolls).mostRepeats
+    ? "Most times one number repeated in a hand: " + F.streakStats(rolls).mostRepeatTotal + " × " + F.streakStats(rolls).mostRepeats + "."
+    : "Roll a hand to see how often one number repeats.";
   return "<h2>Fair Dice</h2><p class='lock'>" + readout.badge + "</p><p>" + readout.words + "</p>" +
     "<div class='filters'>" + [["session", "This session"], ["last", "Last 100"], ["all", "All time"]].map(([id, label]) => "<button class='" + (fairScope === id ? "on" : "") + "' data-act='fair-scope' data-scope='" + id + "'>" + label + "</button>").join("") + "</div>" +
     "<article class='card'><h3>Totals vs expected</h3><div class='bars'>" + bars.join("") + "</div><p class='muted'>The mark is the fair share. 7 is 6/36, 16.67%.</p></article>" +
     "<article class='card'><h3>Sevens</h3><p>" + (rolls.length ? (sevenPct * 100).toFixed(1) : "0") + "% vs 16.67% (1 in 6). Normal band about " + (band.low * 100).toFixed(1) + "%–" + (band.high * 100).toFixed(1) + "%.</p></article>" +
-    "<article class='card'><h3>Fairness test</h3><p>" + (rolls.length < 180 ? "Roll 180 times for a fair test (now " + rolls.length + ")." : "χ² " + test.chi2.toFixed(2) + " · df 10 · p " + test.p.toFixed(3)) + "</p><p>" + readout.words + "</p></article>" +
-    "<article class='card'><h3>Each die</h3><p>Die 1 faces: " + faces.counts.join(" · ") + "</p><p>Die 2 faces: " + faces2.counts.join(" · ") + "</p><p class='muted'>Each face should be near 16.67%.</p></article>" +
-    "<article class='card'><h3>Hard vs easy</h3><p>Doubles " + doubles + " of " + rolls.length + " (fair 16.67%).</p></article>" +
+    "<article class='card'><h3>Fairness test</h3><p>" + (rolls.length < 180 ? "Roll 180 times for a fair test (now " + rolls.length + ")." : "χ² " + test.chi2.toFixed(2) + " · df 10 · p " + test.p.toFixed(3)) + "</p></article>" +
+    "<article class='card'><h3>Each die</h3><p>Die 1 faces: " + faces.counts.join(" · ") + "</p><p>Die 1 χ² " + faces.chi2.toFixed(2) + " · df 5 · p " + faces.p.toFixed(3) + "</p><p>Die 2 faces: " + faces2.counts.join(" · ") + "</p><p>Die 2 χ² " + faces2.chi2.toFixed(2) + " · df 5 · p " + faces2.p.toFixed(3) + "</p><p class='muted'>Each face should be near 16.67%.</p></article>" +
+    "<article class='card'><h3>Hard vs easy</h3><p>Doubles " + doubles + " of " + rolls.length + " (fair 16.67%).</p><p>Hard 4/6/8/10 vs 1/36 each. " + hardLine + "</p></article>" +
     "<article class='card'><h3>Above and below expected</h3><p>" + (rolls.length ? hi.t + ": " + (hi.d >= 0 ? "+" : "") + hi.d.toFixed(1) + " vs expected · " + lo.t + ": " + lo.d.toFixed(1) : "Roll to fill this in.") + "</p></article>" +
     (function () {
       const st = F.streakStats(rolls);
-      return "<article class='card'><h3>Streaks</h3><p>Longest run without a 7: " + st.longestDry + ". Current run without a 7: " + st.currentDry + ".</p><p>Longest hand before a seven-out: " + st.longestHand + " rolls. This hand: " + st.currentHand + ".</p><p class='muted'>A long gap is not a sign the next roll is different. A 7 is still 1 in 6.</p></article>";
+      return "<article class='card'><h3>Streaks</h3><p>Longest run without a 7: " + st.longestDry + ". Current run without a 7: " + st.currentDry + ".</p><p>Longest hand before a seven-out: " + st.longestHand + " rolls. This hand: " + st.currentHand + ".</p><p>" + repeat + "</p><p class='muted'>A long gap is not a sign the next roll is different. A 7 is still 1 in 6.</p></article>";
     })() +
     "<article class='card'><h3>Last rolls</h3><div class='rollstrip'>" + rolls.slice(-20).map((r) => "<span class='rchip" + (r.total === 7 ? " seven" : "") + "'>" + r.total + "</span>").join("") + "</div></article>" +
     "<p>Every roll uses your device's secure random generator. Each die is a fair 1 to 6, and the two dice are independent. Nothing on this screen, not your bets, your streak, or the Blazing meter, can change the next roll.</p>" +
