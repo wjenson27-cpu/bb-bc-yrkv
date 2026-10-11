@@ -312,9 +312,8 @@ test("strips, landscape coach, heat sheet, and phone HUD", async (t) => {
         };
       });
       if (width === 320) {
-        assert.equal(live.totals, false, "320 dome strip shows pips (" + live.w + "px)");
-        assert.ok(live.w >= 309, "320 dome container meets the pip cutoff");
-        assert.equal(live.shown, true, "320 dome faces are displayed");
+        assert.equal(live.totals, true, "320 dome strip uses totals (" + live.w + "px)");
+        assert.equal(live.shown, false, "320 dome hides pips that would draw under 14px");
       } else {
         assert.equal(live.totals, false, width + " dome strip shows pips (" + live.w + "px)");
         assert.equal(live.shown, true, width + " dome faces are displayed");
