@@ -719,7 +719,7 @@ test("Blazing meter tiers", () => {
 });
 
 test("strategies B1–B12 place or explain", () => {
-  assert.equal(STRATEGIES.length, 12);
+  assert.equal(STRATEGIES.length, 14);
   let g = game();
   let res = autoBet(g, "B1", $(5));
   assert.equal(res.state.bets.pass, $(5));
@@ -1074,4 +1074,74 @@ test("swipe resolution uses a horizontal threshold", () => {
 test("strategy names keep the spec subtitles", () => {
   assert.match(STRATEGIES.find((s) => s.id === "B6").name, /Make the line pay/);
   assert.match(STRATEGIES.find((s) => s.id === "B7").name, /Avoid 2\/3\/11\/12/);
+  assert.match(STRATEGIES.find((s) => s.id === "B13").name, /Continuous Come/);
+  assert.match(STRATEGIES.find((s) => s.id === "B14").name, /Hit and Split/);
+});
+
+test("a hand with rolls cannot switch mode until a seven-out or a bankroll reset", () => {
+  let g = roll(game(), 7).state;
+  assert.equal(g.hand.rolls, 1);
+  assert.equal(g.phase, "come-out");
+  assert.equal(E.contractsWorking(g), false);
+  const blocked = E.switchMode(g, "crapless");
+  assert.equal(blocked.ok, false);
+  assert.match(blocked.error, /seven-out/);
+  assert.equal(blocked.state.mode, "regular");
+  assert.equal(blocked.state.hand.rolls, 1);
+  const reset = E.resetBankroll(blocked.state);
+  assert.equal(E.switchMode(reset, "crapless").ok, true);
+});
+
+test("a hand posts only when a bet is working, and parked place bets do not count", () => {
+  let g = game();
+  assert.equal(E.hadWorkingBet(g), false);
+  g = E.placeBet(g, { kind: "pass" }, $(5)).state;
+  assert.equal(E.hadWorkingBet(g), true);
+  g = point(game(), 6);
+  g = E.placeBet(g, { kind: "place", number: 8 }, $(6)).state;
+  assert.equal(E.hadWorkingBet(g), true);
+  g.betsOff = true;
+  assert.equal(E.hadWorkingBet(g), false);
+  g = E.placeBet(game(), { kind: "field" }, $(5)).state;
+  g.phase = "point";
+  g.point = 6;
+  g.betsOff = true;
+  assert.equal(E.hadWorkingBet(g), true);
+});
+
+test("continuous come places a new come on every point roll and replaces a come off-and-on", () => {
+  let g = point(E.placeBet(game(), { kind: "pass" }, $(5)).state, 6);
+  g.strategy = { id: "B13", rolls: 0, data: {} };
+  let a = autoBet(g, "B13", $(5), { count: false });
+  assert.equal(a.state.bets.come, $(5));
+  assert.ok(a.state.bets.passOdds > 0);
+  g = roll(a.state, 8).state;
+  assert.equal(g.bets.comeBets[8].amount, $(5));
+  a = autoBet(g, "B13", $(5), { count: false });
+  assert.equal(a.state.bets.come, $(5));
+  assert.ok(a.state.bets.comeBets[8].odds > 0);
+  g = roll(a.state, 8).state;
+  assert.equal(g.bets.come, 0);
+  assert.equal(g.bets.comeBets[8].amount, $(5));
+  assert.equal(Object.keys(g.bets.comeBets).length, 1);
+  g.strategy = { id: "B13", rolls: 0, data: { cap: 1 } };
+  a = autoBet(g, "B13", $(5), { count: false });
+  assert.equal(a.state.bets.come, 0);
+});
+
+test("hit and split ladders the win and suspends auto-press", () => {
+  let g = point(game(), 4);
+  g.strategy = { id: "B14", rolls: 0, data: { start: 6 } };
+  let a = autoBet(g, "B14", $(5), { count: false });
+  assert.equal(a.state.bets.place[6], $(12));
+  g = roll(a.state, 6).state;
+  const bank = g.bankroll;
+  a = autoBet(g, "B14", $(5), { count: false });
+  assert.equal(a.state.bets.place[6], $(12));
+  assert.equal(a.state.bets.place[8], $(6));
+  assert.equal(a.state.bankroll, bank - $(6));
+  a.state.autoPress = { mode: "press", max: 3, counts: {} };
+  const pressed = applyAutoPress(a.state);
+  assert.equal(pressed.skipped, true);
+  assert.equal(pressed.state.bets.place[6], $(12));
 });

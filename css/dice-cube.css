@@ -20,19 +20,28 @@
 .cube3d .cube[data-face="5"] .f5{--shade:transparent}
 .cube3d .cube[data-face="6"] .f6{--shade:transparent}
 .cube3d .cube.tumbling .f{--shade:rgba(0,0,0,.12)}
-/* resting pose per result: result face toward viewer, tipped -22deg X / 24deg Y so two side faces show (reads as 3D) */
-.cube3d .cube[data-face="1"]{transform:rotateX(-22deg) rotateY(24deg)}
-.cube3d .cube[data-face="6"]{transform:rotateX(-22deg) rotateY(204deg)}
-.cube3d .cube[data-face="3"]{transform:rotateX(-22deg) rotateY(-66deg)}
-.cube3d .cube[data-face="4"]{transform:rotateX(-22deg) rotateY(114deg)}
-.cube3d .cube[data-face="2"]{transform:rotateX(-112deg) rotateY(0deg) rotateZ(24deg)}
-.cube3d .cube[data-face="5"]{transform:rotateX(68deg) rotateY(0deg) rotateZ(-24deg)}
-/* tumble: 1200 ms total (MOTION-SOUND-SPEC Dome roll). JS: add .tumbling, after 980 ms set data-face=result and remove .tumbling -> 420 ms settle transition */
-@keyframes bb-tumble{0%{transform:translateY(0) rotateX(0) rotateY(0) rotateZ(0)}
- 25%{transform:translateY(calc(var(--s)*-.9)) rotateX(250deg) rotateY(120deg) rotateZ(40deg)}
- 50%{transform:translateY(calc(var(--s)*-.4)) rotateX(520deg) rotateY(260deg) rotateZ(-30deg)}
- 75%{transform:translateY(calc(var(--s)*-.7)) rotateX(790deg) rotateY(410deg) rotateZ(25deg)}
- 100%{transform:translateY(0) rotateX(1060deg) rotateY(540deg) rotateZ(0)}}
-.cube3d .cube.tumbling{transition:none;animation:bb-tumble 980ms cubic-bezier(.3,.1,.3,1) both}
-.cube3d.b .cube.tumbling{animation-direction:reverse;animation-duration:1040ms}
-@media (prefers-reduced-motion:reduce){.cube3d .cube.tumbling{animation:none}.cube3d .cube{transition:opacity 180ms}}
+/* resting pose per result: result face toward viewer, tipped so two side faces show */
+.cube3d .cube[data-face="1"]{--rest:rotateX(-22deg) rotateY(24deg);transform:var(--rest)}
+.cube3d .cube[data-face="6"]{--rest:rotateX(-22deg) rotateY(204deg);transform:var(--rest)}
+.cube3d .cube[data-face="3"]{--rest:rotateX(-22deg) rotateY(-66deg);transform:var(--rest)}
+.cube3d .cube[data-face="4"]{--rest:rotateX(-22deg) rotateY(114deg);transform:var(--rest)}
+.cube3d .cube[data-face="2"]{--rest:rotateX(-112deg) rotateY(0deg) rotateZ(24deg);transform:var(--rest)}
+.cube3d .cube[data-face="5"]{--rest:rotateX(68deg) rotateY(0deg) rotateZ(-24deg);transform:var(--rest)}
+/* tumble eases INTO the rest pose. JS sets data-face first, then .tumbling. 100% is the rest pose. */
+@keyframes bb-tumble{
+  0%{transform:translateY(calc(var(--s)*-1.2)) rotateX(40deg) rotateY(20deg) rotateZ(8deg)}
+  32%{transform:translateY(calc(var(--s)*-.9)) rotateX(260deg) rotateY(150deg) rotateZ(36deg)}
+  54%{transform:translateY(0) rotateX(480deg) rotateY(250deg) rotateZ(-16deg)}
+  72%{transform:translateY(calc(var(--s)*-.28)) rotateX(640deg) rotateY(330deg) rotateZ(12deg)}
+  86%{transform:translateY(0) rotateX(760deg) rotateY(390deg) rotateZ(-6deg)}
+  100%{transform:translateY(0) var(--rest)}}
+@keyframes bb-tumble-b{
+  0%{transform:translateY(calc(var(--s)*-1.05)) rotateX(-30deg) rotateY(200deg) rotateZ(-20deg)}
+  30%{transform:translateY(calc(var(--s)*-.82)) rotateX(220deg) rotateY(40deg) rotateZ(28deg)}
+  52%{transform:translateY(0) rotateX(430deg) rotateY(-80deg) rotateZ(-22deg)}
+  70%{transform:translateY(calc(var(--s)*-.22)) rotateX(590deg) rotateY(-20deg) rotateZ(10deg)}
+  84%{transform:translateY(0) rotateX(700deg) rotateY(30deg) rotateZ(-4deg)}
+  100%{transform:translateY(0) var(--rest)}}
+.cube3d .cube.tumbling{transition:none;animation:bb-tumble 1100ms cubic-bezier(.22,.72,.28,1) forwards}
+.cube3d.b .cube.tumbling{animation-name:bb-tumble-b;animation-duration:1180ms;animation-direction:normal}
+@media (prefers-reduced-motion:reduce){.cube3d .cube.tumbling{animation:none}.cube3d .cube{transition:none}}
