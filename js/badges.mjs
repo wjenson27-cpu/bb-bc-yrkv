@@ -67,6 +67,8 @@ export function emptyProgress() {
     billyPaid: [],
     armedCollect: {},
     pressedSinceRoll: false,
+    collectPending: 0,
+    handDirty: false,
   };
 }
 
@@ -96,6 +98,12 @@ function unlock(store, p, id, ctx) {
 
 function paid(decisions, name) {
   return (decisions || []).some((d) => d && d.result === "win" && d.bet === name && (d.profit || 0) > 0);
+}
+
+/** Point badges count only a Pass Line win that paid on that point. */
+export function paidPassPoint(decisions, point) {
+  if (!point) return 0;
+  return paid(decisions, "Pass Line") ? point : 0;
 }
 
 function addSet(list, value) {
@@ -191,17 +199,19 @@ export function evaluateRoll(store, ctx) {
     unlock(next, p, "billys_way_full_circle", c);
   }
 
-  if (c.collectNumber && p.armedCollect[c.collectNumber]) {
-    unlock(next, p, "press_then_collect", c);
+  if (c.collectNumber && p.armedCollect[c.collectNumber] && !c.autoPressed) {
+    p.collectPending = c.collectNumber;
     delete p.armedCollect[c.collectNumber];
   }
 
+  if (!c.sevenOut && c.edgeBroken) p.handDirty = true;
+
   if (c.sevenOut) {
-    if (c.hadBet && c.maxEdge != null) {
-      if (c.maxEdge <= 2 && !c.edgeBroken) p.lowEdgeHands += 1;
-      else p.lowEdgeHands = 0;
-      if (p.lowEdgeHands >= 3) unlock(next, p, "low_edge_three_hands", c);
-    } else if (c.edgeBroken) p.lowEdgeHands = 0;
+    const dirty = !!p.handDirty || !!c.edgeBroken || (c.maxEdge != null && c.maxEdge > 2);
+    if (c.hadBet && c.maxEdge != null && !dirty) p.lowEdgeHands += 1;
+    else if (dirty) p.lowEdgeHands = 0;
+    if (p.lowEdgeHands >= 3) unlock(next, p, "low_edge_three_hands", c);
+    p.handDirty = false;
     p.handPoints = [];
     p.crapHandPoints = [];
     p.sweep = { small: false, tall: false, all: false };
@@ -209,8 +219,7 @@ export function evaluateRoll(store, ctx) {
     p.hardStreak = 0;
     p.billyPaid = [];
     p.armedCollect = {};
-  } else if (c.edgeBroken) {
-    p.lowEdgeHands = 0;
+    p.collectPending = 0;
   }
 
   if (c.totalBefore > 0) {
@@ -244,11 +253,16 @@ export function noteAction(store, action) {
   const type = action.type;
   if (type === "press") {
     p.pressedSinceRoll = true;
-    if (action.number) p.armedCollect[action.number] = true;
+    if (action.number) {
+      p.armedCollect[action.number] = true;
+      if (p.collectPending === action.number) p.collectPending = 0;
+    }
   } else if (type === "undo" && p.pressedSinceRoll) {
     unlock(next, p, "press_undo", c);
     p.pressedSinceRoll = false;
   } else if (type === "roll-started") {
+    if (p.collectPending && !p.pressedSinceRoll) unlock(next, p, "press_then_collect", c);
+    p.collectPending = 0;
     p.pressedSinceRoll = false;
   } else if (type === "tour") {
     unlock(next, p, "tutor_tour_complete", c);

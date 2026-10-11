@@ -157,4 +157,52 @@ test("session limits floor percents to $5 and treat a looser loss limit as void"
   assert.equal(hit.loss, true);
   assert.equal(Sess.sessionQualifies(Object.assign({}, session, { ended: true, betRolls: 20, endReason: "loss" })), true);
   assert.equal(Sess.sessionQualifies(Object.assign({}, session, { ended: true, betRolls: 20, endReason: "reset" })), false);
+  const live = Sess.applyLiveLimits(session, { loss: { kind: "amount", amount: 5000 }, win: { kind: "off" } });
+  assert.equal(live.lossCents, 5000);
+  assert.equal(live.badgeLossCents, 25000);
+  assert.equal(Sess.limitStatus(live, 94000).loss, true);
+});
+
+test("point badges only count a paid Pass Line", () => {
+  assert.equal(B.paidPassPoint([{ bet: "Pass Line", result: "win", profit: 500 }], 6), 6);
+  assert.equal(B.paidPassPoint([{ bet: "Place 6", result: "win", profit: 700 }], 6), 0);
+  assert.equal(B.paidPassPoint([], 6), 0);
+});
+
+test("press once then collect waits until the next roll", () => {
+  let store = { badges: {}, progress: {} };
+  store = B.noteAction(store, { type: "press", number: 8 }).store;
+  let res = roll(store, {
+    decisions: [{ bet: "Place 8", result: "win", profit: 700 }],
+    collectNumber: 8,
+  });
+  assert.ok(!res.unlocked.includes("press_then_collect"));
+  assert.equal(res.store.progress.collectPending, 8);
+  res = B.noteAction(res.store, { type: "press", number: 8 });
+  assert.equal(res.store.progress.collectPending, 0);
+  res = B.noteAction(res.store, { type: "roll-started" });
+  assert.ok(!res.unlocked.includes("press_then_collect"));
+
+  store = B.noteAction({ badges: {}, progress: {} }, { type: "press", number: 6 }).store;
+  store = B.noteAction(store, { type: "roll-started" }).store;
+  res = roll(store, { collectNumber: 6, decisions: [{ bet: "Place 6", result: "win", profit: 700 }] });
+  res = B.noteAction(res.store, { type: "roll-started" });
+  assert.ok(res.unlocked.includes("press_then_collect"));
+});
+
+test("a Field bet keeps that hand out of the Under 2% Club", () => {
+  let store = { badges: {}, progress: {} };
+  store = roll(store, { edgeBroken: true, maxEdge: 5.56, hadBet: true }).store;
+  let res = roll(store, { sevenOut: true, hadBet: true, maxEdge: 1.41, edgeBroken: false });
+  assert.equal(res.store.progress.lowEdgeHands, 0);
+  assert.ok(!res.unlocked.includes("low_edge_three_hands"));
+  store = res.store;
+  store = roll(store, { hadBet: true, maxEdge: 1.41 }).store;
+  store = roll(store, { sevenOut: true, hadBet: true, maxEdge: 1.41 }).store;
+  store = roll(store, { hadBet: true, maxEdge: 1.41 }).store;
+  res = roll(store, { sevenOut: true, hadBet: true, maxEdge: 1.41 });
+  assert.equal(res.store.progress.lowEdgeHands, 2);
+  store = roll(res.store, { hadBet: true, maxEdge: 0.37 }).store;
+  res = roll(store, { sevenOut: true, hadBet: true, maxEdge: 0.37 });
+  assert.ok(res.unlocked.includes("low_edge_three_hands"));
 });

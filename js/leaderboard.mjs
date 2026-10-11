@@ -19,10 +19,9 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 /** Offensive 2–3 letter combos. Checked after uppercasing. */
 export const INITIALS_BLOCKLIST = [
   "ASS", "AZZ", "FAG", "FGT", "FUK", "FUC", "FUQ", "FCK", "SEX", "XXX",
-  "KKK", "NIG", "NGR", "DIE", "KIL", "SUK", "TIT", "DIC", "DIK", "COK",
-  "COC", "CUM", "JIZ", "CNT", "SHT", "DAM", "ANL", "RPE", "WOP", "JAP",
-  "SPI", "KYK", "NAZ", "JEW", "FAP", "NUT", "POO", "PEE", "PIS", "SUX",
-  "HOE", "SLT", "VAG", "ORL", "BJ", "WTF", "FML", "KYS", "STD", "HIV",
+  "KKK", "NIG", "NGR", "KIL", "SUK", "TIT", "DIC", "DIK", "COK",
+  "COC", "CUM", "JIZ", "CNT", "SHT", "ANL", "RPE", "WOP",
+  "KYK", "NAZ", "FAP", "PIS", "SUX", "HOE", "SLT", "VAG", "WTF", "FML", "KYS",
 ];
 
 export function browserStore() {

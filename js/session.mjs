@@ -37,6 +37,8 @@ export function startSession(prev, total, limits, now) {
     startChips: total,
     lossCents,
     winCents,
+    badgeLossCents: lossCents,
+    badgeWinCents: winCents,
     lossKind: limits.loss && limits.loss.kind || "off",
     winKind: limits.win && limits.win.kind || "off",
     lossPct: limits.loss && limits.loss.pct || 0,
@@ -112,6 +114,21 @@ export function limitsLoosened(before, after, session) {
 export function markLoosened(session) {
   if (!session) return session;
   return Object.assign({}, session, { loosened: true });
+}
+
+/** Live limits follow Settings. Badge snapshots stay at the first roll. */
+export function applyLiveLimits(session, limits) {
+  if (!session || session.ended) return session;
+  const lossCents = resolveLimit(limits.loss, session.startChips);
+  const winCents = resolveLimit(limits.win, session.startChips);
+  return Object.assign({}, session, {
+    lossCents,
+    winCents,
+    lossKind: limits.loss && limits.loss.kind || "off",
+    winKind: limits.win && limits.win.kind || "off",
+    lossPct: limits.loss && limits.loss.pct || 0,
+    winPct: limits.win && limits.win.pct || 0,
+  });
 }
 
 export function endSession(session, reason, now) {

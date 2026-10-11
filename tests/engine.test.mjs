@@ -67,10 +67,11 @@ test("table minimum refuses a $1 pass and accepts $5", () => {
   assert.equal(ok.state.bankroll, $(995));
 });
 
-test("table max is $500", () => {
+test("table max is $1,000", () => {
   const g = game("regular", $(2000));
-  assert.equal(E.placeBet(g, { kind: "pass" }, $(500)).ok, true);
-  assert.match(E.placeBet(g, { kind: "pass" }, $(501)).error, /Maximum/);
+  assert.equal(E.TABLE_MAX, $(1000));
+  assert.equal(E.placeBet(g, { kind: "pass" }, $(1000)).ok, true);
+  assert.match(E.placeBet(g, { kind: "pass" }, $(1001)).error, /Maximum/);
 });
 
 test("Regular come-out: 7 and 11 win, 2 3 12 lose, others set the point", () => {
@@ -604,40 +605,24 @@ test("PRESS stacks the original, undo and clear put chips back", () => {
   assert.equal(E.undoPress(g).ok, false);
 });
 
-test("POWER PRESS rounds down and can be used once", () => {
-  const cases = [
-    { mode: "regular", kind: "place", n: 8, stake: 6, add: 6, back: 1 },
-    { mode: "regular", kind: "place", n: 5, stake: 5, add: 5, back: 2 },
-    { mode: "regular", kind: "place", n: 4, stake: 5, add: 5, back: 4 },
-    { mode: "crapless", kind: "place", n: 2, stake: 5, add: 26, back: 1.5 },
-    { mode: "crapless", kind: "place", n: 3, stake: 5, add: 12, back: 1.75 },
-    { mode: "regular", kind: "buy", n: 4, stake: 5, add: 5, back: 4.75 },
-    { mode: "regular", kind: "buy", n: 5, stake: 5, add: 5, back: 2.25 },
-    { mode: "regular", kind: "buy", n: 6, stake: 5, add: 5, back: 0.75 },
-    { mode: "crapless", kind: "buy", n: 2, stake: 5, add: 25, back: 4.75 },
-    { mode: "crapless", kind: "buy", n: 3, stake: 5, add: 10, back: 4.75 },
-  ];
-  for (const c of cases) {
-    const anchor = c.n === 6 ? 8 : 6;
-    let g = point(game(c.mode), anchor);
-    g = E.placeBet(g, { kind: c.kind, number: c.n }, $(c.stake)).state;
-    const bank = g.bankroll;
-    g = roll(g, c.n, c.n === 2 || c.n === 12).state;
-    const profit = g.lastWin.profit;
-    const st = E.pressStatus(g);
-    assert.equal(st.powerOk, true, c.kind + c.n);
-    const res = E.powerPress(g);
-    assert.equal(res.added, $(c.add), c.kind + " " + c.n);
-    assert.equal(res.state.bets[c.kind][c.n], $(c.stake + c.add));
-    assert.equal(res.state.bankroll, g.bankroll - $(c.add));
-    assert.equal(profit - res.added, $(c.back));
-    assert.equal(E.powerPress(res.state).ok, false);
-    assert.equal(E.powerPress(res.state).error, "used");
-    const undone = E.undoPress(res.state).state;
-    assert.equal(undone.lastWin.powerUsed, false);
-    assert.equal(E.powerPress(undone).ok, true);
-    assert.ok(bank >= 0);
-  }
+test("POWER PRESS follows the 6/8 ladder and can be used once", () => {
+  let g = point(game(), 5);
+  g = E.placeBet(g, { kind: "place", number: 8 }, $(6)).state;
+  g = roll(g, 8).state;
+  const st = E.pressStatus(g);
+  assert.equal(st.powerOk, true);
+  assert.match(st.powerLabel, /POWER PRESS 8 → \$18 \(add \$5\)/);
+  const res = E.powerPress(g);
+  assert.equal(res.added, $(12));
+  assert.equal(res.give, $(5));
+  assert.equal(res.state.bets.place[8], $(18));
+  assert.equal(res.state.bankroll, g.bankroll - $(12));
+  assert.equal(E.powerPress(res.state).ok, false);
+  assert.equal(E.powerPress(res.state).error, "used");
+  const undone = E.undoPress(res.state).state;
+  assert.equal(undone.bets.place[8], $(6));
+  assert.equal(undone.lastWin.powerUsed, false);
+  assert.equal(E.powerPress(undone).ok, true);
 });
 
 test("PRESS prefers Buy except on 6 and 8 and greys out on a seven", () => {
@@ -657,14 +642,16 @@ test("PRESS prefers Buy except on 6 and 8 and greys out on a seven", () => {
   assert.match(E.press(g).error, /isn't a number bet/);
 });
 
-test("a $1 Place 4 win cannot power press", () => {
+test("a $1 Place 4 win joins the ladder at $5", () => {
   let g = point(game("regular", $(1000)), 6);
   g = E.placeBet(g, { kind: "place", number: 4 }, $(5)).state;
   g = E.removeBet(g, { kind: "place", number: 4 }, $(4)).state;
   g = roll(g, 4).state;
   const st = E.pressStatus(g);
-  assert.equal(st.powerOk, false);
-  assert.match(st.powerReason, /win under/);
+  assert.equal(st.powerOk, true);
+  const res = E.powerPress(g);
+  assert.equal(res.state.bets.place[4], $(5));
+  assert.equal(res.give, $(2.2));
 });
 
 test("Billy's Way places the right spots in both modes", () => {
@@ -908,9 +895,9 @@ test("auto-press adds to a Billy's Way win and leaves the original bet", () => {
   g = roll(g, 8).state;
   let pressed = applyAutoPress(g);
   assert.equal(pressed.ok, true);
-  assert.equal(pressed.state.bets.place[8], $(12));
+  assert.equal(pressed.state.bets.place[8], $(18));
   assert.equal(pressed.state.originals.place[8], $(6));
-  assert.match(pressed.message, /Auto POWER PRESS 8 \+\$6 → \$12, \$1 to chips/);
+  assert.match(pressed.message, /Auto POWER PRESS 8 → \$18 \(added \$5 from chips\)/);
   g = roll(pressed.state, 8).state;
   pressed = applyAutoPress(g);
   assert.equal(pressed.ok, true);
@@ -989,9 +976,9 @@ test("B5 reopens after a seven-out, pauses after three losses, and presses onto 
   g = roll(res.state, 8).state;
   g.autoPress = { mode: "power", max: 3, counts: {} };
   res = autoBet(g, "B5", $(5));
-  assert.equal(res.state.bets.place[8], $(12));
+  assert.equal(res.state.bets.place[8], $(18));
   assert.equal(res.state.originals.place[8], $(6));
-  assert.match(res.message, /Auto POWER PRESS 8/);
+  assert.match(res.message, /Auto POWER PRESS 8 → \$18/);
 });
 
 test("B8 can post a new set after three hits, and ignores a win already on the log", () => {
@@ -1052,14 +1039,19 @@ test("blaze lessons name the tier and say the dice have no memory", () => {
 });
 
 test("power press reports the table cap only when the bet lands on it", () => {
-  let g = point(game("regular", $(2000)), 6);
-  g = E.placeBet(g, { kind: "place", number: 8 }, $(420)).state;
-  g = roll(g, 8).state;
-  const res = E.powerPress(g);
-  assert.equal(res.ok, true);
-  assert.equal(res.capped, true);
-  assert.equal(res.atMax, false);
-  assert.ok(res.state.bets.place[8] < $(500));
+  let g = point(game("regular", $(5000)), 6);
+  g = E.placeBet(g, { kind: "buy", number: 4 }, $(300)).state;
+  g = roll(g, 4).state;
+  const open = E.powerPress(g);
+  assert.equal(open.ok, true);
+  assert.equal(open.atMax, false);
+  assert.equal(open.state.bets.buy[4], $(900));
+  const capped = E.powerPress(g, { maxCents: $(500) });
+  assert.equal(capped.ok, true);
+  assert.equal(capped.atMax, true);
+  assert.equal(capped.state.bets.buy[4], $(500));
+  assert.match(capped.label, /\$500 \(max\)/);
+  assert.equal(capped.back, $(385));
 });
 
 test("swipe resolution uses a horizontal threshold", () => {
@@ -1144,4 +1136,39 @@ test("hit and split ladders the win and suspends auto-press", () => {
   const pressed = applyAutoPress(a.state);
   assert.equal(pressed.skipped, true);
   assert.equal(pressed.state.bets.place[6], $(12));
+});
+
+test("hit and split collects a side hit and waits for the next point", () => {
+  let g = point(game("regular", $(500)), 4);
+  g.strategy = { id: "B14", rolls: 0, data: { start: 6, across: true, step: 3, collected: 0 } };
+  g = E.placeBet(g, { kind: "place", number: 6 }, $(12)).state;
+  g = E.placeBet(g, { kind: "place", number: 8 }, $(6)).state;
+  g = E.placeBet(g, { kind: "buy", number: 5 }, $(5)).state;
+  g = E.placeBet(g, { kind: "buy", number: 9 }, $(5)).state;
+  g = E.placeBet(g, { kind: "buy", number: 4 }, $(5)).state;
+  g = E.placeBet(g, { kind: "buy", number: 10 }, $(5)).state;
+  g.strategy = { id: "B14", rolls: 1, data: { start: 6, across: true, step: 3, collected: 0, regressDone: false } };
+  g = roll(g, 5).state;
+  const bank = g.bankroll;
+  let a = autoBet(g, "B14", $(5), { count: false });
+  assert.equal(a.state.bets.buy[5], $(5));
+  assert.ok(a.state.bankroll >= bank);
+  assert.equal(a.state.strategy.data.collected, 1);
+  assert.notEqual(a.state.strategy.data.down, true);
+  g = roll(a.state, 9).state;
+  a = autoBet(g, "B14", $(5), { count: false });
+  assert.equal(a.state.bets.buy[9], 0);
+  assert.equal(a.state.bets.place[6], 0);
+  assert.equal(a.state.strategy.data.down, true);
+  assert.equal(a.state.phase, "point");
+  a = autoBet(a.state, "B14", $(5), { count: false });
+  assert.equal(a.state.bets.place[6], 0);
+  g = a.state;
+  g.phase = "come-out";
+  g.point = null;
+  a = autoBet(g, "B14", $(5), { count: false });
+  assert.equal(a.state.bets.place[6], 0);
+  g = point(a.state, 8);
+  a = autoBet(g, "B14", $(5), { count: false });
+  assert.equal(a.state.bets.place[6], $(12));
 });
