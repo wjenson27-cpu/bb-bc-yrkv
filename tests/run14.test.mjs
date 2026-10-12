@@ -197,7 +197,7 @@ test("dome readouts, lockup, Field rings, and FAIR fit", async (t) => {
           assert.ok(field.homeLeft <= field.hudLeft + 24, tag + " home " + field.homeLeft);
           assert.ok(field.lock.left < field.vw * 0.35, tag + " lockup left " + field.lock.left);
           assert.ok(field.segRight <= field.hudRight + 1, tag + " switch " + field.segRight + " hud " + field.hudRight);
-          assert.match(field.home, /billy-A-avatar-round\.svg$/, tag);
+          assert.match(field.home, /hud-billy-A-36@1x\.png$/, tag);
         }
       }
       await page.locator("button.dot[aria-label='Dice']").click();

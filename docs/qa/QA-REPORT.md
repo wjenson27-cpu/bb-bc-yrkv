@@ -239,6 +239,16 @@ At 360×640, with a point and the last dice up, FAIR ends at 348 inside a pill t
 
 Still open: the run 13 list above. R13-1 (dome result and strip), R13-2 (tutor long-shot wording), and R13-3 (Field screen-reader label) are closed in this pass.
 
+## Run 15
+
+The board uses the Design Desk felt (`.felt.bfx`) for Regular and Crapless. At 320×568, 390×844, and 844×390 the felt stays inside the phone, amount pills stay inside their boxes, and a tap on a number hits the active Place, Buy, or Lay half. Compare: `run15-board-regular-320x568.png`, `run15-board-regular-390x844.png`, `run15-board-regular-844x390.png`, `run15-board-crapless-320x568.png`, `run15-board-crapless-390x844.png`, `run15-board-crapless-844x390.png`.
+
+The seven-out toast is a compact row over the header on portrait screens up to 960px tall, so 390×844 and 430×932 no longer cover the glass. SEVEN OUT stays on one line. Compare: `run15-seven-320x568.png`, `run15-seven-390x844.png`, `run15-seven-430x932.png`.
+
+Portrait Home is the 36px Option A avatar (`hud-billy-A-36`) with no CSS ring, nudged 3px left. Landscape keeps the 32px mark filling the circle. The first pager frame is placed without the slide-in, so a swipe that starts on the Field changes the screen. Experienced Tutor names the Field A1.8 line and the edge, chance, and pay for each hop and repeater. A C&E or Horn unit note, and the first hop lesson, share the toast with the house-edge warning. The dome “Come on, N!” bubble sits 2px above the result line.
+
+103 tests pass. `robots` meta `noindex, nofollow` is still on the page.
+
 ## Still short of the mockups
 
 The felt is the right material and order. It is still denser than mockup 15, and felt cells are under 44px so the Pass Line fits. Dock, chips, and bet-panel steppers are at least 44px.

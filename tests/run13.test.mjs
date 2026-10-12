@@ -218,7 +218,7 @@ test("short screens keep the dice, the Field, and the avatar", async (t) => {
           };
         });
         if (w === 844) assert.match(avatar.src, /topleft-mark-ring-32\.svg$/, tag);
-        else assert.match(avatar.src, /billy-A-avatar-round\.svg$/, tag);
+        else assert.match(avatar.src, /hud-billy-A-36@1x\.png$/, tag);
         assert.ok(Math.abs(avatar.bw - avatar.bh) < 0.6, tag + " avatar box " + avatar.bw + "x" + avatar.bh);
         assert.ok(Math.abs(avatar.iw - avatar.ih) < 0.6, tag + " avatar image " + avatar.iw + "x" + avatar.ih);
         assert.ok(Math.abs(avatar.iw - avatar.bw) < 1 && Math.abs(avatar.ih - avatar.bh) < 1, tag + " image fills the circle");
