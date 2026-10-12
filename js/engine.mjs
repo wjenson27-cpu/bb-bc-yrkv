@@ -1701,15 +1701,27 @@ export function isLongShot(spot) {
     kind === "tall" || kind === "all" || kind === "hardAllDay" || kind === "repeater";
 }
 
+const REPEATER_ODDS = {
+  2: "1 in 49", 12: "1 in 49",
+  3: "1 in 64", 11: "1 in 64",
+  4: "1 in 81", 10: "1 in 81",
+  5: "1 in 97.7", 9: "1 in 97.7",
+  6: "1 in 113.4", 8: "1 in 113.4",
+};
+
+function hopSpot(spot) {
+  return spot && spot.kind === "hop" ? normalizeHop(spot) : spot;
+}
+
 function tutorChance(spot) {
   if (spot.kind === "any7" || spot.kind === "ce" || spot.kind === "horn") return "Wins 6 of 36";
   if (spot.kind === "anyCraps") return "Wins 4 of 36";
-  if (spot.kind === "hop") return "Wins 1 or 2 of 36";
+  if (spot.kind === "hop") return HARD_HOPS.includes(hopSpot(spot).pair) ? "1 of 36" : "2 of 36";
   if (spot.kind === "hardway") return spot.number === 6 || spot.number === 8 ? "About 1 in 11" : "About 1 in 9";
   if (spot.kind === "small" || spot.kind === "tall") return "About 1 in 38";
   if (spot.kind === "all") return "About 1 try in 190";
   if (spot.kind === "hardAllDay") return "About 1 in 210";
-  if (spot.kind === "repeater") return "About 1 in 31 to 1 in 81";
+  if (spot.kind === "repeater") return REPEATER_ODDS[spot.number] || "";
   return "";
 }
 
@@ -1718,12 +1730,12 @@ function tutorPay(spot) {
   if (spot.kind === "anyCraps") return "Pays 7 to 1";
   if (spot.kind === "ce") return "Pays 3 to 1 on craps and 7 to 1 on 11";
   if (spot.kind === "horn") return "Pays 30 to 1 and 15 to 1";
-  if (spot.kind === "hop") return "Pays 15 to 1 easy and 30 to 1 hard";
+  if (spot.kind === "hop") return HARD_HOPS.includes(hopSpot(spot).pair) ? "Pays 30 to 1" : "Pays 15 to 1";
   if (spot.kind === "hardway") return spot.number === 6 || spot.number === 8 ? "Pays 9 to 1" : "Pays 7 to 1";
   if (spot.kind === "small" || spot.kind === "tall") return "Pays 31 for 1";
   if (spot.kind === "all") return "Pays 156 for 1";
   if (spot.kind === "hardAllDay") return "Pays 165 for 1";
-  if (spot.kind === "repeater") return "Pays the repeater table";
+  if (spot.kind === "repeater" && REPEATER_FOR[spot.number]) return "Pays " + REPEATER_FOR[spot.number] + " for 1";
   return "";
 }
 
@@ -1735,6 +1747,9 @@ function tutorPay(spot) {
 export function tutorEdgeNote(spot, mode, experienced) {
   if (!spot) return "";
   if (spot.kind === "field") {
+    if (experienced) {
+      return "Field: 16 of 36 wins (2 and 12 pay 2 to 1); 5, 6, 7 and 8 lose. 5.56% edge per roll (2.78% with 12 at 3:1).";
+    }
     return "Field: wins on 16 of 36 rolls, but the 5–8 numbers lose. 5.56% edge.";
   }
   const edge = edgeFor(spot, mode);
@@ -1754,6 +1769,17 @@ export function tutorEdgeNote(spot, mode, experienced) {
     if (bits.length) line += " " + bits.join(". ") + ".";
   }
   return line;
+}
+
+/** One toast: a unit note or first-hop lesson, then the edge warning. */
+export function tutorToastLine(spot, mode, experienced, note, warningOn) {
+  const edgeNote = warningOn === false ? "" : tutorEdgeNote(spot, mode, experienced);
+  const warning = edgeNote
+    ? (spot.kind === "field" ? edgeNote : describeSpot(spot) + ". " + edgeNote)
+    : "";
+  const lead = note || "";
+  if (lead && warning) return lead + " " + warning;
+  return lead || warning;
 }
 
 export const EDGES = {

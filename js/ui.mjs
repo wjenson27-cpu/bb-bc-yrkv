@@ -405,8 +405,25 @@ function snap() {
   const stage = document.getElementById("stage");
   if (stage) stage.dataset.page = String(page);
   if (!pager) return;
-  pager.style.transition = motionOff() ? "none" : "";
-  pager.style.transform = "translateX(" + (-page * 100 / 3) + "%)";
+  const target = "translateX(" + (-page * 100 / 3) + "%)";
+  if (motionOff()) {
+    pager.style.transition = "none";
+    pager.style.transform = target;
+    return;
+  }
+  // The pager starts at translateX(0). Animating the first jump to the board
+  // leaves the felt half off-screen for the whole 0.28s ease, so a swipe that
+  // starts on the Field misses. Place that first frame instantly; later snaps
+  // (a finished swipe, a dot tap) still ease.
+  if (!pager.style.transform) {
+    pager.style.transition = "none";
+    pager.style.transform = target;
+    void pager.offsetWidth;
+    pager.style.transition = "";
+    return;
+  }
+  pager.style.transition = "";
+  pager.style.transform = target;
 }
 
 function onClick(e) {
@@ -696,15 +713,15 @@ function addBet(ds) {
   game = res.state;
   A.chip();
   haptic(10);
-  const edgeNote = E.tutorEdgeNote(spot, game.mode, settings.tutorTrack === "experienced");
-  if (note) toast(note);
-  else if (settings.tutorOn && edgeNote && !mutedTips["edge-" + spot.kind]) {
-    toast(spot.kind === "field" ? edgeNote : E.describeSpot(spot) + ". " + edgeNote);
-  }
+  let lesson = "";
   if (settings.tutorOn && spot.kind === "hop" && !seenTips.hop && !mutedTips.hop) {
     seenTips.hop = true;
-    toast("A hop is one exact pair on the next roll. A hardway stays up for the pair or a 7.");
+    lesson = "A hop is one exact pair on the next roll. A hardway stays up for the pair or a 7.";
   }
+  const lead = [note, lesson].filter(Boolean).join(" ");
+  const warningOn = settings.tutorOn && !mutedTips["edge-" + spot.kind];
+  const line = E.tutorToastLine(spot, game.mode, settings.tutorTrack === "experienced", lead, warningOn);
+  if (line) toast(line);
   if (settings.tutorOn && spot.kind === "place" && (spot.number === 2 || spot.number === 12 || spot.number === 3 || spot.number === 11) && !seenTips.b9 && !mutedTips.b9) {
     seenTips.b9 = true;
     toast("Place " + spot.number + " costs more than Buy. Open B9 in Learn for the comparison.");
