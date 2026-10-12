@@ -227,10 +227,9 @@ function last20Sheet() {
   const tiles = rows.map((h) => diceReadout(h.d1, h.d2, 20, { sevenOut: h.result === "seven-out", aria: E.rollCaption(h.d1, h.d2).aria })).join("");
   openSheet("<h2>Last 20</h2><div class='last20'>" + (tiles || "<p>No rolls yet.</p>") + "</div><div class='actions'><button class='go' data-act='close'>Close</button></div>");
 }
+let numBet = (() => { try { return localStorage.getItem("bb-numbet") || "place"; } catch { return "place"; } })();   // board fix: what a tap on a number does
 function faceWord(n) {
-  if (n === 6) return "SIX";
-  if (n === 9) return "NINE";
-  return String(n);
+  return String(n);   // R15-10: digits 6/9 on both boards (the words cannot reach 20px at 375 in a Crapless box)
 }
 function edgeTone(n) {
   if (n <= 2) return "good";
@@ -431,6 +430,7 @@ function onClick(e) {
   if (act === "play") { startMode(t.dataset.mode || "regular"); return; }
   if (act === "mode") { switchMode(t.dataset.mode); return; }
   if (act === "chip") { settings.chip = Number(t.dataset.cents); haptic(8); A.chip(); save(); paint(); return; }
+  if (act === "numbet") { if (t.disabled) return; numBet = t.dataset.mode; localStorage.setItem("bb-numbet", numBet); haptic(8); paint(); return; }
   if (act === "bet") { addBet(t.dataset); return; }
   if (act === "take") { takeBet(t.dataset); return; }
   if (act === "roll") { doRoll(); return; }
@@ -1456,16 +1456,42 @@ function noteFair() {
   if (ev.unlocked.length) queueUnlocks(ev.unlocked);
 }
 function fitFelt() {
+  // fitFelt v2 (board fix, run 15): pick a felt layout for the space, then scale it.
+  //   tall  : portrait with room (390x844, 430x932): the classic 354 x 471 felt
+  //   short : short portrait (320/360/375): felt as wide as the rail, height from the numeral floor
+  //   land  : landscape: two columns, 704 felt px wide
+  // k never drops below the numeral floor (numbers >= 26px at 375+, 25px at 360, 22.2px at 320).
   const stage = document.getElementById("stage");
   if (!stage || view !== "play") return;
-  const felts = stage.querySelectorAll(".felt");
-  const s = stage.getBoundingClientRect();
-  let k = Math.min(s.width / 390, Math.max(160, s.height) / 505);
-  if (!(k > 0)) k = 0.78;
-  if (k < 0.78) k = 0.78;
-  if (k > 1.12) k = 1.12;
-  document.documentElement.style.setProperty("--felt-k", k.toFixed(3));
-  felts.forEach((f) => f.classList.add("scaled"));
+  stage.querySelectorAll(".felt").forEach((f) => {
+    f.classList.add("scaled");
+    if (!f.classList.contains("bfx")) return;
+    const page = f.closest(".page"); if (!page) return;
+    const cs = getComputedStyle(page);
+    const aw = page.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 20;   // 20 = rail padding
+    const ah = page.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 20;
+    if (!(aw > 0 && ah > 0)) return;
+    const z = window.innerWidth < 360 ? 0.9091 : 1;            // the run12 320 column zoom
+    const crap = f.classList.contains("mode-crapless");
+    const portrait = window.innerHeight > window.innerWidth;
+    const floor = window.innerWidth < 360 ? 22.3 / (34 * z) : (window.innerWidth < 375 && portrait) ? 25 / 34 : 26 / 34;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    let kind, k, fw, fh;
+    if (aw / ah > 1.7) {
+      kind = "land"; const fixed = crap ? 228 : 170;
+      k = clamp(Math.min(aw / 704, (ah - 44 / z) / fixed), floor, 1.12); fw = aw / k; fh = Math.max(ah / k, fixed + 44 / (k * z));
+    } else if (ah / aw >= 1.25) {
+      kind = "tall"; k = clamp(Math.min(aw / 354, ah / 471), floor, 1.12); fw = 354; fh = 471;
+    } else {
+      kind = "short"; const fixed = crap ? 317 : 298, fmin = crap ? 309 : 282;   // props row: 84 target, 76 (Crapless) / 68 (Regular) min
+      k = clamp((ah - 44 / z) / fixed, floor, Math.min(1.12, aw / 354)); const extra = crap ? Math.max(0, 88 / (k * z) + 6 - 132) : 0;   // Crapless boxes stay >= 44px tall
+      fw = aw / k; fh = Math.max(ah / k, fmin + extra + 44 / (k * z));
+    }
+    ["lay-tall", "lay-short", "lay-land"].forEach((c) => f.classList.toggle(c, c === "lay-" + kind));
+    f.style.setProperty("--fw", fw.toFixed(2) + "px");
+    f.style.setProperty("--fh", fh.toFixed(2) + "px");
+    document.documentElement.style.setProperty("--felt-k", k.toFixed(4));
+  });
   measureChrome();
 }
 function cubeMarkup(which) {
@@ -2261,6 +2287,7 @@ function paint() {
   if (sheet) sheet.innerHTML = play && betsOpen ? betPanelHTML() : "";
   if (play) {
     document.getElementById("pager").innerHTML = pageHTML(0) + pageHTML(1) + pageHTML(2);
+    fitFelt();   // board fix: lay out the new felt before the first frame (no flash of the default grid)
     syncDice();
     document.getElementById("dots").innerHTML = dotsHTML();
     document.getElementById("dock").innerHTML = dockHTML();
@@ -2291,7 +2318,7 @@ function hudHTML() {
     "<button class='" + (game.mode === "regular" ? "on" : "") + "' data-act='mode' data-mode='regular'>Regular</button>" +
     "<button class='" + (game.mode === "crapless" ? "on" : "") + "' data-act='mode' data-mode='crapless'>Crapless</button></div>";
   return "<div class='hud-row1'><button class='homebtn' data-act='view' data-view='home' aria-label='Home'>" +
-    "<img class='home-avatar' src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt=''>" +
+    "<img class='home-avatar' alt='' width='36' height='36' src='assets/mascots/dealer-billy/hud/hud-billy-A-36@1x.png' srcset='assets/mascots/dealer-billy/hud/hud-billy-A-36@1x.png 1x, assets/mascots/dealer-billy/hud/hud-billy-A-36@2x.png 2x, assets/mascots/dealer-billy/hud/hud-billy-A-36@3x.png 3x'>" +
     "<img class='home-mark' src='assets/logos/topleft-mark-ring-32.svg' alt=''></button>" +
     "<img class='lockup' src='assets/logos/topleft-lockup.svg' alt='Billy Bubs Bubble Craps'>" +
     mode + "</div>" +
@@ -2406,31 +2433,42 @@ function boardHTML() {
   const numHTML = nums.map((n) => {
     const come = game.bets.comeBets[n];
     const word = faceWord(n);
-    const spelled = n === 6 || n === 9 ? " spelled" : "";
+    const spelled = "";
+    const amt = (c) => c ? "<b class='betamt'>" + money(c) + "</b>" : "";
+    const dc = !crapless && game.bets.dontComeBets[n];
+    const layTot = dc && dc.amount ? dc.amount + (dc.odds || 0) : 0;
+    const layHalf = crapless ? "" : "<button class='half lay" + (layTot ? " has" : "") + "' data-act='bet' data-kind='dontComeOdds' data-number='" + n + "' aria-label='Lay " + n +
+      (layTot ? ", Don’t Come " + money(dc.amount) + (dc.odds ? " plus lay odds " + money(dc.odds) : "") : ", needs a Don’t Come on " + n) + "'><span>LAY</span>" + chipStack(layTot) + amt(layTot) + "</button>";
     const onPuck = game.phase === "point" && game.point === n
       ? "<img class='feltpuck' src='assets/icons/puck-on.svg' alt='Point on'>"
       : "";
-    return "<div class='numbox'><button class='half buy" + (b.buy[n] ? " has" : "") + "' data-act='bet' data-kind='buy' data-number='" + n + "' aria-label='Buy " + n + (b.buy[n] ? ", " + money(b.buy[n]) : "") + "'><span>BUY</span>" +
-      chipStack(b.buy[n]) + "</button><div class='face" + spelled + "'>" + word + onPuck +
+    return "<div class='numbox" + (!crapless && !layTot ? " nolay" : "") + "'>" + layHalf + "<button class='half buy" + (b.buy[n] ? " has" : "") + "' data-act='bet' data-kind='buy' data-number='" + n + "' aria-label='Buy " + n + (b.buy[n] ? ", " + money(b.buy[n]) : "") + "'><span>BUY</span>" +
+      chipStack(b.buy[n]) + amt(b.buy[n]) + "</button><div class='face" + spelled + "'>" + word + onPuck +
       (come && come.amount ? "<div class='cmark'>C " + money(come.amount) + "</div>" : "") +
       "</div><button class='half place" + (b.place[n] ? " has" : "") + "' data-act='bet' data-kind='place' data-number='" + n + "' data-teach='place-" + n + "' aria-label='Place " + n + (b.place[n] ? ", " + money(b.place[n]) : "") + "'><span>PLACE</span>" +
-      chipStack(b.place[n]) + "</button></div>";
+      chipStack(b.place[n]) + amt(b.place[n]) + "</button></div>";
   }).join("");
   const dont = crapless ? "" : spotButton({ kind: "dontPass", name: "DON'T PASS", pay: "BAR 12", stake: b.dontPass, label: "Don't Pass" }) +
     spotButton({ kind: "dontPassOdds", name: "LAY", pay: "6x", stake: b.dontPassOdds, label: "Lay odds" });
+  const dcPts = !crapless && Object.values(game.bets.dontComeBets).some((s) => s && s.amount);
+  const nb = (numBet === "lay" && (crapless || !dcPts)) ? "place" : numBet;
+  const seg = (m, label, off) => "<button type='button' class='" + m + (nb === m ? " on" : "") + "' data-act='numbet' data-mode='" + m + "' role='radio' aria-checked='" + (nb === m) + "'" +
+    (off ? " disabled title='Lay odds need a Don’t Come on a number'" : "") + ">" + label + "</button>";
+  const numToggle = "<div class='numbet' role='radiogroup' aria-label='Tap a number to'><small>NUMBERS</small>" +
+    seg("place", "Place") + seg("buy", "Buy") + (crapless ? "" : seg("lay", "Lay", !dcPts)) + "</div>";
   const hornFoot = "<div class='hornfoot'>" +
     spotButton({ kind: "anyCraps", name: "ANY CRAPS", pay: "7 TO 1", stake: b.anyCraps, label: "Any Craps" }) +
     spotButton({ kind: "ce", name: "C & E", pay: "C 3:1 · E 7:1", stake: b.ce, label: "C and E" }) +
     spotButton({ kind: "horn", name: "HORN", pay: "4-WAY", stake: b.horn, label: "Horn four way" }) +
     "</div>";
-  return "<div class='rail'><div class='felt felt-tex'>" +
+  return "<div class='rail'><div class='felt felt-tex bfx mode-" + (crapless ? "crapless" : "regular") + "' data-numbet='" + nb + "'>" +
     "<div class='feltprint'><img src='assets/logos/billybubs-wordmark-small-felt-print-2ink.svg' alt='Billy Bubs'><span>★ PRACTICE · PLAY MONEY ★</span></div>" +
     ats +
     "<div class='nums " + (crapless ? "crap" : "reg") + "'>" + numHTML + "</div>" +
-    "<div class='band" + (crapless ? "" : " two") + "'>" +
+    "<div class='band comeband" + (crapless ? "" : " two") + "'>" +
     spotButton({ kind: "come", cls: "come", name: "COME", pay: crapless ? "7 WINS" : "7 · 11", stake: b.come, label: "Come" }) +
     (crapless ? "" : spotButton({ kind: "dontCome", name: "DON'T COME", pay: "BAR 12", stake: b.dontCome, label: "Don't Come" })) +
-    "</div>" +
+    numToggle + "</div>" +
     "<div class='band fieldband'>" + fieldSpot(b.field) + "</div>" +
     "<div class='prop'><div class='horncol'><div class='box2'>" + horn + "</div>" + hornFoot + "</div><div class='midcol'>" +
     spotButton({ kind: "any7", cls: "bigred", name: "BIG RED", pay: "4 TO 1", stake: b.any7, label: "Big Red any seven" }) +
