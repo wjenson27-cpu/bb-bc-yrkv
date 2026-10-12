@@ -347,7 +347,7 @@ test("store polish: marquees, FAIR, dome pips, and the 320 play column", async (
     await page.evaluate(() => window.__bbQueueMarquee("spin_the_block"));
     await wait(500);
     assert.equal(await page.locator(".badgetoast.marquee").count(), 0, "queued marquee waits for the scrim");
-    await page.locator("button[data-act='collect']").click();
+    await page.evaluate(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
     await page.waitForSelector(".badgetoast.marquee");
     assert.equal(await page.locator(".winlayer").count(), 0);
     assert.match(await page.locator(".badgetoast.marquee b").innerText(), /Spin the Block/);

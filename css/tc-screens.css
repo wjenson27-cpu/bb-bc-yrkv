@@ -65,7 +65,7 @@
 .tc-reps .rep b{font:900 16px/1 var(--serif)}.tc-reps .rep small{font:700 8.5px/1 var(--sans);color:#D8E2EE}
 .tc-reps .lm{display:flex;gap:2px}.tc-reps .lm i{width:5px;height:5px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}.tc-reps .lm i.on{background:#FFD36A;box-shadow:none}
 /* ---------- sheets (picker / compare / paywall) ---------- */
-.tc-sheet{width:100%;max-width:640px;display:flex;flex-direction:column;min-height:0;border-radius:18px 18px 0 0;background:var(--panel);border:1px solid var(--panel-line);padding:10px 10px 0;overflow:hidden}
+.tc-sheet{width:100%;max-width:640px;height:100%;display:flex;flex-direction:column;min-height:0;border-radius:18px 18px 0 0;background:var(--panel);border:1px solid var(--panel-line);padding:10px 10px 0;overflow:hidden}
 .tc-sheet .sh small{font:800 9.5px/1 var(--sans);letter-spacing:.16em;color:var(--accent)}
 .tc-sheet h1{margin:4px 0 6px;font:900 21px/1.1 var(--serif);color:#FFF1C2}
 .tc-picker .filters{display:flex;gap:6px;overflow:hidden;flex-wrap:wrap}
@@ -125,8 +125,9 @@
 .tc-compare .mt td{padding:4px;border-bottom:1px solid rgba(255,255,255,.06);font-variant-numeric:tabular-nums}
 .tc-compare .mt td small{font:700 9px/1 var(--sans);color:#C8D3E2;margin-left:4px}.tc-compare .mt .pos{color:#7DFFB3}.tc-compare .mt .neg{color:#FF9A9A}
 .tc-app.short .tc-compare .mt{display:none}
-.tc-picker .filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.tc-picker .filters button{height:44px;flex:0 0 auto}
-.tc-picker .cmp{height:44px}
+.tc-picker .filters{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.tc-picker .filters button{height:44px;min-width:44px;flex:0 0 auto}
+.tc-picker .cmp{height:44px;min-width:44px}
+.tc-sheet a{display:flex;align-items:center;min-height:44px;flex:0 0 auto;color:#FFE7A0;font:800 13px/1 var(--sans)}
 .tc-shooter .pair{gap:22px}.tc-cube.lg{--s:58px}
 .tc-app.short .tc-firetile .note{display:none}.tc-app.short .tc-firetile{gap:6px;padding:8px}.tc-app.short .tc-side{gap:6px}
 .tc-app.land .tc-side{max-width:none;display:grid;grid-template-columns:1fr 1fr;align-items:start}

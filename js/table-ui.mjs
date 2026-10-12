@@ -294,8 +294,10 @@ function fitTable() {
   if (!f || !stage) return;
   f.classList.toggle("land", land);
   const st = stage.getBoundingClientRect();
+  const coach = stage.querySelector(".tc-coach");
+  const coachH = coach ? coach.offsetHeight + 12 : 0;
   const ring = land ? 8 : h < 700 ? 4.5 : 8.5 * Math.min(1, w / 390);
-  const aw = st.width - 2 * ring, ah = st.height - 2 * ring;
+  const aw = st.width - 2 * ring, ah = Math.max(180, st.height - 2 * ring - coachH);
   let k, rows;
   if (!land) {
     k = Math.min(1.12, aw / 354);
@@ -380,7 +382,7 @@ function doRoll() {
     const targets = [document.querySelector(".tc-hud .puck"), document.querySelector(".numbox.point")].filter(Boolean);
     PC.celebratePoint({
       targets: targets.length ? targets : [document.querySelector(".tc-hud")],
-      avoid: [document.querySelector(".tc-shoot"), document.querySelector(".tc-rail")],
+      avoid: [".tc-shoot", ".tc-rail", ".tc-hud", ".tc-keys", ".tc-dots", ".tc-notice"].map((s) => document.querySelector(s)),
       point: pointBefore,
       net: quiet ? 0 : settled.net,
       big: !quiet && settled.net >= 25 * Math.max(passBefore, 1),
@@ -541,7 +543,7 @@ if (shot === "celebrate" || shot === "base" || shot === "big" || shot === "huge"
   const copy = PT.celebrationCopy({ tier: tier === "fire" ? "huge" : tier, point: 6, points: tier === "huge" || tier === "fire" ? 3 : tier === "big" ? 2 : 1, net: 7000, stinger: tier === "fire" ? PT.fireStinger(4, true) : "" });
   requestAnimationFrame(() => PC.celebratePoint({
     targets: [document.querySelector(".tc-hud .puck"), document.querySelector("[data-n='6']")],
-    avoid: [document.querySelector(".tc-shoot")],
+    avoid: [".tc-shoot", ".tc-rail", ".tc-hud", ".tc-keys", ".tc-dots", ".tc-notice"].map((s) => document.querySelector(s)),
     point: 6, net: 7000, tier: copy.tier, big: tier !== "base", duration: copy.duration,
     line: copy.call, cheer: copy.cheer, stinger: copy.stinger, hold: true,
     billie: A + "mascots/billie/billie-C-winner.svg",

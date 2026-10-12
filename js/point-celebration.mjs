@@ -80,7 +80,7 @@ export function celebratePoint(o) {
   ];
   const box = (c) => ({ left: c[0], top: c[1], right: c[0] + pw, bottom: c[1] + ph });
   const ok = (c) => c[1] >= 4 && c[1] + ph <= H - 4 && !avoid.some((a) => hit(box(c), a));
-  const pos = cands.find(ok) || [8, 8];
+  const pos = cands.find(ok) || [8, Math.max(56, Math.min(60, H - ph - 8))];
   plate.style.left = pos[0] + "px";
   plate.style.top = Math.max(4, pos[1]) + "px";
   const timers = [];

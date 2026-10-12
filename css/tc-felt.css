@@ -2,6 +2,7 @@
    · Come | Don't Come · Field · Horn 2x2 | Big Red over Hard Way All Day | Hard Ways 2x2 · Pass | Odds | Don't Pass | Lay Odds.
    Same method as the Bubble Craps run-15 board fix: fixed rows (≥44 px each), in-box amount pills, corner chip badges,
    real digits 6 and 9, no squeeze, no scroll. Rows are set in px by fitTable(); fonts by --k. */
+.tc-stage:has(.tc-coach) .tc-felt{align-self:start}
 .tc-felt{--k:1;position:relative;align-self:center;width:100%;max-width:520px;display:grid;gap:var(--g,3px);padding:var(--fp,6px);
   border-radius:calc(22px*var(--k));
   background:

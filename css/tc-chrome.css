@@ -147,12 +147,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:#04060A}
 .tc-app.narrow .tc-dots .pill{padding-inline:6px;max-width:34%}
 /* rev 15b prompts (NEW). Convert = BC coach card (Billy teaches). Colour-up offer = BC toast, no mascot, non-blocking. */
 .tc-coach.convert .acts button{flex:1 1 40%}
-.tc-dock{position:relative}
-.tc-offer{position:absolute;left:10px;right:10px;bottom:calc(100% + 6px);z-index:31;display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-radius:14px;
-  background:rgba(4,8,14,.95);border:1px solid rgba(255,211,106,.55);box-shadow:0 8px 22px rgba(0,0,0,.6);pointer-events:none}
+.tc-dock{flex-wrap:wrap}
+.tc-offer{position:relative;flex:1 0 100%;z-index:31;display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-radius:14px;
+  background:rgba(4,8,14,.95);border:1px solid rgba(255,211,106,.55);box-shadow:0 8px 22px rgba(0,0,0,.6)}
 .tc-offer .t{flex:1;font:600 13px/1.25 var(--sans);color:#fff;min-width:0}
 .tc-offer .t b{color:#FFD36A}
 .tc-offer button{pointer-events:auto;min-height:44px;min-width:44px;border-radius:12px;font:800 11px/1 var(--sans);letter-spacing:.08em}
 .tc-offer .go{padding:0 12px;background:linear-gradient(180deg,#FFE7A0,#D8AE52);color:#2A1C04;border:0}
 .tc-offer .x{background:transparent;border:1px solid rgba(255,255,255,.35);color:#fff;font-size:16px}
-.tc-app.land .tc-offer{position:fixed;left:12px;right:auto;width:min(420px,52vw);bottom:56px}
+.tc-app.land .tc-offer{position:relative;flex:0 0 auto;width:auto;left:auto;right:auto;bottom:auto}

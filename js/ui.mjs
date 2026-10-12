@@ -1027,7 +1027,7 @@ async function doRoll(source) {
   paint();
   snap();
   const big = isBigWin(settled);
-  const quiet = page === 2 || settled.result === "seven-out" || big || settled.result === "point-made";
+  const quiet = page === 2 || settled.result === "seven-out" || big;
   if (!quiet) showRollToast(settled, pressNote);
   else if (pressNote) queueToast(pressNote, "", 1200);
   celebrate(settled, handBefore, { point: pointBefore, pass: passBefore });
@@ -1736,7 +1736,7 @@ function celebrate(settled, before, extra) {
     const targets = [document.querySelector(".puckimg, .hud-puck, .puck"), document.querySelector(".dome-screen .result-line, .result")].filter(Boolean);
     celebratePoint({
       targets: targets.length ? targets : [document.getElementById("app") || document.body],
-      avoid: [document.querySelector("[data-act='roll']"), document.querySelector(".dock")],
+      avoid: ["[data-act='roll']", ".dock", ".hud-row1", ".tabbar"].map((s) => document.querySelector(s)),
       point: extra && extra.point,
       net: quiet ? 0 : settled.net,
       big: !quiet && isBigWin(settled),
