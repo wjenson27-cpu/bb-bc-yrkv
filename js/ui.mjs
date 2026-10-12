@@ -267,7 +267,7 @@ function heaterHTML(wide) {
   if (settings.blazing === false) return "";
   const tier = E.blazingTier(E.blazingScore(game.hand), game.hand.points);
   const filled = tier === "cold" ? 1 : tier === "warm" ? 2 : tier === "hot" ? 3 : 4;
-  const note = game.hand.rolls + " rolls · " + game.hand.points + " pt" + (game.hand.points === 1 ? "" : "s");
+  const note = E.countPhrase(game.hand.rolls, "roll") + " · " + E.countPhrase(game.hand.points, "pt", "pts");
   return "<div class='heater " + tier + (wide ? " wide" : " compact") + "' title='Cosmetic meter. Dice have no memory.'>" +
     "<img src='assets/icons/blazing-flame.svg' alt='' width='15' height='15'><b>" + tier.toUpperCase() + "</b>" +
     (wide ? "<small>" + note + "</small>" : "") + "<span class='segs'>" +
@@ -1343,12 +1343,12 @@ function finishSession(reason) {
   saveBoard();
   const s = boardData.session;
   const net = s ? E.netWorth(game) - s.startChips : 0;
-  const longest = s && s.longest ? s.longest + " rolls" : "none yet";
+  const longest = s && s.longest ? E.countPhrase(s.longest, "roll") : "none yet";
   const lossKept = !s || !s.lossCents ? "Loss limit off" : s.lossHit ? (s.rollAfterLoss ? "Loss limit hit, then play continued" : "Loss limit kept") : "Loss limit not reached";
   const winKept = !s || !s.winCents ? "Win goal off" : s.winHit ? (s.rollAfterWin ? "Win goal hit, then play continued" : "Win goal banked") : "Win goal not reached";
   const names = (s && s.badges || []).map((id) => { const b = B.badgeById(id); return b ? b.name : id; });
   const badgeLine = names.length ? names.join(", ") : "None this session";
-  openSheet("<h2>Session summary</h2><p>" + (s ? s.rolls : 0) + " rolls · " + (s ? s.hands : 0) + " hands</p><p>" + money(s ? s.startChips : 0) + " → " + money(E.netWorth(game)) + " · " + (net >= 0 ? "+" : "−") + money(Math.abs(net)) + "</p><p>Longest hand this session: " + longest + ".</p><p>" + lossKept + ". " + winKept + ".</p><p>Badges this session: " + esc(badgeLine) + ".</p><p>Practice chips carry over. A new session starts with your next roll.</p><div class='actions'><button class='go' data-act='close'>Close</button></div>");
+  openSheet("<h2>Session summary</h2><p>" + E.countPhrase(s ? s.rolls : 0, "roll") + " · " + E.countPhrase(s ? s.hands : 0, "hand") + "</p><p>" + money(s ? s.startChips : 0) + " → " + money(E.netWorth(game)) + " · " + (net >= 0 ? "+" : "−") + money(Math.abs(net)) + "</p><p>Longest hand this session: " + longest + ".</p><p>" + lossKept + ". " + winKept + ".</p><p>Badges this session: " + esc(badgeLine) + ".</p><p>Practice chips carry over. A new session starts with your next roll.</p><div class='actions'><button class='go' data-act='close'>Close</button></div>");
   paint();
 }
 function resetTable() {
@@ -1703,8 +1703,7 @@ function celebrate(settled, before) {
 }
 function rollHud() {
   const n = game.hand.rolls || 0;
-  const word = n === 1 ? "roll" : "rolls";
-  return "<div class='hud-roll' aria-label='This hand, " + n + " " + word + "'><small>Roll</small><strong>" + n + "</strong></div>";
+  return "<div class='hud-roll' aria-label='This hand, " + E.countPhrase(n, "roll") + "'><small>Roll</small><strong>" + n + "</strong></div>";
 }
 function recordHost() {
   let el = document.getElementById("record");
@@ -1739,7 +1738,7 @@ function postPending(initials, goBoard) {
   saveBoard();
   pendingRecord = null;
   closeRecord();
-  const label = res.record ? "New longest roll this week: " + res.entry.rolls + " rolls." : "Made the board. " + res.entry.rolls + " rolls.";
+  const label = (res.record ? "New longest roll this week: " : "Made the board. ") + E.countPhrase(res.entry.rolls, "roll") + ".";
   if (goBoard) {
     boardMode = res.entry.mode;
     boardScope = res.madeWeek ? "week" : "all";
@@ -1773,8 +1772,8 @@ function showRecordCard(preview) {
     preview.madeAll ? "All time #" + preview.rankAll : "",
   ].filter(Boolean).join(" · ");
   const title = preview.record ? "New record!" : "Made the board";
-  const rolls = preview.throws === 1 ? "1 roll" : preview.throws + " rolls";
-  const points = preview.points === 1 ? "1 point" : preview.points + " points";
+  const rolls = E.countPhrase(preview.throws, "roll");
+  const points = E.countPhrase(preview.points, "point");
   const mode = preview.mode === "crapless" ? "Crapless" : "Regular";
     const ended = preview.sevenOutDice
     ? "<p class='endedon'><span>Ended on</span> " + diceReadout(preview.sevenOutDice.d1, preview.sevenOutDice.d2, 20, { sevenOut: true }) + " <span class='outtag'>· seven out</span></p>"
@@ -1830,7 +1829,7 @@ function maybeRecord(before, settled, dice, hadBet) {
     if (res.ok) {
       boardData = res.data;
       saveBoard();
-      const line = res.record ? "New longest roll this week: " + res.entry.rolls + " rolls." : "Made the board. " + res.entry.rolls + " rolls.";
+      const line = (res.record ? "New longest roll this week: " : "Made the board. ") + E.countPhrase(res.entry.rolls, "roll") + ".";
       queueToast(line, "", settled.result === "seven-out" ? 3000 : 800);
     }
     handMeta = freshMeta();
@@ -1858,7 +1857,7 @@ function leaderHTML() {
     : "No finished hands yet. Every hand ends on a seven-out.";
   const list = rows.length ? "<ol class='boardlist'>" + rows.map((e, i) => {
     const mine = (e.initials || "") === you;
-    const pts = e.points === 1 ? "1 pt" : e.points + " pts";
+    const pts = E.countPhrase(e.points, "pt", "pts");
     const tier = e.topBlazingTier || "cold";
     return "<li class='boardrow" + (mine ? " you" : "") + "'>" +
       "<span class='rank medal " + (medals[i] || "") + "'>" + (i + 1) + "</span>" +
@@ -1871,10 +1870,10 @@ function leaderHTML() {
       "<span class='tierchip " + tier + "'>" + tier + "</span></li>";
   }).join("") + "</ol>" : "<article class='card boardempty'><img src='assets/mascots/billie/billie-C-hello.svg' alt='Bubbles Billie'><div><h3>No finished hands yet</h3><p>" + emptyCopy + "</p></div></article>";
   const live = game.hand && game.hand.rolls > 0
-    ? "<p class='liverow'>THIS HAND · LIVE · " + game.hand.rolls + " rolls so far · " + game.hand.points + " pt" + (game.hand.points === 1 ? "" : "s") + "</p>"
+    ? "<p class='liverow'>THIS HAND · LIVE · " + E.countPhrase(game.hand.rolls, "roll") + " so far · " + E.countPhrase(game.hand.points, "pt", "pts") + "</p>"
     : "";
   const prev = scope === "week" ? L.lastWeekBest(boardData.entries, mode, now) : null;
-  const prevLine = prev ? "<p class='weeknote'>Last week's best: " + prev.throws + " rolls.</p>" : "";
+  const prevLine = prev ? "<p class='weeknote'>Last week's best: " + E.countPhrase(prev.throws, "roll") + ".</p>" : "";
   const weekNote = scope === "week" ? "<p class='weeknote'>Resets Monday at 12:00 AM, on this device.</p>" : "";
   return "<section class='boardpage'><header class='boardhead'>" +
     "<img src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>" +
@@ -2976,7 +2975,7 @@ function fairHTML() {
     "<article class='card'><h3>Above and below expected</h3><p>" + (rolls.length ? hi.t + ": " + (hi.d >= 0 ? "+" : "") + hi.d.toFixed(1) + " vs expected · " + lo.t + ": " + lo.d.toFixed(1) : "Roll to fill this in.") + "</p></article>" +
     (function () {
       const st = F.streakStats(rolls);
-      return "<article class='card'><h3>Streaks</h3><p>Longest run without a 7: " + st.longestDry + ". Current run without a 7: " + st.currentDry + ".</p><p>In these rolls, longest hand: " + st.longestHand + " rolls. This hand: " + (game.hand.rolls || 0) + ". Longest hand all time: " + longestPosted() + ".</p><p>" + repeat + "</p><p class='muted'>A long gap is not a sign the next roll is different. A 7 is still 1 in 6.</p></article>";
+      return "<article class='card'><h3>Streaks</h3><p>Longest run without a 7: " + st.longestDry + ". Current run without a 7: " + st.currentDry + ".</p><p>In these rolls, longest hand: " + E.countPhrase(st.longestHand, "roll") + ". This hand: " + (game.hand.rolls || 0) + ". Longest hand all time: " + longestPosted() + ".</p><p>" + repeat + "</p><p class='muted'>A long gap is not a sign the next roll is different. A 7 is still 1 in 6.</p></article>";
     })() +
     "<p>Every roll uses your device's secure random generator. Each die is a fair 1 to 6, and the two dice are independent. Nothing on this screen, not your bets, your streak, or the Blazing meter, can change the next roll.</p>" +
     "<p class='muted'>RNG: " + (E.getRngSource() === "fallback" ? "basic (fallback)" : "secure") + ".</p>" +
