@@ -158,6 +158,7 @@ body.has-coach .dome-cast { visibility: hidden; }
   max-height: 360px;
   overflow: auto;
 }
+.fairhist .pinhand { position: sticky; top: 0; z-index: 1; background: #102418; }
 .fairhist li {
   display: flex;
   align-items: center;

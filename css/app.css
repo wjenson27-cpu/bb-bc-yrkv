@@ -1572,3 +1572,14 @@ img { max-width: 100%; display: block; }
   .pager { transition: opacity .16s linear; }
   .winstamp b { animation: none; }
 }
+@media (min-width: 1400px) {
+  body {
+    background:
+      radial-gradient(70% 50% at 18% 40%, #0b5a2b, transparent 55%),
+      radial-gradient(70% 50% at 82% 40%, #0b5a2b, transparent 55%),
+      #04110c;
+  }
+  .app { max-width: 480px; margin-inline: auto; overflow: hidden; box-shadow: 0 0 0 10px #c9a961, 0 24px 70px rgba(0,0,0,.45); }
+  #hud { width: 100%; max-width: 100%; }
+  #hud .hud-row2 { min-width: 0; max-width: 100%; }
+}

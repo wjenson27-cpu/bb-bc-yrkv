@@ -3,6 +3,7 @@
  * the dome speech gap, the seven-out toast, and the HUD avatar.
  */
 import test from "node:test";
+import { waitForPort } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -128,7 +129,7 @@ test("board, warnings, speech, seven-out toast, and the HUD avatar", async (t) =
   }
   const port = 8871;
   const server = serve(port);
-  await wait(300);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

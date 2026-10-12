@@ -2,8 +2,8 @@
    · Come | Don't Come · Field · Horn 2x2 | Big Red over Hard Way All Day | Hard Ways 2x2 · Pass | Odds | Don't Pass | Lay Odds.
    Same method as the Bubble Craps run-15 board fix: fixed rows (≥44 px each), in-box amount pills, corner chip badges,
    real digits 6 and 9, no squeeze, no scroll. Rows are set in px by fitTable(); fonts by --k. */
-.tc-stage:has(.tc-coach) .tc-felt{align-self:start}
-.tc-felt{--k:1;position:relative;align-self:center;width:100%;max-width:520px;display:grid;gap:var(--g,3px);padding:var(--fp,6px);
+.tc-stage:has(.tc-coach) .tc-felt{align-self:start;height:auto}
+.tc-felt{--k:1;position:relative;align-self:stretch;height:100%;width:100%;max-width:none;min-width:0;display:grid;gap:var(--g,3px);padding:var(--fp,6px);
   border-radius:calc(22px*var(--k));
   background:
     radial-gradient(70% 45% at 50% 0%,rgba(255,255,255,.10),transparent 70%),
@@ -80,9 +80,12 @@
 .tc-felt .pass{flex-direction:column}.tc-felt .pass .lb{font:900 calc(15px*var(--k))/1 var(--serif);letter-spacing:.08em}
 .tc-felt .print{position:absolute;left:50%;top:calc(-4px*var(--k));transform:translate(-50%,-100%);font:700 9px/1 var(--serif);letter-spacing:.2em;color:var(--line);opacity:.7;white-space:nowrap}
 /* ---------- landscape phones: props block on the left, main board on the right, line row full width ---------- */
-.tc-felt.land{max-width:none;grid-template-columns:minmax(196px,.9fr) minmax(0,2.2fr);
+.tc-felt.land{max-width:none;min-width:0;height:100%;overflow:hidden;grid-template-columns:minmax(0,.72fr) minmax(0,1.5fr);
   grid-template-areas:"props ats" "props nums" "props come" "props field" "line line"}
-.tc-felt.land .props{grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,1fr);
+.tc-felt.land .spot{overflow:hidden}
+.tc-felt.land .come .lb{font-size:clamp(13px, 4.2vw, 18px);-webkit-text-stroke:0}
+.tc-felt.land .numbox .half{font-size:8px;letter-spacing:0}
+.tc-felt.land .props{grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,minmax(0,1fr));min-height:0;
   grid-template-areas:"horn hard" "horn hard" "bigred bigred" "hwad hwad"}
 /* --- PLACE | BUY | LAY toggle: decides what a number-box tap bets (one number bet per number). 44x44 targets. --- */
 .tc-felt .numbet{display:flex;align-self:center;border-radius:10px;border:1px solid rgba(233,214,166,.6);overflow:hidden;background:rgba(0,0,0,.35)}

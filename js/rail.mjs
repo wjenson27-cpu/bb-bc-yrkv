@@ -21,7 +21,7 @@ export function railTotal(rail) {
 function copyRail(rail) {
   const r = emptyRail();
   DENOMS.forEach((d) => { r[d] = Math.max(0, Math.round(rail && rail[d] || 0)); });
-  r.cup = Math.max(0, Math.min(99, Math.round(rail && rail.cup || 0)));
+  r.cup = Math.max(0, Math.round(rail && rail.cup || 0));
   return r;
 }
 
@@ -37,6 +37,9 @@ export function railBreakdown(cents) {
   const fives = Math.min(4, Math.floor(left / 500));
   rail[500] = fives;
   left -= fives * 500;
+  const quarters = Math.min(4, Math.floor(left / 2500));
+  rail[2500] = quarters;
+  left -= quarters * 2500;
   for (const d of DENOMS) {
     const k = Math.floor(left / d);
     rail[d] += k;
@@ -53,12 +56,11 @@ function normalizeCup(rail) {
   if (rail.cup < 0) rail.cup = 0;
 }
 
-/** Break the smallest chip that can make `need` cents, one step down. A $1 breaks into the cup. */
+/** Break the smallest chip that can make `need` cents, one step down. A $1 breaks into the cup and stays there until the cents are taken. */
 function breakOne(rail, need) {
-  if (need < 100 && rail[100] > 0) {
+  if (need < 100 && rail[100] > 0 && rail.cup < need) {
     rail[100] -= 1;
     rail.cup += 100;
-    normalizeCup(rail);
     return { from: 100, to: "cup", count: 100, label: "Change: $1 → 100¢" };
   }
   const larger = DENOMS.filter((d) => rail[d] > 0 && DOWN[d] && d > need);
@@ -113,7 +115,10 @@ export function railPay(rail, cents) {
         left -= k * d;
       }
     }
-    if (left === 0) return { ok: true, rail: tmp, used, breaks };
+    if (left === 0) {
+      normalizeCup(tmp);
+      return { ok: true, rail: tmp, used, breaks };
+    }
     const step = breakOne(r, left);
     if (!step) return { ok: false, rail: copyRail(rail), used: {}, breaks, error: "Can't make change." };
     breaks.push(step);

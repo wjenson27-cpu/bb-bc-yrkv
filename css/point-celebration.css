@@ -23,7 +23,7 @@
   opacity:0;transform:translateY(12px);animation:pc-plate var(--pc-dur) cubic-bezier(.25,1,.5,1) forwards}
 .pc-plate img{width:46px;height:46px;flex:0 0 46px}
 .pc-plate .who{display:block;font:800 9.5px/1 var(--sans,system-ui);letter-spacing:.14em;color:#E4CC8F;text-transform:uppercase}
-.pc-plate b{display:block;font:800 16px/1.15 var(--serif,Georgia),serif;color:var(--pc-gold);white-space:normal}
+.pc-plate b{display:block;font:800 15px/1.15 var(--serif,Georgia),serif;color:var(--pc-gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
 .pc-plate .cheer,.pc-plate .sting{display:block;font:700 13px/1.2 var(--sans,system-ui);color:#F6EDD8}
 .pc-layer.quiet .pc-burst,.pc-layer.quiet .pc-rays,.pc-layer.reduce .pc-burst,.pc-layer.reduce .pc-rays{display:none}
 .pc-plate .amt{font:800 15px/1.1 var(--sans,system-ui);color:#7DFFB3;font-variant-numeric:tabular-nums}

@@ -330,6 +330,17 @@ function mount() {
   stage.addEventListener("pointerdown", (e) => {
     swallowClick = false;
     if (e.button != null && e.button !== 0) return;
+    const hold = e.target.closest("[data-act='bet']");
+    if (hold) {
+      const timer = setTimeout(() => {
+        const kind = hold.dataset.kind || "bet";
+        const n = hold.dataset.number || "";
+        toast("Preview " + kind + (n ? " " + n : "") + ". Long-press shows the bet. A tap still places it.");
+      }, 480);
+      const stop = () => clearTimeout(timer);
+      hold.addEventListener("pointerup", stop, { once: true });
+      hold.addEventListener("pointercancel", stop, { once: true });
+    }
     tracking = true;
     captured = false;
     fromButton = !!e.target.closest("button, a, input, [data-act]");
@@ -500,7 +511,6 @@ function onClick(e) {
   }
   if (act === "bets") { betsOpen = !betsOpen; paint(); return; }
   if (act === "collect") { clearWin(); return; }
-  if (act === "add-win") { addWinningChip(); return; }
   if (act === "same" || act === "addchip") { focusBet(act === "same"); return; }
   if (act === "takedown") { focusTake(); return; }
   if (act === "autoswipe") { settings.showDice = !settings.showDice; save(); paint(); return; }
@@ -518,7 +528,7 @@ function onClick(e) {
     paint();
     if (was === "off" && settings.autoPress !== "off" && !seenTips.autopress) {
       seenTips.autopress = true;
-      toast("Auto-press is on. After a Billy's Way hit it adds to that number, up to your max. Same odds, more at risk. A seven-out starts the count over.");
+      openSheet("<h2>Auto-press</h2><p>After a Billy's Way hit it adds to that number, up to your max. Same odds, more at risk. A seven-out starts the count over. The B5 coach uses this same control and stops after three lost opening spreads. Edge stays 1.52%.</p><div class='actions'><button class='go' data-act='close'>Got it</button></div>");
     }
     return;
   }
@@ -616,16 +626,32 @@ function onClick(e) {
   if (act === "badge") { openBadge(t.dataset.id); return; }
   if (act === "reset-records") { confirmResetRecords(); return; }
   if (act === "reset-records-yes") { wipeRecords(); return; }
-  if (act === "etiquette-done") {
-    ETIQUETTE.forEach((tip, i) => {
-      const noted = B.noteAction(boardData, { type: "etiquette", id: tip.id, complete: i === ETIQUETTE.length - 1 });
-      boardData.badges = noted.store.badges;
-      boardData.progress = noted.store.progress;
-      if (noted.unlocked.length) queueUnlocks(noted.unlocked);
-    });
+  if (act === "etiq-next" || act === "etiq-prev" || act === "etiquette-done") {
+    const deck = deckFor("bubble").all;
+    const tip = deck[Math.min(etiquetteAt, deck.length - 1)];
+    const noted = B.noteAction(boardData, { type: "etiquette", id: tip.id, complete: false });
+    boardData.badges = noted.store.badges;
+    boardData.progress = noted.store.progress;
+    if (act === "etiq-prev") etiquetteAt = Math.max(0, etiquetteAt - 1);
+    else if (act === "etiq-next") etiquetteAt = Math.min(deck.length - 1, etiquetteAt + 1);
+    else {
+      const seen = (boardData.progress && boardData.progress.etiquetteSeen) || [];
+      if (seen.length < 15) {
+        toast(seen.length + " of 15 cards viewed.");
+        paint();
+        return;
+      }
+      const done = B.noteAction(boardData, { type: "etiquette", id: tip.id, complete: true });
+      boardData.badges = done.store.badges;
+      boardData.progress = done.store.progress;
+      if (done.unlocked.length) queueUnlocks(done.unlocked);
+      toast("Table Manners" + (boardData.badges.table_manners ? " unlocked." : " noted."));
+      saveBoard();
+      setView("settings");
+      return;
+    }
     saveBoard();
-    toast("Table Manners" + (boardData.badges.table_manners ? " unlocked." : " noted."));
-    setView("settings");
+    paint();
     return;
   }
 }
@@ -702,7 +728,7 @@ function addBet(ds) {
   }
   if (spot.kind === "place" && (spot.number === 6 || spot.number === 8)) {
     const unit = 600;
-    let posted = Math.round((amount * 6) / 5 / unit) * unit;
+    let posted = Math.floor((amount * 6) / 5 / unit) * unit;
     if (!posted) posted = unit;
     if (posted > E.TABLE_MAX) {
       posted = Math.floor(E.TABLE_MAX / unit) * unit;
@@ -1190,6 +1216,8 @@ function queueUnlocks(ids) {
 function badgeBlocked() {
   if (rolling || document.querySelector(".recordcard")) return true;
   if (document.body.classList.contains("bigwin") || document.body.classList.contains("pc-on") || document.querySelector(".winlayer")) return true;
+  const next = badgeQueue[0];
+  if (next && (next === "hand_10_rolls" || next === "hand_20_rolls" || next === "hand_40_rolls" || next === "blazing_reached") && document.querySelector(".toast.show")) return true;
   return false;
 }
 function badgeHost() {
@@ -1491,7 +1519,15 @@ function measureChrome() {
 }
 function noteFair() {
   const scope = fairScope === "last" ? "last" : fairScope === "all" ? "all" : "session";
-  const ev = B.noteAction(boardData, { type: "fair-scope", scope, sawTest: true, mode: game.mode, now: Date.now() });
+  const card = document.getElementById("fairness-card");
+  const panel = document.getElementById("panel");
+  let saw = false;
+  if (card && panel) {
+    const c = card.getBoundingClientRect();
+    const p = panel.getBoundingClientRect();
+    saw = c.top < p.bottom - 8 && c.bottom > p.top + 8;
+  }
+  const ev = B.noteAction(boardData, { type: "fair-scope", scope, sawTest: saw, mode: game.mode, now: Date.now() });
   boardData.badges = ev.store.badges;
   boardData.progress = ev.store.progress;
   if (ev.unlocked.length) queueUnlocks(ev.unlocked);
@@ -1660,9 +1696,15 @@ function isBigWin(settled) {
   const stake = winningStake(settled);
   return stake > 0 && settled.net >= stake * 25;
 }
+let winSkip = null;
 function clearWin() {
   clearTimeout(celeTimer);
   cancelCelebration();
+  if (winSkip) {
+    removeEventListener("pointerdown", winSkip, { capture: true });
+    removeEventListener("keydown", winSkip, { capture: true });
+    winSkip = null;
+  }
   document.body.classList.remove("bigwin");
   const el = document.getElementById("overlay");
   if (el && el.querySelector(".winlayer")) el.innerHTML = "";
@@ -1691,15 +1733,9 @@ function showBigWin(settled) {
     burstChips(settled.net) + "</div>";
   clearTimeout(celeTimer);
   celeTimer = setTimeout(clearWin, 2500);
-  const skip = () => clearWin();
-  addEventListener("pointerdown", skip, { capture: true, passive: true, once: true });
-  addEventListener("keydown", skip, { capture: true, passive: true, once: true });
-}
-function addWinningChip() {
-  const lw = game.lastWin;
-  clearWin();
-  if (!lw) return;
-  addBet({ kind: lw.kind, number: lw.number, amount: settings.chip });
+  winSkip = () => clearWin();
+  addEventListener("pointerdown", winSkip, { capture: true, passive: true });
+  addEventListener("keydown", winSkip, { capture: true, passive: true });
 }
 function sevenToast(settled, extra) {
   const net = settled.net || 0;
@@ -1730,16 +1766,21 @@ function celebrate(settled, before, extra) {
     const points = settled.state.hand.points || 1;
     const tier = celebrationTier(points, { meterOn: settings.blazing !== false, blazing: settled.tier === "blazing" });
     const quiet = !(extra && extra.pass > 0);
+    const bigWin = !quiet && isBigWin(settled);
     const copy = celebrationCopy({
-      tier, quiet, point: extra && extra.point, points, hard: settled.dice && settled.dice.hard, net: settled.net,
+      tier, quiet, big: bigWin, point: extra && extra.point, points, hard: settled.dice && settled.dice.hard, net: settled.net,
     });
-    const targets = [document.querySelector(".puckimg, .hud-puck, .puck"), document.querySelector(".dome-screen .result-line, .result")].filter(Boolean);
+    const onDome = !!document.querySelector(".dome-screen");
+    const pointBox = extra && extra.point ? document.querySelector(".numbox [data-number='" + extra.point + "']") : null;
+    const targets = onDome
+      ? [document.querySelector(".dome-screen .result-line")].filter(Boolean)
+      : [pointBox ? pointBox.closest(".numbox") : document.querySelector(".feltpuck, .puckimg")].filter(Boolean);
     celebratePoint({
       targets: targets.length ? targets : [document.getElementById("app") || document.body],
       avoid: ["[data-act='roll']", ".dock", ".hud-row1", ".tabbar"].map((s) => document.querySelector(s)),
       point: extra && extra.point,
       net: quiet ? 0 : settled.net,
-      big: !quiet && isBigWin(settled),
+      big: bigWin,
       tier,
       quiet,
       duration: copy.duration,
@@ -2208,6 +2249,13 @@ function advanceTutor() {
     boardData.badges = noted.store.badges;
     boardData.progress = noted.store.progress;
     if (noted.unlocked.length) queueUnlocks(noted.unlocked);
+    const day = new Date();
+    const key = day.getFullYear() + "-" + String(day.getMonth() + 1).padStart(2, "0") + "-" + String(day.getDate()).padStart(2, "0");
+    const daily = B.noteAction(boardData, { type: "practice-day", day: key, mode: game.mode, now: Date.now() });
+    boardData.badges = daily.store.badges;
+    boardData.progress = daily.store.progress;
+    if (daily.store.daily) boardData.daily = daily.store.daily;
+    if (daily.unlocked.length) queueUnlocks(daily.unlocked);
     saveBoard();
     closeOverlay();
     return;
@@ -2368,7 +2416,14 @@ function paint() {
     }
     requestAnimationFrame(() => { placeDice(); fitFelt(); measureChrome(); });
   } else {
-    if (view === "fair") noteFair();
+    if (view === "fair") {
+      noteFair();
+      const panel = document.getElementById("panel");
+      if (panel && !panel.dataset.fairscroll) {
+        panel.dataset.fairscroll = "1";
+        panel.addEventListener("scroll", () => { if (view === "fair") noteFair(); }, { passive: true });
+      }
+    }
     const diceHost = document.getElementById("dice-row");
     if (diceHost) { diceHost.hidden = true; }
     document.getElementById("panel").innerHTML = panelHTML();
@@ -2722,7 +2777,8 @@ function fairHistoryList(rolls) {
   const note = rolls.length > cap
     ? "<p class='muted'>Showing the latest " + cap + " of " + rolls.length + ". CSV export stays numeric.</p>"
     : "<p class='muted'>Same rolls as a CSV export. Die 1 and die 2 stay numbers there.</p>";
-  return "<article class='card'><h3>Roll history</h3>" + note + "<ol class='fairhist'>" + rows + "</ol></article>";
+  const pin = "<li class='pinhand'><span class='hn'>Now</span><span class='hline'>This hand · " + (game.hand.rolls || 0) + " rolls" + (game.point ? " · point " + game.point : " · come-out") + "</span></li>";
+  return "<article class='card'><h3>Roll history</h3>" + note + "<ol class='fairhist'>" + pin + rows + "</ol></article>";
 }
 function domeHTML() {
   const tier = E.blazingTier(E.blazingScore(game.hand), game.hand.points);
@@ -2852,7 +2908,8 @@ function homeHTML() {
     "<div class='ghostrow'><button class='ghost' data-act='tour'>TAKE THE TUTOR TOUR</button><button class='ghost' data-act='billy-help'>WHAT'S BILLY'S WAY?</button></div>" +
     "<button class='ghost boardlink' data-act='view' data-view='leaderboard'>BADGES AND LONGEST ROLLS</button>" +
     "<a class='ghost boardlink' href='table/'>PLAY TABLE CRAPS</a>" +
-    "<div class='disclaimer'><b>Education only. Play money only.</b> No real gambling, no deposits, no payouts, no prizes. Every bankroll on this table is practice chips. 18+.</div></section>";
+    "<p class='billytip'>" + nextSessionTip(settings.tipCursor || 0, "bubble").tip.billy + "</p>" +
+    "<div class='disclaimer'><b>Education only. Play money only.</b> No real gambling, no deposits, no payouts, no prizes. Every bankroll on this table is practice chips. 18+. " + RULE0_LINE + "</div></section>";
 }
 
 function learnHTML() {
@@ -2975,16 +3032,20 @@ function settingsHTML() {
     "<p class='muted'>RNG: " + (E.getRngSource() === "unavailable" ? "unavailable" : "secure") + ". Dice use your device's secure random generator, with rejection sampling so every face is equal.</p>";
 }
 
+let etiquetteAt = 0;
 function etiquetteHTML() {
-  const deck = deckFor("bubble");
-  const session = nextSessionTip(settings.tipCursor || 0, "bubble");
-  const card = (t, tag) => "<article class='card'><h3>" + t.n + ". " + t.topic + (tag ? " · " + tag : "") + "</h3><p>" + t.billy + "</p><p>" + t.why + "</p></article>";
-  return "<h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip: " + session.tip.billy + "</p>" +
-    deck.both.map((t) => card(t, "Both")).join("") +
-    "<h3>At a live table</h3>" +
-    deck.live.map((t) => card(t, "Live table")).join("") +
+  const deck = deckFor("bubble").all;
+  const tip = deck[Math.min(etiquetteAt, deck.length - 1)];
+  const seen = (boardData.progress && boardData.progress.etiquetteSeen) || [];
+  const tag = tip.liveOnly ? "Live table" : "Both";
+  const last = etiquetteAt >= deck.length - 1;
+  return "<h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip</p>" +
+    "<article class='card'><h3>" + tip.n + " of 15 · " + tip.topic + " · " + tag + "</h3><p>" + tip.billy + "</p><p>" + tip.why + "</p><p class='muted'>" + seen.length + " of 15 viewed.</p></article>" +
     "<p>" + ETIQUETTE_FOOTER + "</p>" +
-    "<button class='cta' data-act='etiquette-done'>Got it</button>" +
+    "<div class='actions'>" +
+    (etiquetteAt > 0 ? "<button data-act='etiq-prev'>Back</button>" : "") +
+    (last ? "<button class='cta' data-act='etiquette-done'>Got it</button>" : "<button class='cta' data-act='etiq-next'>Next</button>") +
+    "</div>" +
     "<button class='ghost' data-act='view' data-view='settings'>Back</button>";
 }
 
@@ -3038,7 +3099,7 @@ function fairHTML() {
     "<div class='filters'>" + [["session", "This session"], ["last", "Last 100"], ["all", "All time"]].map(([id, label]) => "<button class='" + (fairScope === id ? "on" : "") + "' data-act='fair-scope' data-scope='" + id + "'>" + label + "</button>").join("") + "</div>" +
     "<article class='card'><h3>Totals vs expected</h3><div class='vchart'>" + cols.join("") + "</div><p class='muted'>Dashed marks are the fair share. 7 is 6/36.</p></article>" +
     "<article class='card seven-card'><h3>Sevens</h3><p class='bigpct'>" + (rolls.length ? (sevenPct * 100).toFixed(1) : "0.0") + "%</p><p>vs 16.67% (1 in 6). Normal band " + (band.low * 100).toFixed(1) + "%–" + (band.high * 100).toFixed(1) + "%.</p></article>" +
-    "<article class='card'><h3>Fairness test</h3>" + (fairLine ? "<p>" + fairLine + "</p>" : "") + "<p class='verdict'>" + verdict + "</p></article>" +
+    "<article class='card' id='fairness-card'><h3>Fairness test</h3>" + (fairLine ? "<p>" + fairLine + "</p>" : "") + "<p class='verdict'>" + verdict + "</p></article>" +
     "<article class='card'><h3>Each die</h3><p>Die 1 faces: " + faces.counts.join(" · ") + "</p><p>Die 1 χ² " + faces.chi2.toFixed(2) + " · df 5 · p " + faces.p.toFixed(3) + "</p><p>Die 2 faces: " + faces2.counts.join(" · ") + "</p><p>Die 2 χ² " + faces2.chi2.toFixed(2) + " · df 5 · p " + faces2.p.toFixed(3) + "</p><p class='muted'>Each face should be near 16.67%.</p></article>" +
     "<article class='card'><h3>Hard vs easy</h3><p>Doubles " + doubles + " of " + rolls.length + " (fair 16.67%).</p><p>Hard 4/6/8/10 vs 1/36 each. " + hardLine + "</p></article>" +
     "<article class='card'><h3>Above and below expected</h3><p>" + (rolls.length ? hi.t + ": " + (hi.d >= 0 ? "+" : "") + hi.d.toFixed(1) + " vs expected · " + lo.t + ": " + lo.d.toFixed(1) : "Roll to fill this in.") + "</p></article>" +
@@ -3064,6 +3125,11 @@ if (boardData.session) boardData.session = absorbIdle(boardData.session, Date.no
 game.placeWorkingOnComeOut = !!settings.workingComeOut;
 A.setMuted(!settings.sound);
 mount();
+if (!localStorage.getItem("bb-bubble-session-tip")) {
+  localStorage.setItem("bb-bubble-session-tip", "1");
+  const tip = nudgeFor("session_start", "bubble");
+  if (tip) toast(tip.billy);
+}
 if (boardData.pending && !(boardData.initials && boardData.initials.asked)) {
   pendingRecord = boardData.pending;
   const preview = L.previewRoll(boardData, pendingRecord);

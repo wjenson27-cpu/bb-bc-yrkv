@@ -3,6 +3,7 @@
  * that match the engine dice. Skips only when Playwright or Chrome is missing.
  */
 import test from "node:test";
+import { waitForPort } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -40,7 +41,7 @@ test("mini dice, hop icons, marquee, and pip readouts", async (t) => {
   }
   const port = 8796;
   const server = serve(port);
-  await wait(400);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

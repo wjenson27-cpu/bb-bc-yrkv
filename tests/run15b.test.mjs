@@ -2,6 +2,7 @@
  * Run 15b: seven-out contrast, dome Billy clear of the result line, count plurals.
  */
 import test from "node:test";
+import { waitForPort } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -68,7 +69,7 @@ test("seven-out contrast and Billy clear of the longest call", async (t) => {
   }
   const port = 8902;
   const server = serve(port);
-  await wait(300);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox", "--disable-gpu"] });
   try {
     const page = await browser.newPage();

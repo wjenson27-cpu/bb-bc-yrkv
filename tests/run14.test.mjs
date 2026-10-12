@@ -3,6 +3,7 @@
  * new top-left brand, and Field rings plus tutor warnings follow rev 13d.
  */
 import test from "node:test";
+import { waitForPort } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -77,7 +78,7 @@ test("dome readouts, lockup, Field rings, and FAIR fit", async (t) => {
   }
   const port = 8854;
   const server = serve(port);
-  await wait(300);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

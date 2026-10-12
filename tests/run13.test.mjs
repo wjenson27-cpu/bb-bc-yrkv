@@ -3,6 +3,7 @@
  * paying number, and the HUD avatar is a square Dealer Billy crop.
  */
 import test from "node:test";
+import { waitForPort } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -72,7 +73,7 @@ test("short screens keep the dice, the Field, and the avatar", async (t) => {
   }
   const port = 8844;
   const server = serve(port);
-  await wait(300);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

@@ -22,7 +22,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#04060A}
 .tc-hud .tips{flex:0 0 auto;height:44px;padding:0 10px;border-radius:999px;display:flex;align-items:center;font:800 10px/1 var(--sans);letter-spacing:.1em;
   color:#2A1A00;background:linear-gradient(#FFE7A0,#E2BC62);border:0}
 /* ---------- stage ---------- */
-.tc-stage{grid-area:stage;position:relative;min-height:0;display:flex;align-items:stretch;justify-content:center;padding:0 8px}
+.tc-stage{grid-area:stage;position:relative;min-height:0;min-width:0;overflow:hidden;display:flex;align-items:stretch;justify-content:center;padding:0 8px}
 /* ---------- dots ---------- */
 .tc-dots{grid-area:dots;display:flex;align-items:center;justify-content:space-between;gap:6px;height:30px;padding:0 10px}
 .tc-dots .pill{color:#E6EDF6;font:800 9.5px/1 var(--sans);letter-spacing:.12em;height:44px;margin:-7px 0;background-clip:content-box;padding:7px 0;border:0;background:none}
@@ -42,9 +42,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:#04060A}
 .tc-rail::before{content:"";position:absolute;inset:5px;border-radius:14px;border:1.2px dashed rgba(226,188,98,.55);pointer-events:none}
 .tc-rail .rtot{position:absolute;left:14px;top:6px;font:800 10px/1 var(--sans);letter-spacing:.1em;color:#FFE7A0;text-shadow:0 1px 0 #000;white-space:nowrap}
 .tc-rail .rtot b{font-size:12.5px;letter-spacing:0;color:#fff;font-variant-numeric:tabular-nums}
-.tc-rail .trough{position:absolute;left:8px;right:8px;bottom:6px;height:58px;display:flex;justify-content:space-around;align-items:flex-end;
+.tc-rail .trough{position:absolute;left:4px;right:4px;bottom:6px;height:58px;display:flex;justify-content:space-between;padding-inline:4px;align-items:flex-end;
   border-radius:10px;background:linear-gradient(180deg,#1b1b20,#34343c 70%,#18181c);box-shadow:inset 0 3px 6px rgba(0,0,0,.8),inset 0 -1px 0 rgba(255,255,255,.12)}
-.tc-stack-host .stack{position:relative;width:44px;height:58px;flex:0 0 44px;border:0;padding:0;background:none;cursor:pointer;border-radius:10px}
+.tc-stack-host .stack{position:relative;width:44px;height:58px;flex:0 0 44px;min-width:44px;min-height:44px;border:0;padding:0;background:none;cursor:pointer;border-radius:10px}
 .tc-stack-host .stack .ch{position:absolute;left:5px;width:34px;height:15px;border-radius:50%;background-size:100% 230%;background-position:50% 50%;
   box-shadow:0 1.5px 0 rgba(0,0,0,.55),0 2.5px 0 rgba(0,0,0,.25)}
 .tc-stack-host .stack .ch.top{height:15px;background-size:100% 100%;box-shadow:0 1.5px 0 rgba(0,0,0,.55),0 0 0 .6px rgba(0,0,0,.4)}
@@ -85,13 +85,19 @@ html,body{margin:0;height:100%;overflow:hidden;background:#04060A}
 .tc-app.narrow .tc-rail{padding-left:4px;padding-right:4px}.tc-app.narrow .tc-rail .trough{left:4px;right:4px}
 .tc-app.narrow .tc-keys button{font-size:9.5px;letter-spacing:.06em}
 /* ---------- landscape phones: controls move to a right column ---------- */
-.tc-app.land{grid-template-columns:minmax(0,1fr) var(--side,248px);grid-template-rows:auto minmax(0,1fr) auto auto auto;
+.tc-app.land{--side:220px;grid-template-columns:minmax(0,1fr) var(--side,220px);grid-template-rows:auto minmax(0,1fr) auto auto auto;
   grid-template-areas:"hud hud" "stage dock" "stage keys" "dots keys" "notice notice"}
-.tc-app.land .tc-hud{height:44px;padding-top:2px;padding-bottom:2px}
+.tc-app.land .tc-hud{height:44px;padding-top:2px;padding-bottom:2px;position:relative;z-index:6}
 .tc-app.land .tc-hud .money{height:38px}
-.tc-app.land .tc-dock{flex-direction:column;padding:0 10px 0 0;gap:6px}
-.tc-app.land .tc-rail{flex:0 0 auto;height:84px}
-.tc-app.land .tc-shoot{flex:1 1 auto;max-height:104px;width:auto;height:auto;min-height:56px;flex-direction:row;gap:10px}
+.tc-app.land .tc-hud .pipro img{width:14px;height:14px}
+.tc-app.land .tc-dock{flex-direction:column;flex-wrap:nowrap;padding:0 6px 0 0;gap:4px;min-width:0;max-width:100%;min-height:0;height:100%;overflow:hidden;align-items:stretch}
+.tc-app.tight{--side:208px}
+.tc-app.tight .tc-keys button{height:36px;min-height:32px;font-size:9px}
+.tc-app.land .tc-numbet button,.tc-felt.land .numbet button{width:auto;min-width:0;height:100%;min-height:28px;flex:1}
+.tc-app.land .tc-rail{flex:0 0 80px;height:80px;width:100%;min-width:0}
+.tc-app.land .tc-rail .trough{height:48px}
+.tc-app.land .tc-rail .stack{height:48px;width:36px;flex:0 0 36px;min-width:0;min-height:40px}
+.tc-app.land .tc-shoot{flex:1 1 52px;max-height:88px;width:100%;height:auto;min-height:52px;flex-direction:row;gap:6px}
 .tc-app.land .tc-keys{grid-template-columns:1fr 1fr;padding:6px 10px 0 0;gap:4px;align-content:end}
 .tc-app.land .tc-keys button{font-size:10px;letter-spacing:.08em;padding:0}
 .tc-app.land .tc-dots{height:30px}
@@ -137,7 +143,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#04060A}
 .tc-hops .hop.hard{border-color:rgba(255,211,106,.6)}.tc-hops .hop span{display:flex;gap:1px}.tc-hops .hop img{width:13px;height:13px}
 .tc-hops .hop small{font:700 8.5px/1 var(--sans);color:#D8E2EE}
 .tc-app.narrow .tc-hops .hg{grid-template-columns:repeat(6,minmax(44px,1fr))}
-.tc-app.short .tc-hops{display:none}
+.tc-app.short .tc-hops{display:block}
 .tc-app.land .tc-railspec p{font-size:10.5px;line-height:1.2;margin-top:3px}
 .tc-app.land .tc-railspec h4{font-size:10px;white-space:nowrap}
 .tc-app.land .tc-railspec .frame{overflow:hidden}
@@ -155,4 +161,5 @@ html,body{margin:0;height:100%;overflow:hidden;background:#04060A}
 .tc-offer button{pointer-events:auto;min-height:44px;min-width:44px;border-radius:12px;font:800 11px/1 var(--sans);letter-spacing:.08em}
 .tc-offer .go{padding:0 12px;background:linear-gradient(180deg,#FFE7A0,#D8AE52);color:#2A1C04;border:0}
 .tc-offer .x{background:transparent;border:1px solid rgba(255,255,255,.35);color:#fff;font-size:16px}
-.tc-app.land .tc-offer{position:relative;flex:0 0 auto;width:auto;left:auto;right:auto;bottom:auto}
+.tc-app.land .tc-offer{position:relative;flex:0 0 auto;width:100%;max-height:48px;left:auto;right:auto;bottom:auto;overflow:hidden}
+.tc-app.land .tc-stage{overflow:hidden;z-index:1}

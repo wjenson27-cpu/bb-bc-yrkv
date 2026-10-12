@@ -3,6 +3,7 @@
  * from roll 1, and the 320px play column scales onto the screen.
  */
 import test from "node:test";
+import { waitForPort } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -66,7 +67,7 @@ test("store polish: marquees, FAIR, dome pips, and the 320 play column", async (
   }
   const port = 8828;
   const server = serve(port);
-  await wait(400);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

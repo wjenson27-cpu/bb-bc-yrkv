@@ -19,19 +19,17 @@ export function cancelCelebration() {
   live = null;
   timers.forEach(clearTimeout);
   off();
-  layer.classList.add("out");
-  setTimeout(() => {
-    layer.remove();
-    if (!live) document.body.classList.remove("pc-on");
-  }, 130);
+  layer.remove();
+  document.body.classList.remove("pc-on");
 }
 
 export function celebratePoint(o) {
   cancelCelebration();
   const reduced = o.reduced != null ? o.reduced : (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
   const quiet = !!o.quiet;
-  const dur = quiet ? Math.min(o.duration || 1200, 1200) : Math.min(o.duration || (o.tier === "huge" || o.big ? 2500 : o.tier === "big" ? 2000 : 1600), 2500);
-  const big = !quiet && (!!o.big || o.tier === "huge");
+  const big = !quiet && !!o.big;
+  const cap = big ? 2500 : 1200;
+  const dur = Math.min(o.duration || cap, cap);
   const layer = document.createElement("div");
   layer.className = "pc-layer" + (big ? " big" : "") + (quiet ? " quiet" : "") + (reduced ? " reduce" : "");
   layer.style.setProperty("--pc-dur", Math.min(dur, reduced ? 1200 : dur) + "ms");
@@ -73,16 +71,24 @@ export function celebratePoint(o) {
   const H = innerHeight;
   const avoid = (o.avoid || []).filter(Boolean).map((el) => el.getBoundingClientRect());
   const clampX = (x) => Math.max(8, Math.min(W - pw - 8, x));
-  const cands = [
-    [clampX(cx - pw / 2), main.top - ph - 10],
-    [clampX(cx - pw / 2), main.bottom + 10],
+  const box = (c) => ({ left: c[0], top: c[1], right: c[0] + pw, bottom: c[1] + ph });
+  const clearOf = (c) => !avoid.some((a) => hit(box(c), a));
+  const raw = [
+    [cx - pw / 2, main.bottom + 10],
+    [cx - pw / 2, main.top - ph - 10],
+    [8, H - ph - 12],
     [8, 8],
   ];
-  const box = (c) => ({ left: c[0], top: c[1], right: c[0] + pw, bottom: c[1] + ph });
-  const ok = (c) => c[1] >= 4 && c[1] + ph <= H - 4 && !avoid.some((a) => hit(box(c), a));
-  const pos = cands.find(ok) || [8, Math.max(56, Math.min(60, H - ph - 8))];
+  const clamp = (c) => [clampX(c[0]), Math.max(4, Math.min(H - ph - 4, c[1]))];
+  let pos = null;
+  for (let i = 0; i < raw.length; i++) {
+    if (!clearOf(raw[i])) continue;
+    const next = clamp(raw[i]);
+    if (clearOf(next)) { pos = next; break; }
+  }
+  if (!pos) pos = raw.map(clamp).find(clearOf) || [8, Math.max(56, H - ph - 8)];
   plate.style.left = pos[0] + "px";
-  plate.style.top = Math.max(4, pos[1]) + "px";
+  plate.style.top = pos[1] + "px";
   const timers = [];
   if (!quiet && o.sfx) o.sfx(big ? "fanfare" : o.tier === "big" ? "run" : "win");
   if (!quiet && !reduced && o.haptic) {

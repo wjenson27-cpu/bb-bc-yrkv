@@ -411,7 +411,13 @@ function cryptoObj() {
 export function rollDie(rng) {
   if (typeof rng === "function") {
     lastRngSource = "test";
-    return Math.floor(rng() * 6) + 1;
+    const x = Number(rng());
+    if (x > 1) {
+      const limit = 4294967296 - (4294967296 % 6);
+      if (x >= limit) return rollDie(rng);
+      return (Math.floor(x) % 6) + 1;
+    }
+    return Math.floor(x * 6) + 1;
   }
   const c = cryptoObj();
   if (c) {
@@ -1757,6 +1763,10 @@ export function settle(state, d1, d2, opts) {
     else if (d.result === "lose") next.stats.losses += 1;
   });
   const net = decisions.reduce((s, d) => s + (d.net || 0), 0);
+  const comeWins = decisions.filter((d) => d.result === "win" && /^Come /.test(d.bet || "") && d.profit > 0);
+  if (comeWins.length && line.result !== "point-made") {
+    line.narrative += " " + comeWins.map((d) => d.bet + " pays " + formatMoney(d.profit) + ".").join(" ");
+  }
   next.lastDecisions = decisions;
   next.lastNarrative = line.narrative;
   if (next.bankroll < 0) next.bankroll = 0;

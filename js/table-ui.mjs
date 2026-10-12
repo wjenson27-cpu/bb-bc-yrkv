@@ -10,7 +10,7 @@ import * as R from "./replay.mjs";
 import * as Et from "./etiquette.mjs";
 import * as PC from "./point-celebration.mjs";
 import * as PT from "./point-tier.mjs";
-import { SETS, orient, cssMatrix } from "./tc-dice.mjs";
+import { SETS, orient, cssMatrix, turn, axisTotals } from "./tc-dice.mjs";
 import { resolveSwipe } from "./swipe.mjs";
 import * as Badges from "./badges.mjs";
 
@@ -47,14 +47,31 @@ let strategyId = "";
 let compareRun = null;
 let filter = "all";
 let menu = false;
+let diceFaces = [orient(3, 5), orient(3, 1)];
+let lastFaces = null;
+let throwPower = 56;
+let sessionBase = 0;
+let sessionHold = false;
+let sessionPrompt = null;
+let comparePick = ["T1", "T2", "T5", "T6", "T7", "T23"];
+let compareSeed = "482113907";
+let compareLen = 300;
+let compareMany = null;
+let compareSeeds = 100;
+let etiquetteAt = 0;
+let etiquetteSeen = [];
+let toastTimer = 0;
+const nudged = Object.create(null);
 
 function money(c) { return E.formatMoney(c); }
-function premiumOn() { return settings.premium || localStorage.getItem(PREM) === "1"; }
+function premiumOn() {
+  return settings.premium === true || localStorage.getItem("bb-table-entitlement") === "1";
+}
 function save() {
   localStorage.setItem(STORE, JSON.stringify({ game, rail, settings, rebuilt }));
 }
 function load() {
-  settings.premium = localStorage.getItem(PREM) === "1";
+  settings.premium = localStorage.getItem("bb-table-entitlement") === "1";
   try {
     const raw = JSON.parse(localStorage.getItem(STORE) || "null");
     if (!raw || !raw.game) return;
@@ -80,9 +97,12 @@ function sync(note) {
       toastText = "Here's your change.";
       localStorage.setItem("bb-table-change-seen", "1");
     }
+  } else if (!note) {
+    changeNote = "";
   }
   if (note) changeNote = note;
   save();
+  return moved;
 }
 
 function chipImg(cents) {
@@ -148,7 +168,7 @@ function railHTML() {
     const vis = Math.min(n, Rail.DISPLAY_CAP);
     const chips = Array.from({ length: vis }, (_, i) => "<i class='ch" + (i === vis - 1 ? " top" : "") + "' style='bottom:" + (12 + i * 3) + "px;background-image:url(" + chipImg(d) + ")'></i>").join("");
     const badge = Rail.badgeText(n);
-    return "<button class='stack" + (n ? "" : " empty") + (settings.chip === d ? " sel" : "") + "' data-act='chip' data-chip='" + d + "' aria-pressed='" + (settings.chip === d) + "' style='min-width:44px;min-height:44px'>" +
+    return "<button class='stack" + (n ? "" : " empty") + (settings.chip === d ? " sel" : "") + "' data-act='chip' data-chip='" + d + "' aria-pressed='" + (settings.chip === d) + "'>" +
       chips + (badge ? "<span class='cnt'>" + badge + "</span>" : "") + "<span class='den'>$" + (d / 100) + "</span></button>";
   }).join("");
   return "<div class='tc-rail tc-stack-host' role='group' aria-label='" + Rail.railGroupLabel(rail) + "'><div class='rtot'>PRACTICE CHIPS <b>" + money(Rail.railTotal(rail)) + "</b></div><div class='trough'>" + stacks + "</div></div>";
@@ -162,26 +182,61 @@ function fireRail(size) {
     "<span class='cnt'>" + lit.length + " of 6</span></div>";
 }
 
+function fireStake() {
+  const chip = settings.chip;
+  const step = chip >= 100 && chip <= 1000 ? chip : 100;
+  const room = Math.max(0, 1000 - (game.bets.fire || 0));
+  return Math.min(room, step);
+}
 function sideHTML() {
   const open = !!game.fireOpen;
+  const add = fireStake();
+  const reps = [[2, 40], [3, 50], [4, 65], [5, 80], [6, 90], [8, 90], [9, 80], [10, 65], [11, 50], [12, 40]];
+  const hops = [];
+  for (let a = 1; a <= 6; a++) hops.push([a, a]);
+  for (let a = 1; a <= 6; a++) for (let b = a + 1; b <= 6; b++) hops.push([a, b]);
   return "<div class='tc-side'>" +
     "<section class='tc-firetile" + (open ? " open" : " locked") + "'><header><b>FIRE BET</b><span class='chip'>" + (open ? "OPEN · UNTIL THE FIRST ROLL" : "LOCKED · NEW SHOOTER") + "</span></header>" +
     fireRail("l") +
     "<div class='pay'><span><b>4 pts</b> 24 to 1</span><span><b>5 pts</b> 249 to 1</span><span><b>6 pts</b> 999 to 1</span></div>" +
     "<div class='row'><span class='edge r'>20.76%</span><span class='lim'>$1–$10</span>" +
-    "<button class='betbtn' data-act='fire' " + (open ? "" : "disabled") + ">" + (open ? "ADD $1" : "LOCKED") + "</button></div>" +
-    "<p class='note'>" + (open ? "Bet now: it closes at this shooter's first come-out roll." : "Your Fire Bet rides until the seven-out. It can't come down now.") + "</p></section></div>";
+    "<button class='betbtn' data-act='fire' " + (open && add ? "" : "disabled") + ">" + (open ? "ADD " + money(add || 100) : "LOCKED") + "</button></div>" +
+    "<p class='note'>" + (open ? "Bet now: it closes at this shooter's first come-out roll." : "Your Fire Bet rides until the seven-out. It can't come down now.") + "</p></section>" +
+    "<section class='tc-reps'><header><b>REPEATERS</b><span class='edge r'>18–22%</span></header><div class='reps'>" +
+    reps.map(([n, pay]) => "<button class='rep' data-act='spot' data-kind='repeater:" + n + "'><b>" + n + "</b><small>" + pay + " FOR 1</small></button>").join("") +
+    "</div></section>" +
+    "<section class='tc-hops'><header><b>HOPS · ONE ROLL</b><span class='edge r'>11–14%</span></header><div class='hg'>" +
+    hops.map(([a, b]) => "<button class='hop" + (a === b ? " hard" : "") + "' data-act='spot' data-kind='hop:" + a + "-" + b + "'><span><img src='" + A + "dice/faces/face-" + a + ".svg' alt=''><img src='" + A + "dice/faces/face-" + b + ".svg' alt=''></span><small>" + (a === b ? "30" : "15") + " TO 1</small></button>").join("") +
+    "</div></section></div>";
+}
+function cubeHTML(o, cls) {
+  const faces = [1, 2, 3, 4, 5, 6].map((f) => "<i class='f f" + f + "' style='background-image:url(" + A + "dice/faces/face-" + f + ".svg)'></i>").join("");
+  return "<div class='tc-cube " + (cls || "") + "' data-top='" + o.top + "' data-front='" + o.front + "'><div class='c' style='transform:var(--view) " + cssMatrix(o.top, o.front) + "'>" + faces + "</div></div>";
+}
+function pips(d1, d2, sz) {
+  const tot = d1 + d2;
+  return "<span class='pipro' role='img' aria-label='" + d1 + " and " + d2 + ", " + tot + "'><img src='" + A + "dice/faces/face-" + d1 + ".svg' width='" + sz + "' height='" + sz + "' alt=''><img src='" + A + "dice/faces/face-" + d2 + ".svg' width='" + sz + "' height='" + sz + "' alt=''><b class='tot" + (tot === 7 ? " seven" : "") + "'>" + tot + "</b></span>";
 }
 
 function shooterHTML() {
   const set = SETS[settings.set] || SETS["3V"];
-  return "<div class='tc-shooter'><div class='table'><div class='wall'></div><div class='tlabel'>BOTH DICE MUST HIT THE BACK WALL</div>" + fireRail("s") +
-    "<p>Set dice are practice only. RSR about 6.0 = random. The Wizard of Odds is still skeptical. Casino rules vary.</p></div>" +
+  const bowl = [orient(5, 1), orient(3, 2), orient(2, 6), orient(6, 4), orient(4, 5)];
+  const axes = axisTotals(set).map((row) => row[1]).join(" · ");
+  const last = lastFaces ? "<div class='result'><small>LAST ROLL</small>" + pips(lastFaces.d1, lastFaces.d2, 32) + "</div>" : "<div class='result'><small>LAST ROLL</small><span>No roll yet</span></div>";
+  return "<div class='tc-shooter'>" +
+    "<div class='table'><div class='wall'></div><div class='tlabel'>BOTH DICE MUST HIT THE BACK WALL</div>" + fireRail("s") +
+    "<div class='lockcap'>" + (game.fireOpen ? "OPEN · BEFORE THE FIRST ROLL" : "LOCKED · " + (game.firePoints || []).length + " OF 6") + "</div></div>" +
+    "<div class='bowl' aria-label='Pick 2 of 5'>" + bowl.map((o, i) => "<button class='pick" + (i < 2 ? " on" : "") + "' data-act='pick' data-i='" + i + "'>" + cubeHTML(o, "sm") + "</button>").join("") + "</div>" +
     "<div class='sets' role='radiogroup'>" + Object.keys(SETS).map((k) => {
       const s = SETS[k];
       return "<button data-act='set' data-set='" + k + "' class='" + (settings.set === k ? "on" : "") + "'><b>" + s.name + "</b><small>" + (s.aka || "for practice") + "</small></button>";
     }).join("") + "</div>" +
-    "<p class='note'>Throw with one hand, for practice. A soft toss is a no-roll and draws nothing.</p></div>";
+    "<div class='setview'><div class='pair'>" + cubeHTML(diceFaces[0], "lg") + cubeHTML(diceFaces[1], "lg b") + "</div>" +
+    "<div class='gest'><span>↑↓ drag to flip</span><span>↔ drag to spin</span><span>tap = quarter turn</span></div>" +
+    "<div class='readout'><small>YOUR SET · " + set.name + "</small><b>Top " + pips(diceFaces[0].top, diceFaces[1].top, 18) + "</b><span>On axis: " + axes + "</span></div></div>" +
+    last +
+    "<div class='meter'><small>THROW POWER</small><div class='bar'><i style='left:" + throwPower + "%'></i></div><small class='r'>" + (throwPower < 18 ? "SOFT · NO ROLL" : throwPower < 45 ? "EASY" : throwPower < 75 ? "MEDIUM" : "HARD") + "</small></div>" +
+    "<p class='note'>Set dice are practice only. The throw does not change the roll. A soft toss is a no-roll and draws nothing.</p></div>";
 }
 
 function pickerHTML() {
@@ -218,19 +273,45 @@ function chartHTML(runs) {
     const d = r.line.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + "," + Y(v).toFixed(1)).join("");
     return "<path d='" + d + "' fill='none' stroke='var(--cmp-" + (j + 1) + ")' stroke-width='2.2' stroke-dasharray='" + dash[j] + "'/>";
   }).join("");
-  const rows = runs.slice().sort((a, b) => b.net - a.net).map((r, i) => "<tr" + (i ? "" : " class='top'") + "><td>" + r.id + (i ? "" : " <small>top on this replay</small>") + "</td><td>" + money(r.net) + "</td><td>" + money(r.maxDrawdown) + "</td></tr>").join("");
-  return "<figure class='chart'><svg viewBox='0 0 " + W + " " + H + "' role='img' aria-label='Bankroll by roll'>" + paths + "</svg><figcaption>Same dice. Past rolls don't predict future rolls.</figcaption></figure><table class='mt'><caption>Top on this replay</caption><thead><tr><th>Plan</th><th>Net</th><th>Max drop</th></tr></thead><tbody>" + rows + "</tbody></table>";
+  const rows = runs.slice().sort((a, b) => b.net - a.net).map((r, i) => "<tr" + (i ? "" : " class='top'") + "><td>" + r.id + (i ? "" : " <small>top on this replay</small>") + "</td><td>" + money(r.net) + "</td><td>" + money(r.maxDrawdown) + "</td><td>" + money(r.low != null ? r.low : Math.min.apply(null, r.line)) + "</td></tr>").join("");
+  const legend = runs.map((r, j) => "<li data-leg><svg width='26' height='10' aria-hidden='true'><line x1='1' x2='25' y1='5' y2='5' stroke='var(--cmp-" + (j + 1) + ")' stroke-width='3' stroke-dasharray='" + dash[j] + "'/></svg><b>" + r.id + "</b><span>" + (TS.strategyById(r.id) ? TS.strategyById(r.id).name : r.id) + "</span><em class='" + (r.net < 0 ? "neg" : "") + "'>" + money(r.net) + "</em></li>").join("");
+  return "<div class='cmpbody'><figure class='chart'><svg viewBox='0 0 " + W + " " + H + "' role='img' aria-label='Bankroll by roll'>" + paths + "</svg><figcaption>Same dice. Past rolls don't predict future rolls.</figcaption></figure><div class='cmpside'><ol class='legend'>" + legend + "</ol><table class='mt'><caption>Top on this replay</caption><thead><tr><th>Plan</th><th>Net</th><th>Max drop</th><th>Low</th></tr></thead><tbody>" + rows + "</tbody></table></div></div>";
 }
 
+function demoCompare() {
+  if (compareRun && compareRun.runs && compareRun.runs.length) return compareRun;
+  const seq = R.rollSequenceFromSeed(482113907, 80);
+  compareRun = R.compare(seq.dice, ["T1", "T5", "T6"], { rules: game.rules });
+  return compareRun;
+}
 function compareHTML() {
+  const lengths = [100, 500, 1000, 5000];
+  const picks = TS.TABLE_STRATEGIES.map((c) => {
+    const on = comparePick.indexOf(c.id) >= 0;
+    return "<label class='cmpick'><input type='checkbox' data-act='cmpick' data-id='" + c.id + "'" + (on ? " checked" : "") + (premiumOn() ? "" : " disabled") + "> " + c.id + "</label>";
+  }).join("");
+  const controls = "<div class='cmpcontrols'><label>Seed <input data-act='seed' value='" + compareSeed + "' inputmode='numeric'></label>" +
+    "<label>Rolls <select data-act='length'>" + lengths.map((n) => "<option" + (Number(compareLen) === n ? " selected" : "") + ">" + n + "</option>").join("") + "</select></label>" +
+    "<button data-act='run-compare' style='height:44px'>Replay</button>" +
+    "<label>Seeds <select data-act='seed-count'><option" + (compareSeeds === 100 ? " selected" : "") + ">100</option><option" + (compareSeeds === 1000 ? " selected" : "") + ">1000</option></select></label>" +
+    "<button data-act='many-seeds' style='height:44px'>Many seeds</button>" +
+    "<button data-act='csv-compare' style='height:44px'>Use Fair Dice history</button>" +
+    "<label class='csvfile'>Import CSV <input type='file' data-act='csv-file' accept='.csv,text/csv'></label></div>" +
+    "<div class='cmpicks'>" + picks + "</div>";
   if (!premiumOn()) {
-    return "<div class='tc-sheet tc-compare'><h1>Strategy Comparison</h1><p>Standard play shows one locked demo. Changing it opens Premium.</p>" +
-      (compareRun ? chartHTML(compareRun.runs) : "") +
+    const demo = demoCompare();
+    return "<div class='tc-sheet tc-compare'><h1>Strategy Comparison</h1><p class='warnline'><b>Past rolls don't predict future rolls.</b> Standard play shows one locked demo. Changing it opens Premium.</p>" +
+      chartHTML(demo.runs) +
       "<button class='go' data-act='screen' data-screen='paywall' style='height:44px'>Unlock comparison</button></div>";
   }
+  const many = compareMany && compareMany.summary ? "<table class='mt'><caption>Many seeds · median net</caption><tbody>" +
+    Object.keys(compareMany.summary).map((id) => "<tr><td>" + id + "</td><td>" + money(compareMany.summary[id].median) + "</td><td>" + compareMany.summary[id].n + " seeds</td></tr>").join("") +
+    "</tbody></table>" : "";
   return "<div class='tc-sheet tc-compare'><header class='sh'><small>STRATEGY COMPARISON · PREMIUM</small><h1>Same dice, different plans.</h1><p class='warnline'><b>Past rolls don't predict future rolls.</b> Every strategy here has a house edge.</p></header>" +
+    controls +
     (compareRun ? chartHTML(compareRun.runs) : "<p>Run a replay to chart it.</p>") +
-    "<button data-act='run-compare' style='height:44px'>Replay 120 rolls</button><p class='seed'>Seeded " + R.SEEDED_RNG_NAME + ". Top on this replay.</p></div>";
+    many +
+    "<p class='seed'>Seed " + compareSeed + " · " + compareLen + " rolls · " + R.SEEDED_RNG_NAME + ". Top on this replay.</p></div>";
 }
 
 function paywallHTML() {
@@ -243,15 +324,34 @@ function paywallHTML() {
     "<p class='fine'>One-time purchase · no subscription · 18+ · practice only</p></div>";
 }
 
+function etiquetteCard() {
+  const deck = Et.deckFor("table").all;
+  const tip = deck[Math.min(etiquetteAt, deck.length - 1)];
+  const seen = etiquetteSeen.length;
+  return "<article class='card etiquette-card'><h3>" + tip.n + " of 15 · " + tip.topic + "</h3><p>" + tip.billy + "</p><p>" + tip.why + "</p>" +
+    "<p class='muted'>" + seen + " of 15 viewed this session.</p></article>";
+}
 function menuHTML() {
   const deck = Et.deckFor("table").all;
+  const tip = deck[Math.min(etiquetteAt, deck.length - 1)];
+  const last = etiquetteAt >= deck.length - 1;
   return "<div class='tc-sheet'><h1>Table</h1><button data-act='leave' style='height:44px'>Leave table</button>" +
     "<a href='../' style='display:flex;align-items:center;height:44px'>Bubble Craps</a>" +
     "<label>Color up <select data-act='color-setting'><option value='offer'" + (settings.colorUp === "offer" ? " selected" : "") + ">Offer</option><option value='auto'" + (settings.colorUp === "auto" ? " selected" : "") + ">Auto</option><option value='off'" + (settings.colorUp === "off" ? " selected" : "") + ">Off</option></select></label>" +
     "<label>Theme <select data-act='theme'><option value='billy'>Billy navy</option><option value='midnight'" + (settings.theme === "midnight" ? " selected" : "") + ">Midnight</option><option value='classic'" + (settings.theme === "classic" ? " selected" : "") + ">Classic</option><option value='highlimit'" + (settings.theme === "highlimit" ? " selected" : "") + ">High limit</option></select></label>" +
-    "<p>" + TR.RULE0_LINE + "</p><h2>Dealer Billy</h2>" +
-    deck.map((t) => "<article class='card'><h3>" + t.n + ". " + t.topic + "</h3><p>" + t.billy + "</p><p>" + t.why + "</p></article>").join("") +
-    "<p>" + Et.ETIQUETTE_FOOTER + "</p><button data-act='etiquette-done' style='height:44px'>Got it</button></div>";
+    "<p>" + TR.RULE0_LINE + "</p><h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip</p>" +
+    etiquetteCard() +
+    "<div class='acts' style='display:flex;gap:8px'>" +
+    (etiquetteAt > 0 ? "<button data-act='etiq-prev' style='height:44px'>Back</button>" : "") +
+    (last ? "<button data-act='etiquette-done' style='height:44px'>Got it</button>" : "<button data-act='etiq-next' style='height:44px'>Next</button>") +
+    "</div><p>" + Et.ETIQUETTE_FOOTER + "</p></div>";
+}
+function fairHTML() {
+  const hist = (game.history || []).slice(0, 20);
+  const rows = hist.map((r) => "<li>" + pips(r.d1, r.d2, 16) + " <span>" + (r.result || "") + "</span></li>").join("");
+  return "<div class='tc-sheet'><h1>Fair Dice</h1><p>" + TR.RULE0_LINE + "</p><p>RNG: " + (E.getRngSource() === "unavailable" ? "unavailable" : "secure") + ".</p>" +
+    "<h2>Last 20</h2><ol class='fairhist'>" + (rows || "<li>No rolls yet.</li>") + "</ol>" +
+    "<button data-act='screen' data-screen='play' style='height:44px'>Back to the table</button></div>";
 }
 
 function stageHTML() {
@@ -259,29 +359,65 @@ function stageHTML() {
   if (screen === "tutorial") return tutorialHTML();
   if (screen === "compare") return compareHTML();
   if (screen === "paywall") return paywallHTML();
+  if (screen === "fair") return fairHTML();
   if (menu) return menuHTML();
   if (page === 0) return sideHTML();
   if (page === 2) return shooterHTML();
   return feltHTML();
+}
+function kindName(kind) {
+  if (kind === "place") return "Place";
+  if (kind === "buy") return "Buy";
+  if (kind === "lay") return "Lay";
+  return kind;
+}
+function convertCopy(c) {
+  const from = kindName(c.from) + " " + money(c.amount);
+  const to = kindName(c.to) + " " + money(c.amount);
+  let why = "Buy pays true odds; the 5% commission is taken only when it wins.";
+  if (c.to === "lay") why = "Lay wins if a 7 comes first; the 5% commission is taken only when it wins.";
+  if (c.to === "place") why = "Place pays the place odds. No commission.";
+  return "You have <b>" + from + "</b> on the " + c.number + ". Switch it to <b>" + to + "</b>? " + why;
 }
 
 function render() {
   app.dataset.theme = settings.theme || "billy";
   const point = game.point;
   const offerHTML = offer ? "<div class='tc-offer' role='status'><div class='t'><b>" + offer + "</b></div><button class='go' data-act='color-up'>COLOR UP</button><button class='x' data-act='color-dismiss' aria-label='Not now'>×</button></div>" : "";
-  const conv = convert ? "<div class='tc-coach convert' data-mascot='billy'><img src='" + A + "mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'><div class='kick'>One bet per number · " + convert.number + "</div><div class='body'>You have <b>" + convert.from + " " + money(convert.amount) + "</b> on the " + convert.number + ". Switch it to <b>" + convert.to + " " + money(convert.amount) + "</b>? Buy pays true odds; the 5% commission is taken only when it wins.</div><div class='acts'><button class='go' data-act='convert'>CONVERT TO " + convert.to.toUpperCase() + "</button><button data-act='keep'>KEEP " + convert.from.toUpperCase() + "</button></div></div>" : "";
+  const conv = convert ? "<div class='tc-coach convert' data-mascot='billy'><img src='" + A + "mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'><div class='kick'>One bet per number · " + convert.number + "</div><div class='body'>" + convertCopy(convert) + "</div><div class='acts'><button class='go' data-act='convert'>CONVERT TO " + kindName(convert.to).toUpperCase() + "</button><button data-act='keep'>KEEP " + kindName(convert.from).toUpperCase() + "</button></div></div>" : "";
+  const sessionCard = sessionPrompt ? "<div class='tc-coach convert' data-mascot='billy'><img src='" + A + "mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'><div class='kick'>" + sessionPrompt + "</div><div class='body'>40% stop-loss and +30% win goal, measured from the bankroll you started with.</div><div class='acts'><button data-act='sess-stop'>STOP HERE</button><button class='go' data-act='sess-keep'>KEEP PLAYING</button><button data-act='sess-new'>NEW SESSION</button></div></div>" : "";
+  const names = ["SIDE BETS", "BOARD", "SHOOTER"];
+  const left = page > 0 ? "<button class='pill' data-act='page' data-page='" + (page - 1) + "'><span class='cap'>‹ " + names[page - 1] + "</span></button>" : "<span class='pill' hidden></span>";
+  const right = page < 2 ? "<button class='pill' data-act='page' data-page='" + (page + 1) + "'><span class='cap'>" + names[page + 1] + " ›</span></button>" : "<span class='pill' hidden></span>";
+  const onThrow = page === 2 && screen === "play" && !menu;
+  const shoot = onThrow
+    ? "<button class='tc-shoot' data-act='throw'><small>YOUR THROW</small><b>SHOOT</b><small>DRAG · FLICK</small></button>"
+    : "<button class='tc-shoot' data-act='go-shooter'><small>GO TO</small><b>SHOOTER</b><small>SHOOTER ›</small></button>";
+  const hudPips = lastFaces ? pips(lastFaces.d1, lastFaces.d2, 16) : "";
   app.innerHTML = "<header class='tc-hud'><button class='avbtn' data-act='menu' aria-label='Dealer Billy, menu'><img class='av' alt='' src='" + A + "mascots/dealer-billy/hud/hud-billy-A-36@2x.png'></button>" +
     "<div class='money'><div><small>Practice chips</small><b>" + money(game.bankroll) + "</b></div><div><small>On table</small><b>" + money(E.tableTotal(game)) + "</b></div></div>" +
+    hudPips +
     "<img class='puck' data-puck alt='" + (point ? "Point " + point : "Puck off") + "' src='" + A + "icons/puck-" + (point ? "on" : "off") + ".svg'>" +
-    "<button class='fair' data-act='menu'>FAIR</button></header>" +
-    "<main class='tc-stage' id='stage'>" + stageHTML() + conv + (toastText ? "<div class='tc-toast' role='status'><b>" + toastText + "</b>" + (changeNote ? "<small>" + changeNote + "</small>" : "") + "</div>" : "") + "</main>" +
-    "<div class='tc-dots'><button class='pill' data-act='page' data-page='" + ((page + 2) % 3) + "'><span class='cap'>‹ " + ["BOARD", "SIDE BETS", "BOARD"][page] + "</span></button>" +
+    "<button class='fair' data-act='fair'>FAIR</button></header>" +
+    "<main class='tc-stage' id='stage'>" + stageHTML() + conv + sessionCard + (toastText ? "<div class='tc-toast' role='status'><b>" + toastText + "</b>" + (lastFaces && screen === "play" ? pips(lastFaces.d1, lastFaces.d2, 24) : "") + (changeNote ? "<small>" + changeNote + "</small>" : "") + "</div>" : "") + "</main>" +
+    "<div class='tc-dots'>" + left +
     "<span class='dots'>" + [0, 1, 2].map((i) => "<button data-act='page' data-page='" + i + "' aria-label='" + ["Side bets", "Board", "Dice"][i] + "'><i class='" + (page === i ? "on" : "") + "'></i></button>").join("") + "</span>" +
-    "<button class='pill' data-act='page' data-page='" + ((page + 1) % 3) + "'><span class='cap'>" + ["BOARD", "SHOOTER", "BOARD"][page] + " ›</span></button></div>" +
-    "<footer class='tc-dock'>" + offerHTML + railHTML() + "<button class='tc-shoot' data-act='roll'><small>GO TO</small><b>SHOOT</b></button></footer>" +
+    right + "</div>" +
+    "<footer class='tc-dock'>" + offerHTML + railHTML() + shoot + "</footer>" +
     "<nav class='tc-keys'><button data-act='screen' data-screen='play'" + (screen === "play" && !menu ? " class='on'" : "") + ">BETS</button><button data-act='screen' data-screen='picker'>STRATEGIES</button><button data-act='tutor'>TUTOR</button><button data-act='menu'>STATS</button></nav>" +
     "<div class='tc-notice'><span>18+</span> PRACTICE ONLY · NO REAL MONEY</div>";
   fitTable();
+  armChangeClear();
+}
+
+function armChangeClear() {
+  clearTimeout(toastTimer);
+  if (!changeNote) return;
+  toastTimer = setTimeout(() => {
+    changeNote = "";
+    const note = document.querySelector(".tc-toast small");
+    if (note) note.remove();
+  }, 2200);
 }
 
 function fitTable() {
@@ -289,15 +425,18 @@ function fitTable() {
   app.classList.toggle("land", land);
   app.classList.toggle("short", !land && h < 700);
   app.classList.toggle("narrow", w < 360);
+  app.classList.toggle("tight", land && h <= 360);
   const f = document.getElementById("felt");
   const stage = document.getElementById("stage");
   if (!f || !stage) return;
   f.classList.toggle("land", land);
   const st = stage.getBoundingClientRect();
   const coach = stage.querySelector(".tc-coach");
-  const coachH = coach ? coach.offsetHeight + 12 : 0;
-  const ring = land ? 8 : h < 700 ? 4.5 : 8.5 * Math.min(1, w / 390);
-  const aw = st.width - 2 * ring, ah = Math.max(180, st.height - 2 * ring - coachH);
+  const coachH = coach ? coach.offsetHeight + 8 : 0;
+  const ring = land ? 6 : h < 700 ? 4.5 : 8.5 * Math.min(1, w / 390);
+  f.style.setProperty("--ring", Math.max(2, ring - 1.5).toFixed(1) + "px");
+  const aw = Math.max(120, st.width - 2 * ring);
+  const ah = Math.max(120, st.height - 2 * ring - coachH);
   let k, rows;
   if (!land) {
     k = Math.min(1.12, aw / 354);
@@ -305,55 +444,124 @@ function fitTable() {
     const gap = Math.max(2, 3 * k);
     const pad = 2 * (h < 700 ? 3 : Math.max(3, 6 * k)) + 3.2;
     const sm = {};
-    Object.keys(base).forEach((n) => { sm[n] = Math.max(44, base[n] * k); });
-    const used = Object.values(sm).reduce((a, b) => a + b, 0) + 4 * gap + pad;
-    let nums = Math.min(150 * k, Math.max(80, ah - used - gap));
+    Object.keys(base).forEach((n) => { sm[n] = Math.max(h < 640 ? 36 : 44, base[n] * k); });
+    const used0 = Object.values(sm).reduce((a, b) => a + b, 0) + 4 * gap + pad;
+    let nums = ah - used0 - gap;
+    if (nums < 72) {
+      const scale = Math.max(0.62, (ah - 72 - 4 * gap - pad) / Math.max(1, used0 - 4 * gap - pad));
+      Object.keys(sm).forEach((n) => { sm[n] = Math.max(28, sm[n] * scale); });
+      nums = Math.max(64, ah - (Object.values(sm).reduce((a, b) => a + b, 0) + 4 * gap + pad) - gap);
+    }
+    const spare = ah - (Object.values(sm).reduce((a, b) => a + b, 0) + 4 * gap + pad) - gap - nums;
+    if (spare > 1) {
+      const g = Math.min(spare / 6, 10 * k);
+      Object.keys(sm).forEach((n) => { sm[n] += g; });
+    }
     f.style.setProperty("--g", gap.toFixed(1) + "px");
+    f.style.setProperty("--fp", ((pad - 3.2) / 2).toFixed(1) + "px");
     rows = [sm.ats, nums, sm.come, sm.field, sm.p1 + sm.p2 + gap, sm.line];
-    f.style.gridTemplateRows = rows.map((r) => r.toFixed(1) + "px").join(" ");
   } else {
-    k = Math.min(1.05, ah / 300);
-    rows = [44, Math.max(80, ah - 200), 44, 44, 44];
-    f.style.gridTemplateRows = rows.map((r) => r.toFixed(1) + "px").join(" ");
+    k = Math.min(1.1, ah / 300, aw / 420);
+    const gap = Math.max(2, 3 * k);
+    const pad = 8 * k;
+    let ats = Math.max(32, 40 * k), come = Math.max(32, 40 * k), field = Math.max(32, 40 * k), line = Math.max(32, 42 * k);
+    let nums = ah - (ats + come + field + line) - 4 * gap - pad;
+    if (nums < 44) {
+      const scale = Math.max(0.55, (ah - 44 - 4 * gap - pad) / Math.max(1, ats + come + field + line));
+      ats *= scale; come *= scale; field *= scale; line *= scale;
+      nums = Math.max(36, ah - (ats + come + field + line) - 4 * gap - pad);
+    }
+    rows = [ats, nums, come, field, line];
+    f.style.setProperty("--g", gap.toFixed(1) + "px");
   }
+  f.style.gridTemplateRows = rows.map((r) => Math.max(24, r).toFixed(1) + "px").join(" ");
   f.style.setProperty("--k", k.toFixed(4));
-  const strip = Math.max(14, 16 * k);
-  f.style.setProperty("--digit", Math.min(34 * k, 28).toFixed(1) + "px");
+  const tight = land || h < 700;
+  const strip = land ? 11 : tight ? 12 : Math.max(14, 18 * k);
+  const lay = land ? 11 : tight ? 12 : Math.max(14, 16 * k);
+  const numsH = rows[1] - 3.2;
+  const faceH = Math.max(8, numsH - strip * 2 - lay);
+  const floor = land ? 12 : (w < 360 ? 22 : 28);
+  let digit = Math.min(34 * k, Math.max(floor, (faceH - 15) / 0.86));
+  if (!land && w >= 360 && w <= 430 && digit < 33.7 && 34 * k >= 33.7) digit = 33.7;
+  f.style.setProperty("--digit", digit.toFixed(1) + "px");
   f.style.setProperty("--strip", strip.toFixed(1) + "px");
-  f.style.setProperty("--strip-lay", strip.toFixed(1) + "px");
+  f.style.setProperty("--strip-lay", lay.toFixed(1) + "px");
+}
+
+function flyChip(from, to, cents, ms) {
+  if (!from || !to || reducedMQ.matches) return;
+  const a = from.getBoundingClientRect();
+  const b = to.getBoundingClientRect();
+  const ghost = document.createElement("i");
+  ghost.className = "tc-fly";
+  ghost.style.cssText = "position:fixed;z-index:80;pointer-events:none;width:30px;height:14px;border-radius:50%;left:" + a.left + "px;top:" + a.top + "px;background:url(" + chipImg(cents) + ") center/cover;transition:transform " + ms + "ms ease-out";
+  document.body.appendChild(ghost);
+  requestAnimationFrame(() => { ghost.style.transform = "translate(" + (b.left - a.left) + "px," + (b.top - a.top) + "px)"; });
+  setTimeout(() => ghost.remove(), ms + 40);
 }
 
 function placeSpot(kind, number) {
-  if (rolling) return;
+  if (rolling) { maybeNudge("bet_while_rolling"); return; }
   let amount = settings.chip;
   const spot = { kind, number };
-  if (kind === "pass" || kind === "dontPass" || kind === "come" || kind === "dontCome" || kind === "field" || kind === "place" || kind === "buy" || kind === "lay") {
-    const min = kind === "place" && (number === 6 || number === 8) ? 1200 : 1000;
-    if ((kind === "pass" ? game.bets.pass : kind === "field" ? game.bets.field : 0) === 0 && amount < min && (kind === "pass" || kind === "dontPass" || kind === "field" || kind === "come" || kind === "dontCome")) amount = min;
+  if (kind === "place" && (number === 6 || number === 8)) {
+    const raw = amount;
+    amount = raw < 1200 ? 1200 : Math.floor(raw / 600) * 600;
+    if (amount !== raw) toastText = "Place " + number + " posted at " + money(amount) + " ($6 steps).";
+  } else if (kind === "pass" || kind === "dontPass" || kind === "come" || kind === "dontCome" || kind === "field") {
+    if (amount < 1000) amount = 1000;
   }
+  const from = document.querySelector(".stack.sel") || document.querySelector(".stack");
   const res = E.placeBet(game, spot, amount);
   if (!res.ok && res.convert) { convert = res.convert; render(); return; }
   if (!res.ok) { toastText = res.error; render(); return; }
   game = res.state;
-  sync();
+  const moved = sync();
   if (kind === "dontPass" || kind === "dontCome") maybeNudge("first_dont");
+  if (kind === "place" || kind === "buy" || kind === "come") maybeNudge("first_place");
   render();
+  const spotEl = number ? document.querySelector("[data-n='" + number + "']") : document.querySelector("[data-kind='" + kind + "']");
+  flyChip(from, spotEl, amount >= 500 ? amount : 500, moved && moved.breaks && moved.breaks.length ? 240 : 260);
 }
 
 function maybeNudge(trigger) {
-  if (!settings.tutor) return;
+  if (!settings.tutor || nudged[trigger]) return;
   const tip = Et.nudgeFor(trigger, "table");
-  if (tip) toastText = tip.billy;
+  if (!tip) return;
+  nudged[trigger] = true;
+  toastText = tip.billy;
+}
+
+function checkSession() {
+  if (!strategyId || sessionHold || !sessionBase) return;
+  const worth = E.netWorth(game);
+  const lim = TS.sessionLimits(sessionBase);
+  if (worth <= lim.stopAt) sessionPrompt = "Stop-loss. You are down 40% from " + money(sessionBase) + ".";
+  else if (worth >= lim.goalAt) sessionPrompt = "Win goal. You are up 30% from " + money(sessionBase) + ".";
+}
+
+function showRolled(d1, d2) {
+  const front = (top) => (top === 1 || top === 6 ? 2 : 1);
+  diceFaces = [orient(d1, front(d1)), orient(d2, front(d2))];
+  lastFaces = { d1, d2 };
 }
 
 function doRoll() {
-  if (rolling) return;
+  if (rolling) { maybeNudge("bet_while_rolling"); return; }
+  if (throwPower < 18 && page === 2) {
+    toastText = "No roll. Both dice have to reach the back wall. Nothing was drawn.";
+    maybeNudge("no_roll");
+    render();
+    return;
+  }
   rolling = true;
   PC.cancelCelebration();
   offer = null;
+  changeNote = "";
   const passBefore = game.bets.pass;
   const pointBefore = game.point;
-  const handBefore = game.hand.points;
+  const fireBefore = (game.firePoints || []).length;
   const dice = E.rollDice();
   if (!dice || !dice.d1) {
     rolling = false;
@@ -361,35 +569,45 @@ function doRoll() {
     render();
     return;
   }
+  showRolled(dice.d1, dice.d2);
   const settled = E.settle(game, dice.d1, dice.d2);
   game = settled.state;
-  if (strategyId) game = TS.afterRoll(game, strategyId, settled, { unit: 1000 });
+  if (strategyId && !sessionPrompt) game = TS.afterRoll(game, strategyId, settled, { unit: 1000 });
   sync();
+  rolling = false;
   const gained = Rail.colorUpOffer(rail);
-  if (gained && settings.colorUp === "auto" && !rolling) {
+  if (gained && settings.colorUp === "auto") {
     rail = Rail.railColorUp(rail).rail;
+    save();
   } else if (gained && settings.colorUp === "offer") {
     offer = (rail[100] > 20 ? rail[100] + " × $1" : rail[500] + " × $5") + " on the rail. Color up?";
   }
-  rolling = false;
+  if (settled.result === "seven-out") maybeNudge("new_shooter");
+  checkSession();
   toastText = settled.narrative;
+  const feltFrom = document.querySelector(".numbox.point, .spot.pass");
   render();
+  if (settled.net > 0) flyChip(feltFrom, document.querySelector(".stack.sel") || document.querySelector(".tc-rail"), 2500, 320);
   if (settled.result === "point-made") {
     const points = game.hand.points;
     const tier = PT.celebrationTier(points, { meterOn: true, blazing: settled.tier === "blazing" });
     const quiet = !(passBefore > 0);
-    const copy = PT.celebrationCopy({ tier, quiet, point: pointBefore, points, hard: dice.hard, net: settled.net, stinger: "" });
-    const targets = [document.querySelector(".tc-hud .puck"), document.querySelector(".numbox.point")].filter(Boolean);
+    const big = !quiet && settled.net >= 25 * Math.max(passBefore, 1);
+    const fireCount = (game.firePoints || []).length;
+    const stinger = fireCount > fireBefore ? PT.fireStinger(fireCount, (game.bets.fire || 0) > 0) : "";
+    const copy = PT.celebrationCopy({ tier, quiet, big, point: pointBefore, points, hard: dice.hard, net: settled.net, stinger });
+    const targets = [document.querySelector(".numbox.point") || document.querySelector("[data-n='" + pointBefore + "']"), document.querySelector(".tc-hud .puck")].filter(Boolean);
     PC.celebratePoint({
       targets: targets.length ? targets : [document.querySelector(".tc-hud")],
       avoid: [".tc-shoot", ".tc-rail", ".tc-hud", ".tc-keys", ".tc-dots", ".tc-notice"].map((s) => document.querySelector(s)),
       point: pointBefore,
       net: quiet ? 0 : settled.net,
-      big: !quiet && settled.net >= 25 * Math.max(passBefore, 1),
+      big,
       tier,
       duration: copy.duration,
       line: copy.call,
       cheer: copy.cheer,
+      stinger: copy.stinger,
       quiet,
       billie: A + "mascots/billie/billie-C-winner.svg",
       chip: A + "chips/chip-25-value.svg",
@@ -401,10 +619,34 @@ function doRoll() {
 function leave() {
   rail = Rail.leaveTable(rail).rail;
   const total = Rail.railTotal(rail);
-  toastText = "Practice chips: " + money(total);
+  maybeNudge("leave_table");
+  toastText = "Practice chips: " + money(total) + ". Colored up.";
   menu = false;
   screen = "play";
   save();
+  render();
+}
+function markEtiquette(id) {
+  if (etiquetteSeen.indexOf(id) < 0) etiquetteSeen.push(id);
+}
+function finishEtiquette() {
+  const deck = Et.deckFor("table").all;
+  const tip = deck[Math.min(etiquetteAt, deck.length - 1)];
+  markEtiquette(tip.id);
+  if (etiquetteSeen.length < 15) {
+    toastText = etiquetteSeen.length + " of 15 cards viewed.";
+    menu = true;
+    render();
+    return;
+  }
+  let store = { badges: {}, progress: {} };
+  try { store = JSON.parse(localStorage.getItem("bb-table-badges-v1") || "") || store; } catch { /* fresh */ }
+  deck.forEach((card, i) => {
+    store = Badges.noteAction(store, { type: "etiquette", id: card.id, complete: i === deck.length - 1 }).store;
+  });
+  localStorage.setItem("bb-table-badges-v1", JSON.stringify(store));
+  toastText = store.badges.table_manners ? "Table Manners unlocked." : "Table Manners noted.";
+  menu = false;
   render();
 }
 
@@ -412,9 +654,19 @@ function onClick(e) {
   const t = e.target.closest("[data-act]");
   if (!t) return;
   const act = t.dataset.act;
-  if (act === "chip") { settings.chip = Number(t.dataset.chip); render(); return; }
-  if (act === "roll") { doRoll(); return; }
-  if (act === "page") { page = Number(t.dataset.page); screen = "play"; menu = false; render(); return; }
+  if ((act === "cmpick" || act === "seed" || act === "length" || act === "seed-count" || act === "color-setting" || act === "theme" || act === "csv-file") && e.type === "click") return;
+  if (act === "chip") { settings.chip = Number(t.dataset.chip); changeNote = ""; render(); return; }
+  if (act === "roll" || act === "throw") { doRoll(); return; }
+  if (act === "go-shooter") { page = 2; screen = "play"; menu = false; maybeNudge("set_dice"); render(); return; }
+  if (act === "fair") { screen = "fair"; menu = false; render(); return; }
+  if (act === "page") {
+    page = Number(t.dataset.page);
+    screen = "play";
+    menu = false;
+    if (page === 2) maybeNudge("set_dice");
+    render();
+    return;
+  }
   if (act === "screen") { screen = t.dataset.screen; menu = false; render(); return; }
   if (act === "menu") { menu = !menu; screen = "play"; render(); return; }
   if (act === "numbet") { settings.numbet = t.dataset.k; render(); return; }
@@ -424,7 +676,7 @@ function onClick(e) {
     if (kind.indexOf(":") > 0) {
       const [k, rest] = kind.split(":");
       if (k === "hop") {
-        const res = E.placeBet(game, { kind: "hop", pair: rest }, Math.max(100, settings.chip));
+        const res = E.placeBet(game, { kind: "hop", pair: rest }, Math.max(1000, settings.chip));
         if (res.ok) { game = res.state; sync(); }
         else toastText = res.error;
         render();
@@ -437,7 +689,8 @@ function onClick(e) {
     return;
   }
   if (act === "fire") {
-    const res = E.placeBet(game, { kind: "fire" }, 100);
+    const add = fireStake();
+    const res = E.placeBet(game, { kind: "fire" }, add || 100);
     if (!res.ok) toastText = res.error;
     else { game = res.state; sync(); }
     render();
@@ -457,22 +710,26 @@ function onClick(e) {
   if (act === "strat") {
     const id = t.dataset.id;
     const card = TS.strategyById(id);
-    if (card && card.tier === "premium" && !premiumOn()) { screen = "paywall"; render(); return; }
-    if (card && card.warning) { toastText = card.name + " is a warning. It is not offered as Play this."; screen = "picker"; render(); return; }
+    if (!card) return;
+    if (card.tier === "premium" && !premiumOn()) { screen = "paywall"; render(); return; }
     strategyId = id;
     tutorId = id;
+    sessionBase = E.netWorth(game);
+    sessionHold = false;
+    sessionPrompt = null;
     const bet = TS.autoBet(game, id, { unit: 1000 });
     game = bet.state;
     sync();
     screen = "play";
-    toastText = card.name + " is placing bets. " + TS.TUTOR_END;
+    toastText = (card.warning ? card.name + " is a warning. The edge does not change. " : card.name + " is placing bets. ") + "Guide bankroll " + card.bankroll + ". " + TS.TUTOR_END;
     render();
     return;
   }
   if (act === "tutor") { screen = "tutorial"; tutorStep = 0; render(); return; }
   if (act === "tutor-next") { tutorStep += 1; render(); return; }
   if (act === "tutor-back") { tutorStep = Math.max(0, tutorStep - 1); render(); return; }
-  if (act === "unlock" || act === "restore") {
+  if (act === "unlock") {
+    localStorage.setItem("bb-table-entitlement", "1");
     settings.premium = true;
     localStorage.setItem(PREM, "1");
     toastText = "Premium unlocked on this device. Practice chips only.";
@@ -480,37 +737,144 @@ function onClick(e) {
     render();
     return;
   }
-  if (act === "run-compare") {
-    if (!premiumOn()) { screen = "paywall"; render(); return; }
-    const seq = R.rollSequenceFromSeed(482113907, 120);
-    compareRun = R.compare(seq.dice, ["T1", "T2", "T5", "T6", "T7", "T23"], { rules: game.rules });
+  if (act === "restore") {
+    if (localStorage.getItem("bb-table-entitlement") === "1") {
+      settings.premium = true;
+      localStorage.setItem(PREM, "1");
+      toastText = "Purchases restored. Practice chips only.";
+      screen = "compare";
+    } else {
+      settings.premium = false;
+      localStorage.removeItem(PREM);
+      toastText = "No purchases to restore.";
+    }
     render();
     return;
   }
+  if (act === "cmpick") {
+    const id = t.dataset.id;
+    const on = comparePick.indexOf(id);
+    if (t.checked && on < 0 && comparePick.length < 6) comparePick.push(id);
+    if (!t.checked && on >= 0) comparePick.splice(on, 1);
+    return;
+  }
+  if (act === "seed") { compareSeed = t.value || "1"; return; }
+  if (act === "length") { compareLen = Number(t.value) || 300; return; }
+  if (act === "seed-count") { compareSeeds = Number(t.value) === 1000 ? 1000 : 100; return; }
+  if (act === "run-compare") {
+    if (!premiumOn()) { screen = "paywall"; render(); return; }
+    const ids = comparePick.slice(0, 6);
+    const seq = R.rollSequenceFromSeed(Number(compareSeed) || 1, Number(compareLen) || 300);
+    compareRun = R.compare(seq.dice, ids.length ? ids : ["T1"], { rules: game.rules });
+    compareMany = null;
+    render();
+    return;
+  }
+  if (act === "many-seeds") {
+    if (!premiumOn()) { screen = "paywall"; render(); return; }
+    compareMany = R.manySeeds(comparePick.slice(0, 6), { seeds: compareSeeds, rolls: Math.min(compareSeeds > 100 ? 80 : 200, Number(compareLen) || 100), seed: Number(compareSeed) || 1, rules: game.rules });
+    render();
+    return;
+  }
+  if (act === "csv-compare") {
+    if (!premiumOn()) { screen = "paywall"; render(); return; }
+    const dice = (game.history || []).map((r) => [r.d1, r.d2]).reverse();
+    if (dice.length < 2) { toastText = "No Fair Dice session yet. Roll first."; render(); return; }
+    compareRun = R.compare(dice, comparePick.slice(0, 6), { rules: game.rules });
+    render();
+    return;
+  }
+  if (act === "csv-file") {
+    if (!premiumOn()) { screen = "paywall"; render(); return; }
+    const file = t.files && t.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dice = [];
+      String(reader.result || "").split(/\r?\n/).forEach((line) => {
+        const nums = line.match(/\d+/g);
+        if (!nums || nums.length < 2) return;
+        const a = Number(nums[0]);
+        const b = Number(nums[1]);
+        if (a >= 1 && a <= 6 && b >= 1 && b <= 6) dice.push([a, b]);
+      });
+      if (dice.length < 2) { toastText = "That CSV has no die pairs."; render(); return; }
+      compareRun = R.compare(dice, comparePick.slice(0, 6), { rules: game.rules });
+      toastText = "Imported " + dice.length + " rolls.";
+      render();
+    };
+    reader.readAsText(file);
+    return;
+  }
+  if (act === "sess-stop") { strategyId = ""; sessionPrompt = null; sessionHold = true; toastText = "Strategy stopped."; render(); return; }
+  if (act === "sess-keep") { sessionPrompt = null; sessionHold = true; render(); return; }
+  if (act === "sess-new") { sessionBase = E.netWorth(game); sessionPrompt = null; sessionHold = false; toastText = "New session from " + money(sessionBase) + "."; render(); return; }
   if (act === "leave") { leave(); return; }
-  if (act === "set") { settings.set = t.dataset.set; render(); return; }
+  if (act === "set") {
+    settings.set = t.dataset.set;
+    const set = SETS[settings.set] || SETS["3V"];
+    diceFaces = set.dice.map((d) => orient(d.top, d.front));
+    render();
+    return;
+  }
   if (act === "color-setting") { settings.colorUp = t.value; save(); return; }
   if (act === "theme") { settings.theme = t.value; save(); render(); return; }
-  if (act === "etiquette-done") {
-    let store = { badges: {}, progress: {} };
-    try { store = JSON.parse(localStorage.getItem("bb-table-badges-v1") || "") || store; } catch { /* fresh */ }
-    Et.ETIQUETTE.forEach((tip, i) => {
-      store = Badges.noteAction(store, { type: "etiquette", id: tip.id, complete: i === Et.ETIQUETTE.length - 1 }).store;
-    });
-    localStorage.setItem("bb-table-badges-v1", JSON.stringify(store));
-    toastText = store.badges.table_manners ? "Table Manners unlocked." : "Table Manners noted.";
-    menu = false;
+  if (act === "etiq-next") {
+    const deck = Et.deckFor("table").all;
+    markEtiquette(deck[etiquetteAt].id);
+    etiquetteAt = Math.min(deck.length - 1, etiquetteAt + 1);
     render();
+    return;
   }
+  if (act === "etiq-prev") { etiquetteAt = Math.max(0, etiquetteAt - 1); render(); return; }
+  if (act === "etiquette-done") { finishEtiquette(); }
 }
 
 let touchX = 0;
-app.addEventListener("pointerdown", (e) => { touchX = e.clientX; });
+let touchY = 0;
+let touchDice = false;
+app.addEventListener("pointerdown", (e) => {
+  touchX = e.clientX;
+  touchY = e.clientY;
+  touchDice = !!e.target.closest(".pair, .meter");
+  const hold = e.target.closest("[data-act='num'], [data-act='spot']");
+  if (hold) {
+    const timer = setTimeout(() => {
+      const kind = hold.dataset.kind || settings.numbet;
+      const n = hold.dataset.n || "";
+      toastText = "Preview " + kind + (n ? " " + n : "") + " · " + money(settings.chip) + ". Release without a long hold to bet.";
+      render();
+    }, 480);
+    hold.addEventListener("pointerup", () => clearTimeout(timer), { once: true });
+    hold.addEventListener("pointercancel", () => clearTimeout(timer), { once: true });
+  }
+});
+app.addEventListener("pointermove", (e) => {
+  const bar = e.target.closest && e.target.closest(".meter .bar");
+  if (!bar || !touchDice) return;
+  const r = bar.getBoundingClientRect();
+  throwPower = Math.max(4, Math.min(96, Math.round(((e.clientX - r.left) / r.width) * 100)));
+  const knob = bar.querySelector("i");
+  if (knob) knob.style.left = throwPower + "%";
+});
 app.addEventListener("pointerup", (e) => {
   const dx = e.clientX - touchX;
-  if (Math.abs(dx) < 48 || screen !== "play") return;
+  const dy = e.clientY - touchY;
+  if (touchDice && e.target.closest(".pair")) {
+    const step = (fn) => { diceFaces = diceFaces.map(fn); };
+    if (Math.abs(dy) >= Math.abs(dx) && dy < -24) step(turn.flipUp);
+    else if (Math.abs(dy) >= Math.abs(dx) && dy > 24) step(turn.flipDown);
+    else if (dx < -24) step(turn.spinLeft);
+    else if (dx > 24) step(turn.spinRight);
+    else step(turn.flipUp);
+    if (dy < -80 && page === 2) { doRoll(); return; }
+    render();
+    return;
+  }
+  if (touchDice || Math.abs(dx) < 48 || screen !== "play" || menu) return;
   if (dx < 0) page = Math.min(2, page + 1);
   else page = Math.max(0, page - 1);
+  if (page === 2) maybeNudge("set_dice");
   render();
 });
 app.addEventListener("click", onClick);
@@ -518,6 +882,8 @@ app.addEventListener("change", onClick);
 addEventListener("resize", fitTable);
 
 load();
+maybeNudge("buy_in");
+maybeNudge("session_start");
 const q = new URLSearchParams(location.search);
 if (q.get("theme")) settings.theme = q.get("theme");
 const shot = q.get("shot");
@@ -540,11 +906,12 @@ if (shot === "compare") {
 render();
 if (shot === "celebrate" || shot === "base" || shot === "big" || shot === "huge" || shot === "fire") {
   const tier = shot === "celebrate" ? "base" : shot;
-  const copy = PT.celebrationCopy({ tier: tier === "fire" ? "huge" : tier, point: 6, points: tier === "huge" || tier === "fire" ? 3 : tier === "big" ? 2 : 1, net: 7000, stinger: tier === "fire" ? PT.fireStinger(4, true) : "" });
+  const bigShot = shot === "big";
+  const copy = PT.celebrationCopy({ tier: tier === "fire" ? "huge" : tier, big: bigShot, point: 6, points: tier === "huge" || tier === "fire" ? 3 : tier === "big" ? 2 : 1, net: 7000, stinger: tier === "fire" ? PT.fireStinger(4, true) : "" });
   requestAnimationFrame(() => PC.celebratePoint({
-    targets: [document.querySelector(".tc-hud .puck"), document.querySelector("[data-n='6']")],
+    targets: [document.querySelector("[data-n='6']") || document.querySelector(".numbox.point"), document.querySelector(".tc-hud .puck")].filter(Boolean),
     avoid: [".tc-shoot", ".tc-rail", ".tc-hud", ".tc-keys", ".tc-dots", ".tc-notice"].map((s) => document.querySelector(s)),
-    point: 6, net: 7000, tier: copy.tier, big: tier !== "base", duration: copy.duration,
+    point: 6, net: 7000, tier: copy.tier, big: bigShot, duration: copy.duration,
     line: copy.call, cheer: copy.cheer, stinger: copy.stinger, hold: true,
     billie: A + "mascots/billie/billie-C-winner.svg",
     chip: A + "chips/chip-25-value.svg",

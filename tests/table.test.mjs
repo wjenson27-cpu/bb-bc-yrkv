@@ -170,9 +170,9 @@ test("fire bet window, unique points and standard pays", () => {
 
 test("rail breakdown, change and color-up keep the total", () => {
   const a = Rail.railBreakdown(100000);
-  assert.deepEqual([a[50000], a[10000], a[2500], a[500], a[100]], [1, 4, 3, 4, 5]);
+  assert.deepEqual([a[50000], a[10000], a[2500], a[500], a[100]], [1, 3, 7, 4, 5]);
   const b = Rail.railBreakdown(30000);
-  assert.deepEqual([b[50000], b[10000], b[2500], b[500], b[100]], [0, 2, 3, 4, 5]);
+  assert.deepEqual([b[50000], b[10000], b[2500], b[500], b[100]], [0, 1, 7, 4, 5]);
   const c = Rail.railBreakdown(1250);
   assert.equal(c[100], 7);
   assert.equal(c[500], 1);
@@ -228,6 +228,9 @@ test("rail invariant over bets, wins and color-up", () => {
   }
   assert.equal(rebuilt, 1);
   assert.equal(Rail.railTotal(rail), 100000);
+  const cents = Rail.syncRail(Rail.railBreakdown(100000), 95550);
+  assert.equal(cents.ok, true);
+  assert.equal(Rail.railTotal(cents.rail), 95550);
 });
 
 test("celebration tiers and copy", () => {
@@ -236,10 +239,12 @@ test("celebration tiers and copy", () => {
   assert.equal(PT.celebrationTier(3), "huge");
   assert.equal(PT.celebrationTier(5), "huge");
   assert.equal(PT.celebrationTier(1, { meterOn: true, blazing: true }), "huge");
-  assert.equal(PT.tierDuration("base"), 1600);
-  assert.equal(PT.tierDuration("big"), 2000);
-  assert.equal(PT.tierDuration("huge"), 2500);
+  assert.equal(PT.tierDuration("base"), 1200);
+  assert.equal(PT.tierDuration("big"), 1200);
+  assert.equal(PT.tierDuration("huge"), 1200);
   assert.equal(PT.tierDuration("huge", true), 1200);
+  assert.equal(PT.tierDuration("huge", false, true), 2500);
+  assert.equal(PT.tierDuration("base", false, true), 2500);
   const base = PT.celebrationCopy({ tier: "base", point: 6, points: 1, net: 7000 });
   assert.equal(base.call, "Six! The point is made. Pass line wins.");
   assert.equal(base.cheer, "Yesss!");
@@ -249,6 +254,11 @@ test("celebration tiers and copy", () => {
 });
 
 test("strategies T1 T5 T7 T19 T20 T23 T24", () => {
+  assert.equal(TS.strategyById("T1").max7["345"], 60);
+  assert.equal(TS.strategyById("T1").bankroll, "$500");
+  assert.equal(TS.strategyById("T5").bankroll, "$200");
+  assert.equal(TS.sessionLimits(100000).stopAt, 60000);
+  assert.equal(TS.sessionLimits(100000).goalAt, 130000);
   let g = table();
   g = TS.autoBet(g, "T1", { unit: 1000 }).state;
   g = E.settle(g, 3, 3).state;

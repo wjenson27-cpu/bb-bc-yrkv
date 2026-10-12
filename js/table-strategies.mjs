@@ -17,11 +17,14 @@ function card(partial) {
     end: END,
     bankroll: "$1,000",
     stop: "40% stop-loss / +30% win goal",
+    bankCents: 100000,
+    stopCents: 40000,
+    goalCents: 30000,
   }, partial);
 }
 
 export const TABLE_STRATEGIES = [
-  card({ id: "T1", name: "Pass Line + Max Odds", aliases: ["pass max"], edge: "0.37%", risk: "light", filters: ["all", "light", "baseline"], how: "Pass $10 with the full odds for the table. The Pass stays up after a win.", max7: { "345": 160, "5x": 60, "10x": 110 } }),
+  card({ id: "T1", name: "Pass Line + Max Odds", aliases: ["pass max"], edge: "0.37%", risk: "light", filters: ["all", "light", "baseline"], how: "Pass $10 with the full odds for the table. The Pass stays up after a win.", max7: { "345": 60, "5x": 60, "10x": 110 }, bankroll: "$500", bankCents: 50000, stopCents: 20000, goalCents: 15000, stop: "Stop −$200 · goal +$150" }),
   card({ id: "T2", name: "Don't Pass + Lay Odds", aliases: ["don't max"], edge: "0.27%", risk: "dark", filters: ["all", "dark", "baseline"], how: "Don't Pass $10 and lay the matching odds. Lay wins the same multiple as Pass odds.", max7: { "345": 70, "5x": 110, "10x": 210 } }),
   card({ id: "T3", name: "Come / Don't Come, 2 numbers", aliases: ["two come"], edge: "0.37% / 0.27%", risk: "light", filters: ["all", "light"], how: "Keep exactly two Come numbers working, with odds. Come odds are off on the come-out. Don't Come lay odds stay on.", max7: { "345": 110, "5x": 120, "10x": 220 } }),
   card({ id: "T4", name: "3-Point Molly", aliases: ["molly"], edge: "0.37%", risk: "light", filters: ["all", "light"], how: "Pass plus two Come bets, all with odds. Stop at three numbers. One re-Come after a hit.", max7: { "345": 170, "5x": 180, "10x": 330 } }),
@@ -47,11 +50,52 @@ export const TABLE_STRATEGIES = [
   card({ id: "T24", name: "Inside + Lay the Outside", aliases: ["wise guy"], edge: "1.69%", risk: "hedge", filters: ["all", "hedge"], how: "$44 Inside plus Lay 4 and 10 for $40. A seven-out nets −$6. A come-out 7, with lays working, is +$38.", max7: { "345": 6, "5x": 6, "10x": 6 } }),
 ].map((c, i) => Object.assign(c, { n: i + 1 }));
 
+const GUIDE = {
+  T2: [60000, 24000, 18000, "$600"],
+  T3: [100000, 40000, 30000, "$1,000"],
+  T4: [150000, 60000, 45000, "$1,500"],
+  T5: [20000, 8000, 6000, "$200"],
+  T6: [40000, 16000, 12000, "$400"],
+  T7: [40000, 16000, 12000, "$400"],
+  T8: [30000, 12000, 9000, "$300"],
+  T9: [80000, 32000, 24000, "$800"],
+  T10: [40000, 16000, 12000, "$400"],
+  T11: [250000, 100000, 75000, "$2,500"],
+  T12: [60000, 24000, 18000, "$600"],
+  T13: [60000, 24000, 18000, "$600"],
+  T14: [60000, 24000, 18000, "$600"],
+  T15: [170000, 68000, 51000, "$1,700"],
+  T16: [120000, 48000, 36000, "$1,200"],
+  T17: [20000, 8000, 6000, "$200"],
+  T18: [40000, 16000, 12000, "$400"],
+  T19: [40000, 16000, 12000, "$400"],
+  T20: [70000, 28000, 21000, "$700"],
+  T21: [50000, 20000, 15000, "$500"],
+  T22: [60000, 24000, 18000, "$600"],
+  T23: [30000, 12000, 9000, "$300"],
+  T24: [100000, 40000, 30000, "$1,000"],
+};
+TABLE_STRATEGIES.forEach((c) => {
+  const g = GUIDE[c.id];
+  if (!g) return;
+  c.bankCents = g[0];
+  c.stopCents = g[1];
+  c.goalCents = g[2];
+  c.bankroll = g[3];
+  c.stop = "Guide " + g[3] + " · 40% stop-loss / +30% win goal";
+});
+
 const BY_ID = Object.create(null);
 TABLE_STRATEGIES.forEach((c) => { BY_ID[c.id] = c; });
 
 export function strategyById(id) {
   return BY_ID[id] || null;
+}
+
+/** 40% stop and +30% goal against the real session bankroll, not the printed guide. */
+export function sessionLimits(startCents) {
+  const base = Math.max(0, Math.round(Number(startCents) || 0));
+  return { base, stopAt: Math.round(base * 0.6), goalAt: Math.round(base * 1.3) };
 }
 
 export function isPremium(id) {

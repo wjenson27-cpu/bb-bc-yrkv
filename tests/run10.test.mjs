@@ -3,6 +3,7 @@
  * phone roll strips keep their pip tiles.
  */
 import test from "node:test";
+import { waitForPort } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -38,7 +39,7 @@ test("coach clicks, one mascot, and phone pip strips", async (t) => {
   }
   const port = 8808;
   const server = serve(port);
-  await wait(400);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

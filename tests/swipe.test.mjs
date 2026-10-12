@@ -3,6 +3,7 @@
  * Skips in environments that have neither, so `npm test` still passes on a bare Node runner.
  */
 import test from "node:test";
+import { waitForPort } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -38,7 +39,7 @@ test("a horizontal swipe that starts on a felt button changes the screen and the
   }
   const port = 8766;
   const server = serve(port);
-  await wait(400);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox"] });
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -123,7 +124,7 @@ test("a mouse click posts a felt bet and a hit lights PRESS", async (t) => {
   }
   const port = 8767;
   const server = serve(port);
-  await wait(400);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox"] });
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });

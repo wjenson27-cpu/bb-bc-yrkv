@@ -4,6 +4,7 @@
  * FAIR on screen without dropping the 4th Blazing segment.
  */
 import test from "node:test";
+import { waitForPort } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -57,7 +58,7 @@ test("strips, landscape coach, heat sheet, and phone HUD", async (t) => {
   }
   const port = 8818;
   const server = serve(port);
-  await wait(400);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

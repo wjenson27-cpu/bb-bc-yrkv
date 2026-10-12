@@ -211,7 +211,7 @@ export function tableMinFor(kind, spot, rules) {
   const n = spot && spot.number;
   if (kind === "passOdds" || kind === "dontPassOdds" || kind === "comeOdds" || kind === "dontComeOdds") return 1;
   if (kind === "fire") return r.fireMin || 100;
-  if (kind === "hardway" || kind === "anyCraps" || kind === "hop" || kind === "yo" || kind === "repeater") return 100;
+  if (kind === "hardway" || kind === "anyCraps") return 100;
   if (kind === "place" && (n === 6 || n === 8)) return 1200;
   if (kind === "horn") return 400;
   if (kind === "ce") return 200;

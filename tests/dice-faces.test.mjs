@@ -4,6 +4,7 @@
  * Playwright or system Chrome is missing.
  */
 import test from "node:test";
+import { waitForPort } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
@@ -40,7 +41,7 @@ test("every settled cube shows the engine face on top", async (t) => {
   }
   const port = 8792;
   const server = serve(port);
-  await wait(400);
+  await waitForPort(port);
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

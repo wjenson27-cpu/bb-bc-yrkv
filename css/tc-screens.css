@@ -6,7 +6,8 @@
 .pipro .tot.seven{background:#C21F2E;color:#fff}
 .pipro em{font:900 13px/1 var(--serif);font-style:normal;color:#FFE7A0;letter-spacing:.06em;margin-left:4px;white-space:nowrap}
 /* ---------- shooter page ---------- */
-.tc-shooter{width:100%;max-width:520px;display:grid;gap:6px;grid-template-rows:auto auto auto minmax(0,1fr) auto auto auto;min-height:0;padding:4px 2px}
+.tc-shooter{width:100%;max-width:520px;height:100%;overflow:auto;display:grid;gap:6px;grid-template-rows:auto auto auto minmax(0,1fr) auto auto auto;min-height:0;padding:4px 2px;align-content:start}
+.tc-shooter .note{grid-column:1/-1;margin:0;position:relative;z-index:2;background:rgba(4,6,10,.92);padding:4px 2px}
 .tc-shooter .table{position:relative;height:96px;border-radius:14px;overflow:hidden;background:linear-gradient(180deg,var(--felt-lo),var(--felt) 60%);box-shadow:inset 0 0 0 1.5px #C9A961}
 .tc-shooter .wall{position:absolute;left:0;right:0;top:0;height:16px;background:repeating-linear-gradient(90deg,#B8923E 0 8px,#6E5420 8px 10px);clip-path:polygon(0 0,100% 0,100% 60%,0 100%)}
 .tc-shooter .tlabel{position:absolute;top:22px;left:0;right:0;text-align:center;font:700 9.5px/1 var(--serif);letter-spacing:.16em;color:var(--line)}
@@ -44,7 +45,7 @@
 .tc-fire.l{gap:6px;padding:8px 10px;justify-content:space-between}.tc-fire.l .med{width:40px;height:40px;font-size:18px}.tc-fire.l .fl{font-size:10px}.tc-fire.l .cnt{font-size:11px}
 .tc-fire.locked .fl{color:#E6D9B8}
 /* ---------- left page: side bets ---------- */
-.tc-side{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px;padding:4px 2px;min-height:0;overflow:hidden}
+.tc-side{width:100%;max-width:520px;display:flex;flex-direction:column;gap:8px;padding:4px 2px;min-height:0;overflow:auto}
 .tc-firetile{border-radius:16px;padding:10px;background:linear-gradient(#1a1410,#0c0806);box-shadow:inset 0 0 0 1.5px #C9A961,0 8px 22px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:8px}
 .tc-firetile header{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .tc-firetile header b{font:900 18px/1 var(--serif);letter-spacing:.08em;color:#FFE7A0}
@@ -68,7 +69,7 @@
 .tc-sheet{width:100%;max-width:640px;height:100%;display:flex;flex-direction:column;min-height:0;border-radius:18px 18px 0 0;background:var(--panel);border:1px solid var(--panel-line);padding:10px 10px 0;overflow:hidden}
 .tc-sheet .sh small{font:800 9.5px/1 var(--sans);letter-spacing:.16em;color:var(--accent)}
 .tc-sheet h1{margin:4px 0 6px;font:900 21px/1.1 var(--serif);color:#FFF1C2}
-.tc-picker .filters{display:flex;gap:6px;overflow:hidden;flex-wrap:wrap}
+.tc-picker .filters{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin}
 .tc-picker .filters button{height:30px;padding:0 10px;border-radius:999px;border:1px solid rgba(226,188,98,.4);background:none;color:#F6EDD8;font:700 11px/1 var(--sans);white-space:nowrap}
 .tc-picker .filters button.on{background:#FFE7A0;color:#2A1A00}
 .tc-picker .sum{display:flex;align-items:center;gap:10px;margin:8px 0 6px;font:600 11px/1 var(--sans);color:#C8D3E2;flex-wrap:wrap}.tc-picker .sum b{color:#fff}
@@ -143,8 +144,9 @@
 .tc-app.short .tc-compare .legend li{min-height:18px}
 .tc-app.land .tc-shooter{gap:3px;padding-top:2px;padding-bottom:0}
 .tc-shooter .tlabel,.tc-shooter .lockcap{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 6px}
-.tc-app.land .tc-shooter{grid-template-columns:1.05fr 1fr;grid-template-rows:96px auto auto minmax(0,1fr);row-gap:4px}
-.tc-app.land .tc-shooter .table{grid-column:1;grid-row:1;height:96px;min-height:0}
+.tc-app.land .tc-shooter{grid-template-columns:1.05fr 1fr;grid-template-rows:72px auto auto minmax(0,1fr) auto;row-gap:4px;overflow:auto}
+.tc-app.land .tc-shooter .note{grid-column:1/-1;grid-row:5}
+.tc-app.land .tc-shooter .table{grid-column:1;grid-row:1;height:72px;min-height:0}
 .tc-app.land .tc-shooter .setview{grid-column:1;grid-row:2/5;grid-template-columns:auto 1fr;grid-template-rows:auto auto;padding:6px 8px}
 .tc-app.land .tc-shooter .gest{grid-column:1/-1;gap:4px;justify-content:flex-start}.tc-app.land .tc-shooter .gest span{font-size:8.5px;padding:3px 5px;letter-spacing:.02em}
 .tc-app.land .tc-shooter .bowl{grid-column:2;grid-row:1;align-self:center}.tc-app.land .tc-shooter .sets{grid-column:2;grid-row:2}
