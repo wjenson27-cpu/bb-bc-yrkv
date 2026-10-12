@@ -2,7 +2,7 @@
  * Run 15b: seven-out contrast, dome Billy clear of the result line, count plurals.
  */
 import test from "node:test";
-import { waitForPort } from "./listen.mjs";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -27,9 +27,6 @@ test("counts are singular only for 1", () => {
   assert.match(hot.text, /Hot hand: 12 rolls so far/);
 });
 
-function serve(port) {
-  return spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], { cwd: root, stdio: "ignore" });
-}
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -67,9 +64,8 @@ test("seven-out contrast and Billy clear of the longest call", async (t) => {
     t.skip("playwright-core is not available");
     return;
   }
-  const port = 8902;
-  const server = serve(port);
-  await waitForPort(port);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox", "--disable-gpu"] });
   try {
     const page = await browser.newPage();
@@ -122,7 +118,7 @@ test("seven-out contrast and Billy clear of the longest call", async (t) => {
     }
 
     const calls = ["SNAKE EYES", "HARD FOUR", "HARD EIGHT", "EASY EIGHT", "ACE DEUCE"];
-    for (const [w, h] of [[360, 640], [375, 812], [390, 844]]) {
+    for (const [w, h] of [[360, 640], [375, 812], [390, 844], [393, 852], [414, 896]]) {
       await boot(w, h);
       await page.locator("button.dot[aria-label='Dice']").click();
       await page.waitForSelector(".dome-billy");

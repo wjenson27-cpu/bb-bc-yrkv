@@ -79,7 +79,7 @@ export function replay(dice, id, params) {
   const rules = (params && params.rules) || TR.defaultRules();
   const bankroll = (params && params.bankroll) || E.STARTING_BANKROLL;
   let state = fresh(rules, bankroll);
-  const atLimit = (params && params.atLimit) || "continue";
+  const atLimit = (params && params.atLimit) || "stop";
   const stopLoss = params && params.stopLoss != null ? params.stopLoss : 0.4;
   const winGoal = params && params.winGoal != null ? params.winGoal : 0.3;
   const line = [bankroll];
@@ -93,11 +93,13 @@ export function replay(dice, id, params) {
   let inAction = 0;
   let action = 0;
   let limitRoll = 0;
+  let stopKind = "";
   let busted = 0;
   const signal = params && params.signal;
   for (let i = 0; i < dice.length; i++) {
     if (signal && signal.aborted) break;
-    if (!busted && !(atLimit === "stop" && limitRoll)) {
+    const held = atLimit === "stop" && limitRoll;
+    if (!busted && !held) {
       const bet = autoBet(state, id, params);
       state = bet.state;
     }
@@ -106,7 +108,8 @@ export function replay(dice, id, params) {
     if (risk) { inAction += 1; action += risk; }
     const [d1, d2] = dice[i];
     const settled = E.settle(state, d1, d2);
-    state = afterRoll(settled.state, id, settled, params);
+    if (!busted && !(atLimit === "stop" && limitRoll)) state = afterRoll(settled.state, id, settled, params);
+    else state = settled.state;
     (settled.decisions || []).forEach((d) => {
       if (d.expectedLoss) expected += d.expectedLoss;
     });
@@ -118,7 +121,8 @@ export function replay(dice, id, params) {
       busted = i + 1;
     }
     const net = worth - bankroll;
-    if (!limitRoll && (net <= -bankroll * stopLoss || net >= bankroll * winGoal)) limitRoll = i + 1;
+    if (!limitRoll && net <= -bankroll * stopLoss) { limitRoll = i + 1; stopKind = "loss"; }
+    else if (!limitRoll && net >= bankroll * winGoal) { limitRoll = i + 1; stopKind = "goal"; }
     line.push(worth);
     ledger.push({
       roll: i + 1,
@@ -151,6 +155,7 @@ export function replay(dice, id, params) {
     luck: (end - bankroll) - Math.round(expected),
     action,
     limitRoll,
+    stopKind,
     busted,
     open,
     end,
@@ -171,32 +176,68 @@ export function compare(dice, ids, params) {
   };
 }
 
+function quantile(arr, p) {
+  if (!arr.length) return 0;
+  const i = (arr.length - 1) * p;
+  const lo = Math.floor(i);
+  const hi = Math.ceil(i);
+  if (lo === hi) return arr[lo];
+  return arr[lo] + (arr[hi] - arr[lo]) * (i - lo);
+}
+
+export function summarizeNets(nets, extras) {
+  const summary = {};
+  Object.keys(nets).forEach((id) => {
+    const arr = nets[id].slice().sort((a, b) => a - b);
+    const extra = (extras && extras[id]) || { expected: 0, stops: 0, goals: 0, ahead: 0 };
+    const n = arr.length || 1;
+    summary[id] = {
+      min: arr[0] || 0,
+      q1: quantile(arr, 0.25),
+      median: quantile(arr, 0.5),
+      q3: quantile(arr, 0.75),
+      max: arr.length ? arr[arr.length - 1] : 0,
+      p10: quantile(arr, 0.1),
+      p90: quantile(arr, 0.9),
+      n: arr.length,
+      aheadPct: extra.ahead / n,
+      expectedLoss: Math.round(extra.expected / n),
+      stopPct: extra.stops / n,
+      goalPct: extra.goals / n,
+    };
+  });
+  return summary;
+}
+
 export function manySeeds(strategyIds, params) {
   const k = Math.min(1000, Math.max(1, (params && params.seeds) || 100));
   const rolls = (params && params.rolls) || 200;
   const base = Number(params && params.seed) || 1;
   const ids = (strategyIds || []).slice(0, 6);
   const signal = params && params.signal;
+  const onProgress = params && params.onProgress;
+  const runParams = Object.assign({ atLimit: "stop" }, params || {});
   const nets = {};
-  ids.forEach((id) => { nets[id] = []; });
+  const extras = {};
+  ids.forEach((id) => {
+    nets[id] = [];
+    extras[id] = { expected: 0, stops: 0, goals: 0, ahead: 0 };
+  });
   for (let s = 0; s < k; s++) {
-    if (signal && signal.aborted) return { ok: false, cancelled: true, done: s, k };
+    if (signal && signal.aborted) return { ok: false, cancelled: true, done: s, k, summary: summarizeNets(nets, extras) };
     const dice = diceFromSeed(base + s, rolls);
     ids.forEach((id) => {
       if (signal && signal.aborted) return;
-      const run = replay(dice, id, params);
+      const run = replay(dice, id, runParams);
       nets[id].push(run.net);
+      extras[id].expected += run.expectedLoss || 0;
+      if (run.stopKind === "loss") extras[id].stops += 1;
+      if (run.stopKind === "goal") extras[id].goals += 1;
+      if (run.net > 0) extras[id].ahead += 1;
     });
+    if (onProgress) onProgress(s + 1, k);
   }
-  const summary = {};
-  ids.forEach((id) => {
-    const arr = nets[id].slice().sort((a, b) => a - b);
-    const mid = arr[Math.floor(arr.length / 2)] || 0;
-    const p10 = arr[Math.floor(arr.length * 0.1)] || 0;
-    const p90 = arr[Math.floor(arr.length * 0.9)] || 0;
-    summary[id] = { median: mid, p10, p90, n: arr.length };
-  });
-  return { ok: true, k, summary, cancelled: false };
+  return { ok: true, k, summary: summarizeNets(nets, extras), cancelled: false };
 }
 
 export function comparisonClean(text) {

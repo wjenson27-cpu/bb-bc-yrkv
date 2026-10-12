@@ -4,7 +4,7 @@
  * FAIR on screen without dropping the 4th Blazing segment.
  */
 import test from "node:test";
-import { waitForPort } from "./listen.mjs";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -30,12 +30,6 @@ async function loadPlaywright() {
   }
 }
 
-function serve(port) {
-  return spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
-    cwd: root,
-    stdio: "ignore",
-  });
-}
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,9 +50,8 @@ test("strips, landscape coach, heat sheet, and phone HUD", async (t) => {
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8818;
-  const server = serve(port);
-  await waitForPort(port);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

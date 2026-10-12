@@ -27,10 +27,12 @@ export function celebrationTier(points, opts) {
   return "base";
 }
 
-/** A normal point-made stays at 1.2s. 2.5s only when the roll is a real Big Win (≥25×). */
-export function tierDuration(tier, quiet, big) {
-  if (quiet || !big) return 1200;
-  return 2500;
+/** Base 1.2s, Big 2.0s, Huge 2.5s. Quiet stays 1.2s. The Big Win tag does not change the length. */
+export function tierDuration(tier, quiet) {
+  if (quiet) return 1200;
+  if (tier === "huge") return 2500;
+  if (tier === "big") return 2000;
+  return 1200;
 }
 
 export function numberWord(point) {
@@ -83,7 +85,7 @@ export function celebrationCopy(opts) {
   const stinger = opts.stinger || "";
   const amount = !quiet && opts.net > 0 ? opts.net : 0;
   const big = !!opts.big;
-  return { tier, quiet, big, call, cheer, stinger, amount, duration: tierDuration(tier, quiet, big) };
+  return { tier, quiet, big, call, cheer, stinger, amount, duration: tierDuration(tier, quiet) };
 }
 
 export function celebrationClean(text) {

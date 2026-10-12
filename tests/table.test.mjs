@@ -233,6 +233,68 @@ test("rail invariant over bets, wins and color-up", () => {
   assert.equal(Rail.railTotal(cents.rail), 95550);
 });
 
+test("the rail can pay any amount up to its total", () => {
+  const fresh = Rail.railPay(Rail.railBreakdown(120700), 21000);
+  assert.equal(fresh.ok, true);
+  assert.equal(Rail.railTotal(fresh.rail), 99700);
+  const awkward = Rail.emptyRail();
+  awkward[10000] = 2;
+  awkward[50000] = 4;
+  const odd = Rail.railPay(awkward, 20100);
+  assert.equal(odd.ok, true);
+  assert.equal(Rail.railTotal(odd.rail), 220000 - 20100);
+  let seed = 0x12345678;
+  const rnd = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  const mix = (total) => {
+    const rail = Rail.emptyRail();
+    let left = total;
+    const denoms = [50000, 10000, 2500, 500, 100];
+    while (left >= 100) {
+      const opts = denoms.filter((d) => d <= left);
+      const d = opts[Math.floor(rnd() * opts.length)];
+      const k = 1 + Math.floor(rnd() * Math.min(8, Math.floor(left / d)));
+      rail[d] += k;
+      left -= k * d;
+    }
+    rail.cup = left;
+    return rail;
+  };
+  let fails = 0;
+  for (let i = 0; i < 100000; i++) {
+    const dollars = 1 + Math.floor(rnd() * 5000);
+    const total = dollars * 100 + Math.floor(rnd() * 100);
+    const amount = Math.floor(rnd() * (Math.floor(total / 100) + 1)) * 100;
+    if (amount <= 0 || amount > total) continue;
+    const start = i % 2 ? Rail.railBreakdown(total) : mix(total);
+    const paid = Rail.railPay(start, amount);
+    if (!paid.ok || Rail.railTotal(paid.rail) !== Rail.railTotal(start) - amount) fails += 1;
+  }
+  assert.equal(fails, 0);
+});
+
+test("table minimums: hops and repeaters are $1, the line and Any 7 stay $10", () => {
+  const g = table();
+  assert.equal(E.placeBet(g, { kind: "hop", pair: "1-2" }, 100).ok, true);
+  assert.equal(E.placeBet(g, { kind: "repeater", number: 6 }, 100).ok, true);
+  assert.equal(E.placeBet(g, { kind: "field" }, 100).ok, true);
+  assert.equal(E.placeBet(g, { kind: "hardway", number: 6 }, 100).ok, true);
+  assert.match(E.placeBet(g, { kind: "any7" }, 500).error, /Minimum is \$10/);
+  assert.match(E.placeBet(g, { kind: "pass" }, 500).error, /Minimum is \$10/);
+  assert.match(E.placeBet(g, { kind: "place", number: 5 }, 500).error, /Minimum is \$10/);
+  assert.match(E.placeBet(g, { kind: "repeater", number: 6 }, 2600).error, /Maximum/);
+});
+
+test("replays stop at the 40% loss and +30% win goal", () => {
+  const dice = R.rollSequenceFromSeed(11, 80).dice;
+  const run = R.replay(dice, "T1", { stopLoss: 0.02, winGoal: 0.02 });
+  assert.ok(run.limitRoll > 0, "limit roll " + run.limitRoll);
+  assert.ok(run.limitRoll < dice.length);
+  assert.ok(run.stopKind === "loss" || run.stopKind === "goal");
+});
+
 test("celebration tiers and copy", () => {
   assert.equal(PT.celebrationTier(1), "base");
   assert.equal(PT.celebrationTier(2), "big");
@@ -240,11 +302,14 @@ test("celebration tiers and copy", () => {
   assert.equal(PT.celebrationTier(5), "huge");
   assert.equal(PT.celebrationTier(1, { meterOn: true, blazing: true }), "huge");
   assert.equal(PT.tierDuration("base"), 1200);
-  assert.equal(PT.tierDuration("big"), 1200);
-  assert.equal(PT.tierDuration("huge"), 1200);
+  assert.equal(PT.tierDuration("big"), 2000);
+  assert.equal(PT.tierDuration("huge"), 2500);
   assert.equal(PT.tierDuration("huge", true), 1200);
   assert.equal(PT.tierDuration("huge", false, true), 2500);
-  assert.equal(PT.tierDuration("base", false, true), 2500);
+  assert.equal(PT.tierDuration("base", false, true), 1200);
+  assert.equal(PT.celebrationCopy({ tier: "big", point: 8, points: 2, net: 2000 }).duration, 2000);
+  assert.equal(PT.celebrationCopy({ tier: "huge", point: 8, points: 3, net: 2000, big: false }).big, false);
+  assert.equal(PT.celebrationCopy({ tier: "huge", point: 8, points: 3, net: 2000, big: true }).duration, 2500);
   const base = PT.celebrationCopy({ tier: "base", point: 6, points: 1, net: 7000 });
   assert.equal(base.call, "Six! The point is made. Pass line wins.");
   assert.equal(base.cheer, "Yesss!");
@@ -257,6 +322,8 @@ test("strategies T1 T5 T7 T19 T20 T23 T24", () => {
   assert.equal(TS.strategyById("T1").max7["345"], 60);
   assert.equal(TS.strategyById("T1").bankroll, "$500");
   assert.equal(TS.strategyById("T5").bankroll, "$200");
+  assert.equal(TS.strategyById("T12").bankroll, "$480");
+  assert.equal(TS.strategyById("T12").bankCents, 48000);
   assert.equal(TS.sessionLimits(100000).stopAt, 60000);
   assert.equal(TS.sessionLimits(100000).goalAt, 130000);
   let g = table();
@@ -372,12 +439,16 @@ test("etiquette deck, nudges and table manners", () => {
   assert.equal(Et.ETIQUETTE.length, 15);
   assert.equal(Et.etiquetteClean(), true);
   const bubble = Et.deckFor("bubble");
-  assert.deepEqual(bubble.both.map((t) => t.n), [4, 9, 14]);
+  assert.deepEqual(bubble.both.map((t) => t.n), [4, 9]);
   assert.equal(bubble.live.length, 12);
+  assert.equal(bubble.all.length, 14);
   assert.equal(Et.deckFor("table").all.length, 15);
   assert.equal(Et.nudgeFor("buy_in", "bubble"), null);
   assert.equal(Et.nudgeFor("first_dont", "bubble").n, 9);
   assert.equal(Et.nudgeFor("session_start", "table").n, 14);
+  assert.equal(Et.nudgeFor("session_start", "bubble"), null);
+  assert.equal(Et.deckFor("bubble").all.some((t) => t.id === "check_minimum"), false);
+  assert.equal(Et.deckFor("table").all.length, 15);
   assert.ok(Et.ETIQUETTE.find((t) => t.n === 4).billy.includes("doesn't change the dice") || Et.ETIQUETTE.find((t) => t.n === 4).why.includes("doesn't change"));
   let store = { badges: {}, progress: {} };
   Et.ETIQUETTE.forEach((t, i) => {

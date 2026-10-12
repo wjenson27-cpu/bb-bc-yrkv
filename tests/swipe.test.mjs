@@ -3,11 +3,13 @@
  * Skips in environments that have neither, so `npm test` still passes on a bare Node runner.
  */
 import test from "node:test";
-import { waitForPort } from "./listen.mjs";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
+const root = fileURLToPath(new URL("..", import.meta.url));
 
 const CHROME = ["/usr/local/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium"].find((p) => existsSync(p));
 
@@ -19,13 +21,6 @@ async function loadPlaywright() {
   }
 }
 
-function serve(port) {
-  const child = spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
-    cwd: fileURLToPath(new URL("..", import.meta.url)),
-    stdio: "ignore",
-  });
-  return child;
-}
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -37,9 +32,8 @@ test("a horizontal swipe that starts on a felt button changes the screen and the
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8766;
-  const server = serve(port);
-  await waitForPort(port);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox"] });
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -122,9 +116,8 @@ test("a mouse click posts a felt bet and a hit lights PRESS", async (t) => {
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8767;
-  const server = serve(port);
-  await waitForPort(port);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox"] });
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });

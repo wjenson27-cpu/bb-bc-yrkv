@@ -3,7 +3,7 @@
  * the dome speech gap, the seven-out toast, and the HUD avatar.
  */
 import test from "node:test";
-import { waitForPort } from "./listen.mjs";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -76,9 +76,6 @@ test("a unit note and the first hop lesson share the toast with the warning", ()
   assert.equal(E.tutorToastLine({ kind: "ce" }, "regular", false, "C&E uses $2 units. $1 stayed in practice chips.", false), "C&E uses $2 units. $1 stayed in practice chips.");
 });
 
-function serve(port) {
-  return spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], { cwd: root, stdio: "ignore" });
-}
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -127,9 +124,8 @@ test("board, warnings, speech, seven-out toast, and the HUD avatar", async (t) =
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8871;
-  const server = serve(port);
-  await waitForPort(port);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

@@ -20,7 +20,7 @@ function strip(text) {
     .replace("export const TEST_BUILD = true;", "export const TEST_BUILD = false;");
 }
 
-for (const rel of ["js/build-flags.mjs", "js/ui.mjs", "js/table-ui.mjs"]) {
+for (const rel of ["js/build-flags.mjs", "js/ui.mjs", "js/table-ui.mjs", "js/iap.mjs"]) {
   const path = join(dist, rel);
   writeFileSync(path, strip(readFileSync(path, "utf8")));
 }
@@ -28,7 +28,9 @@ for (const rel of ["js/build-flags.mjs", "js/ui.mjs", "js/table-ui.mjs"]) {
 const flags = readFileSync(join(dist, "js/build-flags.mjs"), "utf8");
 const ui = readFileSync(join(dist, "js/ui.mjs"), "utf8");
 const engine = readFileSync(join(dist, "js/engine.mjs"), "utf8");
+const iap = readFileSync(join(dist, "js/iap.mjs"), "utf8");
 if (!/TEST_BUILD = false/.test(flags)) throw new Error("flag not stripped");
 if (/__bb/.test(ui)) throw new Error("hook left in ui");
 if (/Math\.random\(/.test(engine)) throw new Error("Math.random left in engine");
+if (/setItem\(KEY/.test(iap) || /TEST-ONLY STUB/.test(iap)) throw new Error("iap stub left in dist");
 console.log("dist ready");

@@ -13,6 +13,7 @@ import * as PT from "./point-tier.mjs";
 import { SETS, orient, cssMatrix, turn, axisTotals } from "./tc-dice.mjs";
 import { resolveSwipe } from "./swipe.mjs";
 import * as Badges from "./badges.mjs";
+import * as IAP from "./iap.mjs";
 
 const A = "../assets/";
 const STORE = "bb-table-craps-v1";
@@ -61,6 +62,10 @@ let compareSeeds = 100;
 let etiquetteAt = 0;
 let etiquetteSeen = [];
 let toastTimer = 0;
+let queuedTip = "";
+let compareWorker = null;
+let compareJob = 0;
+let compareProgress = "";
 const nudged = Object.create(null);
 
 function money(c) { return E.formatMoney(c); }
@@ -93,6 +98,10 @@ function sync(note) {
   rail = moved.rail;
   if (moved.breaks && moved.breaks.length) {
     changeNote = moved.breaks.map((b) => b.label).join(" · ");
+    const src = moved.breaks[0].from || 100;
+    const el = document.querySelector(".stack[data-chip='" + src + "']");
+    const rect = el && el.getBoundingClientRect();
+    if (rect) requestAnimationFrame(() => fanFrom(rect, src >= 100 ? src : 100));
     if (!localStorage.getItem("bb-table-change-seen")) {
       toastText = "Here's your change.";
       localStorage.setItem("bb-table-change-seen", "1");
@@ -183,10 +192,8 @@ function fireRail(size) {
 }
 
 function fireStake() {
-  const chip = settings.chip;
-  const step = chip >= 100 && chip <= 1000 ? chip : 100;
   const room = Math.max(0, 1000 - (game.bets.fire || 0));
-  return Math.min(room, step);
+  return Math.min(room, 100);
 }
 function sideHTML() {
   const open = !!game.fireOpen;
@@ -205,7 +212,7 @@ function sideHTML() {
     "<section class='tc-reps'><header><b>REPEATERS</b><span class='edge r'>18–22%</span></header><div class='reps'>" +
     reps.map(([n, pay]) => "<button class='rep' data-act='spot' data-kind='repeater:" + n + "'><b>" + n + "</b><small>" + pay + " FOR 1</small></button>").join("") +
     "</div></section>" +
-    "<section class='tc-hops'><header><b>HOPS · ONE ROLL</b><span class='edge r'>11–14%</span></header><div class='hg'>" +
+    "<section class='tc-hops'><header><b>HOPS · ONE ROLL</b><span class='edge r'>11–14%</span></header><p class='scrollhint'>Scroll for every hop</p><div class='hg'>" +
     hops.map(([a, b]) => "<button class='hop" + (a === b ? " hard" : "") + "' data-act='spot' data-kind='hop:" + a + "-" + b + "'><span><img src='" + A + "dice/faces/face-" + a + ".svg' alt=''><img src='" + A + "dice/faces/face-" + b + ".svg' alt=''></span><small>" + (a === b ? "30" : "15") + " TO 1</small></button>").join("") +
     "</div></section></div>";
 }
@@ -284,34 +291,42 @@ function demoCompare() {
   compareRun = R.compare(seq.dice, ["T1", "T5", "T6"], { rules: game.rules });
   return compareRun;
 }
+function segButtons(act, value, options) {
+  return "<div class='seg' role='group'>" + options.map((n) => "<button type='button' data-act='" + act + "' data-value='" + n + "' class='" + (Number(value) === n ? "on" : "") + "'>" + n + "</button>").join("") + "</div>";
+}
+function pct(n) { return Math.round((Number(n) || 0) * 100) + "%"; }
 function compareHTML() {
-  const lengths = [100, 500, 1000, 5000];
   const picks = TS.TABLE_STRATEGIES.map((c) => {
     const on = comparePick.indexOf(c.id) >= 0;
-    return "<label class='cmpick'><input type='checkbox' data-act='cmpick' data-id='" + c.id + "'" + (on ? " checked" : "") + (premiumOn() ? "" : " disabled") + "> " + c.id + "</label>";
+    return "<button type='button' class='chip" + (on ? " on" : "") + "' data-act='cmpick' data-id='" + c.id + "' aria-pressed='" + on + "'>" + c.id + "</button>";
   }).join("");
-  const controls = "<div class='cmpcontrols'><label>Seed <input data-act='seed' value='" + compareSeed + "' inputmode='numeric'></label>" +
-    "<label>Rolls <select data-act='length'>" + lengths.map((n) => "<option" + (Number(compareLen) === n ? " selected" : "") + ">" + n + "</option>").join("") + "</select></label>" +
-    "<button data-act='run-compare' style='height:44px'>Replay</button>" +
-    "<label>Seeds <select data-act='seed-count'><option" + (compareSeeds === 100 ? " selected" : "") + ">100</option><option" + (compareSeeds === 1000 ? " selected" : "") + ">1000</option></select></label>" +
-    "<button data-act='many-seeds' style='height:44px'>Many seeds</button>" +
-    "<button data-act='csv-compare' style='height:44px'>Use Fair Dice history</button>" +
-    "<label class='csvfile'>Import CSV <input type='file' data-act='csv-file' accept='.csv,text/csv'></label></div>" +
-    "<div class='cmpicks'>" + picks + "</div>";
+  const controls = "<div class='cmpcontrols'><label class='seedlab'>Seed <input data-act='seed' value='" + compareSeed + "' inputmode='numeric'></label>" +
+    "<div class='segwrap'><span>ROLLS</span>" + segButtons("length", compareLen, [100, 500, 1000, 5000]) + "</div>" +
+    "<button type='button' data-act='run-compare'>Replay</button>" +
+    "<div class='segwrap'><span>SEEDS</span>" + segButtons("seed-count", compareSeeds, [100, 1000]) + "</div>" +
+    "<button type='button' data-act='many-seeds'>Many seeds</button>" +
+    (compareWorker ? "<button type='button' data-act='many-cancel'>Cancel</button>" : "") +
+    "<button type='button' data-act='csv-compare'>Fair Dice history</button>" +
+    "<button type='button' data-act='csv-pick'>Import CSV</button>" +
+    "<input class='csvhidden' type='file' data-act='csv-file' accept='.csv,text/csv' tabindex='-1'></div>" +
+    (compareProgress ? "<p class='cmpprogress'>" + compareProgress + "</p>" : "") +
+    "<p class='pickhint'>Pick up to 6</p><div class='cmpicks'>" + picks + "</div>";
   if (!premiumOn()) {
     const demo = demoCompare();
     return "<div class='tc-sheet tc-compare'><h1>Strategy Comparison</h1><p class='warnline'><b>Past rolls don't predict future rolls.</b> Standard play shows one locked demo. Changing it opens Premium.</p>" +
       chartHTML(demo.runs) +
-      "<button class='go' data-act='screen' data-screen='paywall' style='height:44px'>Unlock comparison</button></div>";
+      "<button class='go' data-act='screen' data-screen='paywall'>Unlock comparison</button></div>";
   }
-  const many = compareMany && compareMany.summary ? "<table class='mt'><caption>Many seeds · median net</caption><tbody>" +
-    Object.keys(compareMany.summary).map((id) => "<tr><td>" + id + "</td><td>" + money(compareMany.summary[id].median) + "</td><td>" + compareMany.summary[id].n + " seeds</td></tr>").join("") +
-    "</tbody></table>" : "";
+  const many = compareMany && compareMany.summary ? "<table class='mt spread'><caption>Many seeds · spread</caption><thead><tr><th>Plan</th><th>Min</th><th>Q1</th><th>Median</th><th>Q3</th><th>Max</th><th>Ahead</th><th>E[loss]</th><th>Stop</th></tr></thead><tbody>" +
+    Object.keys(compareMany.summary).map((id) => {
+      const s = compareMany.summary[id];
+      return "<tr><td>" + id + "</td><td>" + money(s.min) + "</td><td>" + money(s.q1) + "</td><td>" + money(s.median) + "</td><td>" + money(s.q3) + "</td><td>" + money(s.max) + "</td><td>" + pct(s.aheadPct) + "</td><td>" + money(s.expectedLoss) + "</td><td>" + pct(s.stopPct) + "</td></tr>";
+    }).join("") + "</tbody></table>" : "";
   return "<div class='tc-sheet tc-compare'><header class='sh'><small>STRATEGY COMPARISON · PREMIUM</small><h1>Same dice, different plans.</h1><p class='warnline'><b>Past rolls don't predict future rolls.</b> Every strategy here has a house edge.</p></header>" +
     controls +
     (compareRun ? chartHTML(compareRun.runs) : "<p>Run a replay to chart it.</p>") +
     many +
-    "<p class='seed'>Seed " + compareSeed + " · " + compareLen + " rolls · " + R.SEEDED_RNG_NAME + ". Top on this replay.</p></div>";
+    "<p class='seed'>Seed " + compareSeed + " · " + compareLen + " rolls · " + R.SEEDED_RNG_NAME + ". 40% stop-loss and +30% win goal apply. Top on this replay.</p></div>";
 }
 
 function paywallHTML() {
@@ -391,33 +406,34 @@ function render() {
   const right = page < 2 ? "<button class='pill' data-act='page' data-page='" + (page + 1) + "'><span class='cap'>" + names[page + 1] + " ›</span></button>" : "<span class='pill' hidden></span>";
   const onThrow = page === 2 && screen === "play" && !menu;
   const shoot = onThrow
-    ? "<button class='tc-shoot' data-act='throw'><small>YOUR THROW</small><b>SHOOT</b><small>DRAG · FLICK</small></button>"
-    : "<button class='tc-shoot' data-act='go-shooter'><small>GO TO</small><b>SHOOTER</b><small>SHOOTER ›</small></button>";
+    ? "<button class='tc-shoot' data-act='throw'><small>YOUR THROW</small><b>SHOOT</b></button>"
+    : "<button class='tc-shoot' data-act='go-shooter'><small>GO TO</small><b>SHOOTER</b></button>";
   const hudPips = lastFaces ? pips(lastFaces.d1, lastFaces.d2, 16) : "";
   app.innerHTML = "<header class='tc-hud'><button class='avbtn' data-act='menu' aria-label='Dealer Billy, menu'><img class='av' alt='' src='" + A + "mascots/dealer-billy/hud/hud-billy-A-36@2x.png'></button>" +
     "<div class='money'><div><small>Practice chips</small><b>" + money(game.bankroll) + "</b></div><div><small>On table</small><b>" + money(E.tableTotal(game)) + "</b></div></div>" +
     hudPips +
     "<img class='puck' data-puck alt='" + (point ? "Point " + point : "Puck off") + "' src='" + A + "icons/puck-" + (point ? "on" : "off") + ".svg'>" +
     "<button class='fair' data-act='fair'>FAIR</button></header>" +
-    "<main class='tc-stage' id='stage'>" + stageHTML() + conv + sessionCard + (toastText ? "<div class='tc-toast' role='status'><b>" + toastText + "</b>" + (lastFaces && screen === "play" ? pips(lastFaces.d1, lastFaces.d2, 24) : "") + (changeNote ? "<small>" + changeNote + "</small>" : "") + "</div>" : "") + "</main>" +
+    "<main class='tc-stage' id='stage'>" + stageHTML() + conv + sessionCard + "</main>" +
     "<div class='tc-dots'>" + left +
     "<span class='dots'>" + [0, 1, 2].map((i) => "<button data-act='page' data-page='" + i + "' aria-label='" + ["Side bets", "Board", "Dice"][i] + "'><i class='" + (page === i ? "on" : "") + "'></i></button>").join("") + "</span>" +
     right + "</div>" +
     "<footer class='tc-dock'>" + offerHTML + railHTML() + shoot + "</footer>" +
     "<nav class='tc-keys'><button data-act='screen' data-screen='play'" + (screen === "play" && !menu ? " class='on'" : "") + ">BETS</button><button data-act='screen' data-screen='picker'>STRATEGIES</button><button data-act='tutor'>TUTOR</button><button data-act='menu'>STATS</button></nav>" +
-    "<div class='tc-notice'><span>18+</span> PRACTICE ONLY · NO REAL MONEY</div>";
+    (toastText && screen === "play" && !menu ? "<div class='tc-notice toast' role='status'><b>" + toastText + "</b>" + (changeNote ? "<small>" + changeNote + "</small>" : "") + "</div>" : "<div class='tc-notice'><span>18+</span> PRACTICE ONLY · NO REAL MONEY</div>");
   fitTable();
-  armChangeClear();
+  armToastHide();
 }
 
-function armChangeClear() {
+function armToastHide() {
   clearTimeout(toastTimer);
-  if (!changeNote) return;
+  if (!toastText) return;
   toastTimer = setTimeout(() => {
     changeNote = "";
-    const note = document.querySelector(".tc-toast small");
-    if (note) note.remove();
-  }, 2200);
+    toastText = queuedTip;
+    queuedTip = "";
+    render();
+  }, 3000);
 }
 
 function fitTable() {
@@ -429,61 +445,71 @@ function fitTable() {
   const f = document.getElementById("felt");
   const stage = document.getElementById("stage");
   if (!f || !stage) return;
-  f.classList.toggle("land", land);
+  const feltLand = land && h > 360;
+  f.classList.toggle("land", feltLand);
   const st = stage.getBoundingClientRect();
-  const coach = stage.querySelector(".tc-coach");
-  const coachH = coach ? coach.offsetHeight + 8 : 0;
-  const ring = land ? 6 : h < 700 ? 4.5 : 8.5 * Math.min(1, w / 390);
+  const ring = land && h <= 360 ? 3 : land ? 5 : h < 700 ? 4.5 : 8.5 * Math.min(1, w / 390);
   f.style.setProperty("--ring", Math.max(2, ring - 1.5).toFixed(1) + "px");
   const aw = Math.max(120, st.width - 2 * ring);
-  const ah = Math.max(120, st.height - 2 * ring - coachH);
-  let k, rows;
-  if (!land) {
+  const ah = Math.max(80, st.height - 8);
+  const MIN = 44;
+  let k, rows, gap;
+  if (!feltLand) {
     k = Math.min(1.12, aw / 354);
-    const base = { ats: 46, come: 48, field: 50, p1: 50, p2: 50, line: 50 };
-    const gap = Math.max(2, 3 * k);
-    const pad = 2 * (h < 700 ? 3 : Math.max(3, 6 * k)) + 3.2;
-    const sm = {};
-    Object.keys(base).forEach((n) => { sm[n] = Math.max(h < 640 ? 36 : 44, base[n] * k); });
-    const used0 = Object.values(sm).reduce((a, b) => a + b, 0) + 4 * gap + pad;
-    let nums = ah - used0 - gap;
-    if (nums < 72) {
-      const scale = Math.max(0.62, (ah - 72 - 4 * gap - pad) / Math.max(1, used0 - 4 * gap - pad));
-      Object.keys(sm).forEach((n) => { sm[n] = Math.max(28, sm[n] * scale); });
-      nums = Math.max(64, ah - (Object.values(sm).reduce((a, b) => a + b, 0) + 4 * gap + pad) - gap);
-    }
-    const spare = ah - (Object.values(sm).reduce((a, b) => a + b, 0) + 4 * gap + pad) - gap - nums;
+    gap = Math.max(2, 3 * k);
+    const pad = 2 * (h < 700 ? (w < 360 ? 1.5 : 3) : Math.max(3, 6 * k)) + (w < 360 ? 1 : 3.2);
+    const sm = {
+      ats: Math.max(MIN, 46 * k),
+      come: Math.max(MIN, 48 * k),
+      field: Math.max(MIN, 50 * k),
+      p1: Math.max(MIN, 50 * k),
+      p2: Math.max(MIN, 50 * k),
+      line: Math.max(MIN, 50 * k),
+    };
+    const fixed = sm.ats + sm.come + sm.field + sm.p1 + sm.p2 + sm.line + 5 * gap + pad;
+    let nums = Math.max(72, ah - fixed);
+    const spare = ah - fixed - nums;
     if (spare > 1) {
       const g = Math.min(spare / 6, 10 * k);
       Object.keys(sm).forEach((n) => { sm[n] += g; });
+      nums = Math.max(72, ah - (sm.ats + sm.come + sm.field + sm.p1 + sm.p2 + sm.line + 5 * gap + pad));
     }
     f.style.setProperty("--g", gap.toFixed(1) + "px");
     f.style.setProperty("--fp", ((pad - 3.2) / 2).toFixed(1) + "px");
     rows = [sm.ats, nums, sm.come, sm.field, sm.p1 + sm.p2 + gap, sm.line];
   } else {
-    k = Math.min(1.1, ah / 300, aw / 420);
-    const gap = Math.max(2, 3 * k);
-    const pad = 8 * k;
-    let ats = Math.max(32, 40 * k), come = Math.max(32, 40 * k), field = Math.max(32, 40 * k), line = Math.max(32, 42 * k);
-    let nums = ah - (ats + come + field + line) - 4 * gap - pad;
-    if (nums < 44) {
-      const scale = Math.max(0.55, (ah - 44 - 4 * gap - pad) / Math.max(1, ats + come + field + line));
-      ats *= scale; come *= scale; field *= scale; line *= scale;
-      nums = Math.max(36, ah - (ats + come + field + line) - 4 * gap - pad);
-    }
+    k = Math.min(1.1, Math.max(0.72, aw / 420));
+    gap = 3;
+    const come = MIN;
+    const ats = MIN, field = MIN, line = MIN;
+    const pad = 8;
+    const nums = Math.max(72, ah - (ats + come + field + line) - 4 * gap - pad);
     rows = [ats, nums, come, field, line];
-    f.style.setProperty("--g", gap.toFixed(1) + "px");
+    f.style.setProperty("--g", gap + "px");
+    f.style.setProperty("--fp", "4px");
   }
-  f.style.gridTemplateRows = rows.map((r) => Math.max(24, r).toFixed(1) + "px").join(" ");
+  const total = rows.reduce((a, b) => a + b, 0);
+  if (total > ah + 4) {
+    f.style.height = Math.ceil(total + 12) + "px";
+    f.style.alignSelf = "start";
+    stage.style.overflowY = "auto";
+  } else {
+    f.style.height = "100%";
+    f.style.alignSelf = "";
+    stage.style.overflowY = "";
+  }
+  f.style.gridTemplateRows = rows.map((r) => Math.max(MIN, r).toFixed(1) + "px").join(" ");
   f.style.setProperty("--k", k.toFixed(4));
-  const tight = land || h < 700;
-  const strip = land ? 11 : tight ? 12 : Math.max(14, 18 * k);
-  const lay = land ? 11 : tight ? 12 : Math.max(14, 16 * k);
+  const strip = feltLand ? 16 : (h < 700 ? 12 : Math.max(16, 18 * k));
+  const lay = feltLand ? 16 : (h < 700 ? 12 : Math.max(16, 16 * k));
   const numsH = rows[1] - 3.2;
   const faceH = Math.max(8, numsH - strip * 2 - lay);
-  const floor = land ? 12 : (w < 360 ? 22 : 28);
+  const floor = feltLand ? 16 : (w < 360 ? 22 : 28);
   let digit = Math.min(34 * k, Math.max(floor, (faceH - 15) / 0.86));
-  if (!land && w >= 360 && w <= 430 && digit < 33.7 && 34 * k >= 33.7) digit = 33.7;
+  if (!feltLand && w >= 360 && w <= 430) {
+    const want = w < 370 ? 33.7 : w < 385 ? 35.2 : w <= 400 ? 35.8 : w <= 420 ? 36.1 : 38.1;
+    if (digit < want && (faceH - 15) / 0.86 >= want) digit = want;
+  }
   f.style.setProperty("--digit", digit.toFixed(1) + "px");
   f.style.setProperty("--strip", strip.toFixed(1) + "px");
   f.style.setProperty("--strip-lay", lay.toFixed(1) + "px");
@@ -501,6 +527,20 @@ function flyChip(from, to, cents, ms) {
   setTimeout(() => ghost.remove(), ms + 40);
 }
 
+function fanFrom(rect, cents) {
+  if (!rect || reducedMQ.matches) return;
+  for (let i = 0; i < 6; i++) {
+    const ghost = document.createElement("i");
+    ghost.className = "tc-fly";
+    const dx = (i - 2.5) * 16;
+    const dy = -26 - (i % 3) * 8;
+    ghost.style.cssText = "position:fixed;z-index:80;pointer-events:none;width:28px;height:14px;border-radius:50%;left:" + rect.left + "px;top:" + rect.top + "px;background:url(" + chipImg(cents >= 500 ? cents : 500) + ") center/cover;transition:transform 280ms ease-out,opacity 280ms";
+    document.body.appendChild(ghost);
+    requestAnimationFrame(() => { ghost.style.transform = "translate(" + dx + "px," + dy + "px)"; ghost.style.opacity = "0.15"; });
+    setTimeout(() => ghost.remove(), 320);
+  }
+}
+
 function placeSpot(kind, number) {
   if (rolling) { maybeNudge("bet_while_rolling"); return; }
   let amount = settings.chip;
@@ -509,7 +549,11 @@ function placeSpot(kind, number) {
     const raw = amount;
     amount = raw < 1200 ? 1200 : Math.floor(raw / 600) * 600;
     if (amount !== raw) toastText = "Place " + number + " posted at " + money(amount) + " ($6 steps).";
-  } else if (kind === "pass" || kind === "dontPass" || kind === "come" || kind === "dontCome" || kind === "field") {
+  } else if (kind === "hop") {
+    amount = Math.min(10000, Math.max(100, amount));
+  } else if (kind === "repeater") {
+    amount = Math.min(2500, Math.max(100, amount));
+  } else if (kind === "pass" || kind === "dontPass" || kind === "come" || kind === "dontCome" || kind === "any7" || kind === "place" || kind === "buy" || kind === "lay") {
     if (amount < 1000) amount = 1000;
   }
   const from = document.querySelector(".stack.sel") || document.querySelector(".stack");
@@ -530,6 +574,8 @@ function maybeNudge(trigger) {
   const tip = Et.nudgeFor(trigger, "table");
   if (!tip) return;
   nudged[trigger] = true;
+  if (screen === "compare" || screen === "tutorial" || screen === "picker") return;
+  if (trigger === "new_shooter") { queuedTip = tip.billy; return; }
   toastText = tip.billy;
 }
 
@@ -542,8 +588,6 @@ function checkSession() {
 }
 
 function showRolled(d1, d2) {
-  const front = (top) => (top === 1 || top === 6 ? 2 : 1);
-  diceFaces = [orient(d1, front(d1)), orient(d2, front(d2))];
   lastFaces = { d1, d2 };
 }
 
@@ -559,9 +603,14 @@ function doRoll() {
   PC.cancelCelebration();
   offer = null;
   changeNote = "";
+  if (strategyId && !sessionPrompt) {
+    game = TS.autoBet(game, strategyId, { unit: 1000 }).state;
+    sync();
+  }
   const passBefore = game.bets.pass;
   const pointBefore = game.point;
   const fireBefore = (game.firePoints || []).length;
+  const fireBetBefore = game.bets.fire || 0;
   const dice = E.rollDice();
   if (!dice || !dice.d1) {
     rolling = false;
@@ -594,7 +643,7 @@ function doRoll() {
     const quiet = !(passBefore > 0);
     const big = !quiet && settled.net >= 25 * Math.max(passBefore, 1);
     const fireCount = (game.firePoints || []).length;
-    const stinger = fireCount > fireBefore ? PT.fireStinger(fireCount, (game.bets.fire || 0) > 0) : "";
+    const stinger = fireCount > fireBefore ? PT.fireStinger(fireCount, fireBetBefore > 0) : "";
     const copy = PT.celebrationCopy({ tier, quiet, big, point: pointBefore, points, hard: dice.hard, net: settled.net, stinger });
     const targets = [document.querySelector(".numbox.point") || document.querySelector("[data-n='" + pointBefore + "']"), document.querySelector(".tc-hud .puck")].filter(Boolean);
     PC.celebratePoint({
@@ -654,7 +703,7 @@ function onClick(e) {
   const t = e.target.closest("[data-act]");
   if (!t) return;
   const act = t.dataset.act;
-  if ((act === "cmpick" || act === "seed" || act === "length" || act === "seed-count" || act === "color-setting" || act === "theme" || act === "csv-file") && e.type === "click") return;
+  if ((act === "seed" || act === "color-setting" || act === "theme" || act === "csv-file") && e.type === "click") return;
   if (act === "chip") { settings.chip = Number(t.dataset.chip); changeNote = ""; render(); return; }
   if (act === "roll" || act === "throw") { doRoll(); return; }
   if (act === "go-shooter") { page = 2; screen = "play"; menu = false; maybeNudge("set_dice"); render(); return; }
@@ -676,7 +725,7 @@ function onClick(e) {
     if (kind.indexOf(":") > 0) {
       const [k, rest] = kind.split(":");
       if (k === "hop") {
-        const res = E.placeBet(game, { kind: "hop", pair: rest }, Math.max(1000, settings.chip));
+        const res = E.placeBet(game, { kind: "hop", pair: rest }, Math.min(10000, Math.max(100, settings.chip)));
         if (res.ok) { game = res.state; sync(); }
         else toastText = res.error;
         render();
@@ -696,7 +745,16 @@ function onClick(e) {
     render();
     return;
   }
-  if (act === "color-up") { rail = Rail.railColorUp(rail).rail; offer = null; save(); render(); return; }
+  if (act === "color-up") {
+    const from = document.querySelector(".stack[data-chip='100']") || document.querySelector(".stack");
+    const rect = from ? from.getBoundingClientRect() : null;
+    rail = Rail.railColorUp(rail).rail;
+    offer = null;
+    save();
+    render();
+    fanFrom(rect, 100);
+    return;
+  }
   if (act === "color-dismiss") { offer = null; render(); return; }
   if (act === "convert" && convert) {
     const res = E.placeBet(game, { kind: convert.to, number: convert.number }, convert.amount, { convert: true });
@@ -729,51 +787,103 @@ function onClick(e) {
   if (act === "tutor-next") { tutorStep += 1; render(); return; }
   if (act === "tutor-back") { tutorStep = Math.max(0, tutorStep - 1); render(); return; }
   if (act === "unlock") {
-    localStorage.setItem("bb-table-entitlement", "1");
-    settings.premium = true;
-    localStorage.setItem(PREM, "1");
-    toastText = "Premium unlocked on this device. Practice chips only.";
-    screen = "compare";
-    render();
+    IAP.purchasePremium().then((res) => {
+      if (res.ok && localStorage.getItem("bb-table-entitlement") === "1") {
+        settings.premium = true;
+        localStorage.setItem(PREM, "1");
+        toastText = "Premium unlocked on this device. Practice chips only.";
+        screen = "compare";
+      } else {
+        settings.premium = localStorage.getItem("bb-table-entitlement") === "1";
+        toastText = (res && res.error) || "Purchase unavailable.";
+      }
+      render();
+    });
     return;
   }
   if (act === "restore") {
-    if (localStorage.getItem("bb-table-entitlement") === "1") {
-      settings.premium = true;
-      localStorage.setItem(PREM, "1");
-      toastText = "Purchases restored. Practice chips only.";
-      screen = "compare";
-    } else {
-      settings.premium = false;
-      localStorage.removeItem(PREM);
-      toastText = "No purchases to restore.";
-    }
-    render();
+    IAP.restorePremium().then((res) => {
+      if (res.ok && res.entitlement === "1") {
+        settings.premium = true;
+        localStorage.setItem(PREM, "1");
+        toastText = "Purchases restored. Practice chips only.";
+        screen = "compare";
+      } else {
+        settings.premium = false;
+        localStorage.removeItem(PREM);
+        toastText = "No purchases to restore.";
+      }
+      render();
+    });
     return;
   }
   if (act === "cmpick") {
     const id = t.dataset.id;
     const on = comparePick.indexOf(id);
-    if (t.checked && on < 0 && comparePick.length < 6) comparePick.push(id);
-    if (!t.checked && on >= 0) comparePick.splice(on, 1);
+    if (on >= 0) comparePick.splice(on, 1);
+    else if (comparePick.length < 6) comparePick.push(id);
+    render();
     return;
   }
   if (act === "seed") { compareSeed = t.value || "1"; return; }
-  if (act === "length") { compareLen = Number(t.value) || 300; return; }
-  if (act === "seed-count") { compareSeeds = Number(t.value) === 1000 ? 1000 : 100; return; }
+  if (act === "length") { compareLen = Number(t.dataset.value) || 300; render(); return; }
+  if (act === "seed-count") { compareSeeds = Number(t.dataset.value) === 1000 ? 1000 : 100; render(); return; }
   if (act === "run-compare") {
     if (!premiumOn()) { screen = "paywall"; render(); return; }
     const ids = comparePick.slice(0, 6);
     const seq = R.rollSequenceFromSeed(Number(compareSeed) || 1, Number(compareLen) || 300);
-    compareRun = R.compare(seq.dice, ids.length ? ids : ["T1"], { rules: game.rules });
+    compareRun = R.compare(seq.dice, ids.length ? ids : ["T1"], { rules: game.rules, atLimit: "stop" });
     compareMany = null;
+    render();
+    return;
+  }
+  if (act === "many-cancel") {
+    compareJob += 1;
+    if (compareWorker) { compareWorker.postMessage({ type: "cancel" }); compareWorker.terminate(); compareWorker = null; }
+    compareProgress = "Cancelled.";
     render();
     return;
   }
   if (act === "many-seeds") {
     if (!premiumOn()) { screen = "paywall"; render(); return; }
-    compareMany = R.manySeeds(comparePick.slice(0, 6), { seeds: compareSeeds, rolls: Math.min(compareSeeds > 100 ? 80 : 200, Number(compareLen) || 100), seed: Number(compareSeed) || 1, rules: game.rules });
+    if (compareWorker) compareWorker.terminate();
+    compareJob += 1;
+    const job = compareJob;
+    const rolls = Number(compareLen) || 100;
+    compareMany = null;
+    compareProgress = "0 / " + compareSeeds + " seeds";
+    const worker = new Worker(new URL("./replay-worker.mjs", import.meta.url), { type: "module" });
+    compareWorker = worker;
+    worker.onmessage = (ev) => {
+      if (job !== compareJob) return;
+      if (ev.data.type === "progress") {
+        compareProgress = ev.data.done + " / " + ev.data.k + " seeds · " + rolls + " rolls";
+        const el = document.querySelector(".cmpprogress");
+        if (el) el.textContent = compareProgress;
+        return;
+      }
+      if (ev.data.type === "done") {
+        compareMany = ev.data.result;
+        compareProgress = ev.data.result && ev.data.result.cancelled ? "Cancelled." : "";
+        worker.terminate();
+        if (compareWorker === worker) compareWorker = null;
+        render();
+      }
+    };
+    worker.postMessage({
+      type: "start",
+      ids: comparePick.slice(0, 6),
+      seeds: compareSeeds,
+      rolls,
+      seed: Number(compareSeed) || 1,
+      params: { rules: JSON.parse(JSON.stringify(game.rules || {})), atLimit: "stop" },
+    });
     render();
+    return;
+  }
+  if (act === "csv-pick") {
+    const input = document.querySelector("input[data-act='csv-file']");
+    if (input) input.click();
     return;
   }
   if (act === "csv-compare") {
@@ -833,10 +943,20 @@ function onClick(e) {
 let touchX = 0;
 let touchY = 0;
 let touchDice = false;
+let flickArm = false;
+let diceIndex = -1;
 app.addEventListener("pointerdown", (e) => {
   touchX = e.clientX;
   touchY = e.clientY;
-  touchDice = !!e.target.closest(".pair, .meter");
+  const pair = e.target.closest(".pair");
+  const cube = e.target.closest(".tc-cube");
+  flickArm = !!pair;
+  diceIndex = -1;
+  if (pair && cube) {
+    diceIndex = Array.prototype.indexOf.call(pair.querySelectorAll(".tc-cube"), cube);
+    try { pair.setPointerCapture(e.pointerId); } catch { /* the pointer already ended */ }
+  }
+  touchDice = flickArm || !!e.target.closest(".meter");
   const hold = e.target.closest("[data-act='num'], [data-act='spot']");
   if (hold) {
     const timer = setTimeout(() => {
@@ -860,14 +980,18 @@ app.addEventListener("pointermove", (e) => {
 app.addEventListener("pointerup", (e) => {
   const dx = e.clientX - touchX;
   const dy = e.clientY - touchY;
-  if (touchDice && e.target.closest(".pair")) {
-    const step = (fn) => { diceFaces = diceFaces.map(fn); };
-    if (Math.abs(dy) >= Math.abs(dx) && dy < -24) step(turn.flipUp);
-    else if (Math.abs(dy) >= Math.abs(dx) && dy > 24) step(turn.flipDown);
-    else if (dx < -24) step(turn.spinLeft);
-    else if (dx > 24) step(turn.spinRight);
-    else step(turn.flipUp);
-    if (dy < -80 && page === 2) { doRoll(); return; }
+  if (flickArm) {
+    const index = diceIndex;
+    flickArm = false;
+    if (index >= 0) {
+      const step = (fn) => { diceFaces = diceFaces.map((face, i) => i === index ? fn(face) : face); };
+      if (Math.abs(dy) >= Math.abs(dx) && dy < -24) step(turn.flipUp);
+      else if (Math.abs(dy) >= Math.abs(dx) && dy > 24) step(turn.flipDown);
+      else if (dx < -24) step(turn.spinLeft);
+      else if (dx > 24) step(turn.spinRight);
+      else step(turn.flipUp);
+    }
+    if (dy < -80 && page === 2 && screen === "play") { doRoll(); return; }
     render();
     return;
   }
@@ -882,11 +1006,13 @@ app.addEventListener("change", onClick);
 addEventListener("resize", fitTable);
 
 load();
-maybeNudge("buy_in");
-maybeNudge("session_start");
 const q = new URLSearchParams(location.search);
 if (q.get("theme")) settings.theme = q.get("theme");
 const shot = q.get("shot");
+if (!shot) {
+  maybeNudge("buy_in");
+  maybeNudge("session_start");
+}
 if (shot === "paywall") { settings.premium = false; screen = "paywall"; }
 if (shot === "picker") screen = "picker";
 if (shot === "tutorial") { screen = "tutorial"; tutorId = "T1"; }

@@ -23,18 +23,17 @@
   opacity:0;transform:translateY(12px);animation:pc-plate var(--pc-dur) cubic-bezier(.25,1,.5,1) forwards}
 .pc-plate img{width:46px;height:46px;flex:0 0 46px}
 .pc-plate .who{display:block;font:800 9.5px/1 var(--sans,system-ui);letter-spacing:.14em;color:#E4CC8F;text-transform:uppercase}
-.pc-plate b{display:block;font:800 15px/1.15 var(--serif,Georgia),serif;color:var(--pc-gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+.pc-plate b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font:800 15px/1.2 var(--serif,Georgia),serif;color:var(--pc-gold);white-space:normal;overflow:hidden;max-width:min(300px,calc(100vw - 96px))}
 .pc-plate .cheer,.pc-plate .sting{display:block;font:700 13px/1.2 var(--sans,system-ui);color:#F6EDD8}
 .pc-layer.quiet .pc-burst,.pc-layer.quiet .pc-rays,.pc-layer.reduce .pc-burst,.pc-layer.reduce .pc-rays{display:none}
 .pc-plate .amt{font:800 15px/1.1 var(--sans,system-ui);color:#7DFFB3;font-variant-numeric:tabular-nums}
 .pc-plate .bigtag{display:inline-block;margin-left:6px;padding:2px 6px;border-radius:999px;background:var(--pc-gold);color:var(--pc-ink);font:900 10px/1.2 var(--sans,system-ui);letter-spacing:.08em}
 @keyframes pc-plate{0%{opacity:0;transform:translateY(12px)}22%{opacity:1;transform:none}82%{opacity:1}100%{opacity:0}}
-/* Big Win variant (amount INSIDE the point-made celebration). 2.5s cap; tap anywhere skips. */
-.pc-layer.big{--pc-dur:var(--pc-big)}
-.pc-layer.big .pc-rays{position:absolute;inset:0;-webkit-mask-image:radial-gradient(circle at var(--cx) var(--cy),#000 0,#000 18vmin,transparent 46vmin);mask-image:radial-gradient(circle at var(--cx) var(--cy),#000 0,#000 18vmin,transparent 46vmin);background:repeating-conic-gradient(from 0deg at var(--cx) var(--cy),rgba(255,211,106,.16) 0 8deg,transparent 8deg 22deg);
-  opacity:0;animation:pc-rays var(--pc-big) linear forwards}
-.pc-layer.big .pc-plate b{font-size:20px}
-.pc-layer.big .pc-plate .amt{font-size:22px}
+/* Huge brings the sunburst back. The BIG WIN tag is a separate class and only marks a real big win. */
+.pc-layer.rays .pc-rays{position:absolute;inset:0;-webkit-mask-image:radial-gradient(circle at var(--cx) var(--cy),#000 0,#000 18vmin,transparent 46vmin);mask-image:radial-gradient(circle at var(--cx) var(--cy),#000 0,#000 18vmin,transparent 46vmin);background:repeating-conic-gradient(from 0deg at var(--cx) var(--cy),rgba(255,211,106,.16) 0 8deg,transparent 8deg 22deg);
+  opacity:0;animation:pc-rays var(--pc-dur) linear forwards}
+.pc-layer.bigwin .pc-plate b{font-size:20px}
+.pc-layer.bigwin .pc-plate .amt{font-size:22px}
 @keyframes pc-rays{0%{opacity:0}12%{opacity:1}85%{opacity:.8}100%{opacity:0}}
 .pc-layer.out{transition:opacity 120ms;opacity:0}
 /* one mascot on screen: hide every other mascot while the layer is up */

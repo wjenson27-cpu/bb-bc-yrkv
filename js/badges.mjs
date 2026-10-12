@@ -267,7 +267,8 @@ export function noteAction(store, action) {
     unlock(next, p, "tutor_tour_complete", c);
   } else if (type === "etiquette") {
     p.etiquetteSeen = addSet(p.etiquetteSeen, action.id);
-    if (action.complete && (p.etiquetteSeen || []).length >= 15) unlock(next, p, "table_manners", c);
+    const need = action.total || 15;
+    if (action.complete && (p.etiquetteSeen || []).length >= need) unlock(next, p, "table_manners", c);
   } else if (type === "fair-scope") {
     p.fairScopes = addSet(p.fairScopes, action.scope);
     if (["session", "last", "all"].every((s) => p.fairScopes.indexOf(s) >= 0) && action.sawTest) {

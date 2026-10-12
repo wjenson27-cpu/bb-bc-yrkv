@@ -510,7 +510,6 @@ function onClick(e) {
     return;
   }
   if (act === "bets") { betsOpen = !betsOpen; paint(); return; }
-  if (act === "collect") { clearWin(); return; }
   if (act === "same" || act === "addchip") { focusBet(act === "same"); return; }
   if (act === "takedown") { focusTake(); return; }
   if (act === "autoswipe") { settings.showDice = !settings.showDice; save(); paint(); return; }
@@ -636,12 +635,12 @@ function onClick(e) {
     else if (act === "etiq-next") etiquetteAt = Math.min(deck.length - 1, etiquetteAt + 1);
     else {
       const seen = (boardData.progress && boardData.progress.etiquetteSeen) || [];
-      if (seen.length < 15) {
-        toast(seen.length + " of 15 cards viewed.");
+      if (seen.length < deck.length) {
+        toast(seen.length + " of " + deck.length + " cards viewed.");
         paint();
         return;
       }
-      const done = B.noteAction(boardData, { type: "etiquette", id: tip.id, complete: true });
+      const done = B.noteAction(boardData, { type: "etiquette", id: tip.id, complete: true, total: deck.length });
       boardData.badges = done.store.badges;
       boardData.progress = done.store.progress;
       if (done.unlocked.length) queueUnlocks(done.unlocked);
@@ -1770,7 +1769,7 @@ function celebrate(settled, before, extra) {
     const copy = celebrationCopy({
       tier, quiet, big: bigWin, point: extra && extra.point, points, hard: settled.dice && settled.dice.hard, net: settled.net,
     });
-    const onDome = !!document.querySelector(".dome-screen");
+    const onDome = page === 2;
     const pointBox = extra && extra.point ? document.querySelector(".numbox [data-number='" + extra.point + "']") : null;
     const targets = onDome
       ? [document.querySelector(".dome-screen .result-line")].filter(Boolean)
@@ -2777,7 +2776,7 @@ function fairHistoryList(rolls) {
   const note = rolls.length > cap
     ? "<p class='muted'>Showing the latest " + cap + " of " + rolls.length + ". CSV export stays numeric.</p>"
     : "<p class='muted'>Same rolls as a CSV export. Die 1 and die 2 stay numbers there.</p>";
-  const pin = "<li class='pinhand'><span class='hn'>Now</span><span class='hline'>This hand · " + (game.hand.rolls || 0) + " rolls" + (game.point ? " · point " + game.point : " · come-out") + "</span></li>";
+  const pin = "<li class='pinhand'><span class='hn'>Now</span><span class='hline'>This hand · " + E.countPhrase(game.hand.rolls || 0, "roll") + (game.point ? " · point " + game.point : " · come-out") + "</span></li>";
   return "<article class='card'><h3>Roll history</h3>" + note + "<ol class='fairhist'>" + pin + rows + "</ol></article>";
 }
 function domeHTML() {
@@ -3040,7 +3039,7 @@ function etiquetteHTML() {
   const tag = tip.liveOnly ? "Live table" : "Both";
   const last = etiquetteAt >= deck.length - 1;
   return "<h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip</p>" +
-    "<article class='card'><h3>" + tip.n + " of 15 · " + tip.topic + " · " + tag + "</h3><p>" + tip.billy + "</p><p>" + tip.why + "</p><p class='muted'>" + seen.length + " of 15 viewed.</p></article>" +
+    "<article class='card'><h3>" + (Math.min(etiquetteAt, deck.length - 1) + 1) + " of " + deck.length + " · " + tip.topic + " · " + tag + "</h3><p>" + tip.billy + "</p><p>" + tip.why + "</p><p class='muted'>" + seen.length + " of " + deck.length + " viewed.</p></article>" +
     "<p>" + ETIQUETTE_FOOTER + "</p>" +
     "<div class='actions'>" +
     (etiquetteAt > 0 ? "<button data-act='etiq-prev'>Back</button>" : "") +
@@ -3139,6 +3138,8 @@ if (view === "play") startTimer();
 /*TEST_HOOK_START*/
 if (TEST_BUILD) {
   window.__bbShowMarquee = (id) => {
+    clearTimeout(badgeTimer);
+    badgeTimer = 0;
     const def = B.badgeById(id || "spin_the_block");
     if (def) showBadgeToast(def);
   };

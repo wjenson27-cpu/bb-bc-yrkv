@@ -28,10 +28,12 @@ export function celebratePoint(o) {
   const reduced = o.reduced != null ? o.reduced : (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches);
   const quiet = !!o.quiet;
   const big = !quiet && !!o.big;
-  const cap = big ? 2500 : 1200;
+  const tier = o.tier || "base";
+  const sunburst = !quiet && (tier === "huge" || big);
+  const cap = quiet ? 1200 : tier === "huge" ? 2500 : tier === "big" ? 2000 : 1200;
   const dur = Math.min(o.duration || cap, cap);
   const layer = document.createElement("div");
-  layer.className = "pc-layer" + (big ? " big" : "") + (quiet ? " quiet" : "") + (reduced ? " reduce" : "");
+  layer.className = "pc-layer" + (sunburst ? " rays" : "") + (big ? " bigwin" : "") + (quiet ? " quiet" : "") + (reduced ? " reduce" : "");
   layer.style.setProperty("--pc-dur", Math.min(dur, reduced ? 1200 : dur) + "ms");
   layer.setAttribute("aria-hidden", "true");
   const targets = (o.targets || []).filter(Boolean);
@@ -42,7 +44,7 @@ export function celebratePoint(o) {
   layer.style.setProperty("--cx", cx + "px");
   layer.style.setProperty("--cy", cy + "px");
   let html = "";
-  if (!quiet && !reduced && big) html += "<div class='pc-rays'></div>";
+  if (!quiet && !reduced && sunburst) html += "<div class='pc-rays'></div>";
   tg.forEach(([el, r]) => {
     const puck = el.matches && el.matches(".puck,.puckimg,.feltpuck,[data-puck]");
     html += "<div class='pc-glow" + (puck ? " puck" : "") + "' style='left:" + (r.left - 3) + "px;top:" + (r.top - 3) + "px;width:" + (r.width + 6) + "px;height:" + (r.height + 6) + "px'></div>";
@@ -90,7 +92,7 @@ export function celebratePoint(o) {
   plate.style.left = pos[0] + "px";
   plate.style.top = pos[1] + "px";
   const timers = [];
-  if (!quiet && o.sfx) o.sfx(big ? "fanfare" : o.tier === "big" ? "run" : "win");
+  if (!quiet && o.sfx) o.sfx(sunburst ? "fanfare" : tier === "big" ? "run" : "win");
   if (!quiet && !reduced && o.haptic) {
     const pattern = o.tier === "huge" ? [20, 40, 20, 40, 30] : o.tier === "big" ? [15, 40, 15] : [15];
     o.haptic(pattern);

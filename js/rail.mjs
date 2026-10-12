@@ -120,10 +120,22 @@ export function railPay(rail, cents) {
       return { ok: true, rail: tmp, used, breaks };
     }
     const step = breakOne(r, left);
-    if (!step) return { ok: false, rail: copyRail(rail), used: {}, breaks, error: "Can't make change." };
+    if (!step) return restack(rail, amount, breaks);
     breaks.push(step);
   }
-  return { ok: false, rail: copyRail(rail), used: {}, breaks, error: "Can't make change." };
+  return restack(rail, amount, breaks);
+}
+
+/** The rail is a bankroll total. When the chip mix cannot pay, break it back into stacks of the remainder. */
+function restack(rail, amount, breaks) {
+  const total = railTotal(rail);
+  if (total < amount) return { ok: false, rail: copyRail(rail), used: {}, breaks, error: "Not enough practice chips." };
+  return {
+    ok: true,
+    rail: railBreakdown(total - amount),
+    used: {},
+    breaks: breaks.concat([{ label: "Change: re-stacked the rail" }]),
+  };
 }
 
 /** Credit a win, take-down, or push. Greedy, no reserve. Cents go to the cup. */

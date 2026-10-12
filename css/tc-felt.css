@@ -80,15 +80,21 @@
 .tc-felt .pass{flex-direction:column}.tc-felt .pass .lb{font:900 calc(15px*var(--k))/1 var(--serif);letter-spacing:.08em}
 .tc-felt .print{position:absolute;left:50%;top:calc(-4px*var(--k));transform:translate(-50%,-100%);font:700 9px/1 var(--serif);letter-spacing:.2em;color:var(--line);opacity:.7;white-space:nowrap}
 /* ---------- landscape phones: props block on the left, main board on the right, line row full width ---------- */
-.tc-felt.land{max-width:none;min-width:0;height:100%;overflow:hidden;grid-template-columns:minmax(0,.72fr) minmax(0,1.5fr);
+.tc-felt.land{max-width:none;min-width:0;height:100%;overflow:hidden;grid-template-columns:minmax(170px,.8fr) minmax(0,1.5fr);
   grid-template-areas:"props ats" "props nums" "props come" "props field" "line line"}
 .tc-felt.land .spot{overflow:hidden}
 .tc-felt.land .come .lb{font-size:clamp(13px, 4.2vw, 18px);-webkit-text-stroke:0}
-.tc-felt.land .numbox .half{font-size:8px;letter-spacing:0}
-.tc-felt.land .props{grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,minmax(0,1fr));min-height:0;
+.tc-felt.land .numbox{grid-template-rows:var(--strip-lay) var(--strip) minmax(0,1fr) var(--strip)}
+.tc-felt.land .numbox .half{font-size:8px;letter-spacing:0;overflow:hidden;min-height:16px}
+.tc-felt.land .numbox .half .amt{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:9px;line-height:14px;padding:0 2px}
+.tc-felt.land .comerow{grid-template-columns:minmax(44px,1fr) auto minmax(44px,1fr);grid-template-rows:minmax(44px,1fr)}
+.tc-felt.land .comerow .come,.tc-felt.land .comerow .dc{min-height:44px}
+.tc-felt.land .comerow .numbet{width:auto;align-self:stretch}
+.tc-felt .horn .spot,.tc-felt .hard .spot{min-width:44px;min-height:44px}
+.tc-felt.land .props{grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,minmax(44px,1fr));min-height:0;
   grid-template-areas:"horn hard" "horn hard" "bigred bigred" "hwad hwad"}
 /* --- PLACE | BUY | LAY toggle: decides what a number-box tap bets (one number bet per number). 44x44 targets. --- */
 .tc-felt .numbet{display:flex;align-self:center;border-radius:10px;border:1px solid rgba(233,214,166,.6);overflow:hidden;background:rgba(0,0,0,.35)}
-.tc-felt .numbet button{width:44px;height:44px;border:0;background:none;color:var(--line);font:800 9px/1 var(--sans);letter-spacing:.06em;padding:0}
+.tc-felt .numbet button{width:44px;height:44px;min-width:44px;min-height:44px;border:0;background:none;color:var(--line);font:800 9px/1 var(--sans);letter-spacing:.06em;padding:0}
 .tc-felt .numbet button+button{border-left:1px solid rgba(233,214,166,.35)}
 .tc-felt .numbet button.on{background:linear-gradient(#FFE7A0,#E2BC62);color:#2A1A00}

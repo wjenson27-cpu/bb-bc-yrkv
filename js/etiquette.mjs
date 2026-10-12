@@ -17,7 +17,7 @@ export const ETIQUETTE = [
   { id: "chips_in_rail", n: 11, topic: "Chips in the rail", liveOnly: true, apps: ["table", "bubble"], billy: "Keep your chips in the rail in front of you. Only bets go on the felt.", why: "Chips sitting on the felt edge can be mistaken for a bet, and chips in your rail are easy to keep track of." },
   { id: "same_dice", n: 12, topic: "Same dice", liveOnly: true, apps: ["table", "bubble"], billy: "If a die flies off the table, you can call 'Same dice' and I'll check it and bring it back. Or take a new one from the stick, it's your call.", why: "It's a superstition, not a rule; the dice are just as fair either way." },
   { id: "no_leaning", n: 13, topic: "No leaning over the table", liveOnly: true, apps: ["table", "bubble"], billy: "Stand at your spot. Don't lean over the felt to reach a bet. Ask me, and I'll put it where you want it.", why: "Leaning blocks the shooter's throw and the cameras, and it can knock over bets." },
-  { id: "check_minimum", n: 14, topic: "Check the sign first", liveOnly: false, apps: ["table", "bubble"], billy: "Read the table sign before you buy in. It shows the minimum, the maximum and the odds allowed.", why: "It saves you from buying in at a table that's bigger than your budget." },
+  { id: "check_minimum", n: 14, topic: "Check the sign first", liveOnly: false, apps: ["table"], billy: "Read the table sign before you buy in. It shows the minimum, the maximum and the odds allowed.", why: "It saves you from buying in at a table that's bigger than your budget." },
   { id: "ask_dealer", n: 15, topic: "Ask the dealer", liveOnly: true, apps: ["table", "bubble"], billy: "Not sure? Ask me between rolls. Helping you is the job.", why: "Dealers would rather explain a bet than fix a wrong one." },
 ];
 
@@ -29,14 +29,19 @@ export function etiquetteById(id) {
   return ETIQUETTE.find((t) => t.id === id) || null;
 }
 
-/** Bubble: both-tagged tips first (4, 9, 14), then the live-table section. */
+function forApp(app) {
+  return ETIQUETTE.filter((t) => !t.apps || t.apps.indexOf(app) >= 0);
+}
+
+/** Bubble: both-tagged tips first, then the live-table section. Table-only tips stay on Table. */
 export function deckFor(app) {
+  const mine = forApp(app);
   if (app === "bubble") {
-    const both = ETIQUETTE.filter((t) => !t.liveOnly);
-    const live = ETIQUETTE.filter((t) => t.liveOnly);
+    const both = mine.filter((t) => !t.liveOnly);
+    const live = mine.filter((t) => t.liveOnly);
     return { both, live, all: both.concat(live) };
   }
-  return { both: ETIQUETTE.filter((t) => !t.liveOnly), live: [], all: ETIQUETTE.slice() };
+  return { both: mine.filter((t) => !t.liveOnly), live: [], all: mine.slice() };
 }
 
 export function etiquetteClean() {
@@ -69,10 +74,12 @@ export const NUDGES = {
   new_shooter: "hands_clear",
 };
 
-const BUBBLE_NUDGES = new Set(["first_dont", "session_start"]);
+const BUBBLE_NUDGES = new Set(["first_dont"]);
 
 export function nudgeFor(trigger, app) {
   if (app === "bubble" && !BUBBLE_NUDGES.has(trigger)) return null;
   const id = NUDGES[trigger];
-  return id ? etiquetteById(id) : null;
+  const tip = id ? etiquetteById(id) : null;
+  if (!tip || (tip.apps && tip.apps.indexOf(app) < 0)) return null;
+  return tip;
 }

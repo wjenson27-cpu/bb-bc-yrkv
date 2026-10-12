@@ -3,7 +3,7 @@
  * new top-left brand, and Field rings plus tutor warnings follow rev 13d.
  */
 import test from "node:test";
-import { waitForPort } from "./listen.mjs";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -51,9 +51,6 @@ test("tutor long shot starts under 1 in 6 and high edge at 9%", () => {
   assert.match(E.tutorEdgeNote({ kind: "anyCraps" }, "regular", true), /Wins 4 of 36/);
 });
 
-function serve(port) {
-  return spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], { cwd: root, stdio: "ignore" });
-}
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -76,9 +73,8 @@ test("dome readouts, lockup, Field rings, and FAIR fit", async (t) => {
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8854;
-  const server = serve(port);
-  await waitForPort(port);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,

@@ -211,11 +211,14 @@ export function tableMinFor(kind, spot, rules) {
   const n = spot && spot.number;
   if (kind === "passOdds" || kind === "dontPassOdds" || kind === "comeOdds" || kind === "dontComeOdds") return 1;
   if (kind === "fire") return r.fireMin || 100;
-  if (kind === "hardway" || kind === "anyCraps") return 100;
   if (kind === "place" && (n === 6 || n === 8)) return 1200;
   if (kind === "horn") return 400;
   if (kind === "ce") return 200;
-  return r.tableMin || TABLE_MIN_CENTS;
+  if (kind === "any7" || kind === "pass" || kind === "dontPass" || kind === "come" || kind === "dontCome" || kind === "place" || kind === "buy" || kind === "lay") {
+    return r.tableMin || TABLE_MIN_CENTS;
+  }
+  if (kind === "hardway" || kind === "anyCraps" || kind === "hop" || kind === "yo" || kind === "repeater" || kind === "field" || kind === "small" || kind === "tall" || kind === "all" || kind === "hardAllDay" || kind === "big6" || kind === "big8") return 100;
+  return 100;
 }
 
 export function tableMaxFor(kind, spot, rules) {
