@@ -55,6 +55,7 @@
 .lingo-bet .lingo-btn{margin-left:auto}
 .lingo-bet .reason{flex-basis:100%;font:600 12.5px/1.35 var(--sans,system-ui);color:#E6EDF6}
 .lingo-bet .warn{flex-basis:100%;font:700 12.5px/1.35 var(--sans,system-ui);color:#FFD36A}
+#panel{position:relative}
 .lingo-screen{position:absolute;inset:0;overflow:auto;padding:12px 12px 28px;background:#0B1626;z-index:6}
 .app .lingo-screen{background:#10281c}
 .lingo-screen h1{font:800 22px/1.1 var(--serif,Georgia);color:#FFE7A0;margin:0}
