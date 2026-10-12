@@ -89,6 +89,38 @@ function breakDenom(rail, src) {
  * Breaks the smallest covering chip one step at a time until the amount fits.
  * The returned rail is final; animation is the caller's job.
  */
+function attempt(rail, amount) {
+  const used = { 50000: 0, 10000: 0, 2500: 0, 500: 0, 100: 0, cup: 0 };
+  const tmp = copyRail(rail);
+  let left = amount;
+  if (left % 100 !== 0 && tmp.cup >= left % 100) {
+    used.cup = left % 100;
+    tmp.cup -= used.cup;
+    left -= used.cup;
+  }
+  for (const d of DENOMS) {
+    const k = Math.min(tmp[d], Math.floor(left / d));
+    if (k) {
+      used[d] = k;
+      tmp[d] -= k;
+      left -= k * d;
+    }
+  }
+  if (left === 0) normalizeCup(tmp);
+  return { left, used, rail: tmp };
+}
+
+/** Break the smallest chip whose single break lets the amount pay, before burning the one-step guard. */
+function breakToward(rail, amount) {
+  const denoms = DENOMS.filter((d) => rail[d] > 0 && DOWN[d]);
+  for (let i = denoms.length - 1; i >= 0; i--) {
+    const trial = copyRail(rail);
+    if (!breakDenom(trial, denoms[i])) continue;
+    if (attempt(trial, amount).left === 0) return breakDenom(rail, denoms[i]);
+  }
+  return breakOne(rail, attempt(rail, amount).left);
+}
+
 export function railPay(rail, cents) {
   const amount = Math.round(Number(cents) || 0);
   if (amount <= 0) return { ok: false, rail: copyRail(rail), used: {}, breaks: [], error: "Nothing to pay." };
@@ -96,30 +128,9 @@ export function railPay(rail, cents) {
   const r = copyRail(rail);
   const breaks = [];
   for (let guard = 0; guard < 40; guard++) {
-    const used = { 50000: 0, 10000: 0, 2500: 0, 500: 0, 100: 0, cup: 0 };
-    const tmp = copyRail(r);
-    let left = amount;
-    const cupTake = Math.min(tmp.cup, left % 100 === 0 ? 0 : left % 100);
-    if (left % 100 !== 0) {
-      if (tmp.cup >= left % 100) {
-        used.cup = left % 100;
-        tmp.cup -= used.cup;
-        left -= used.cup;
-      }
-    }
-    for (const d of DENOMS) {
-      const k = Math.min(tmp[d], Math.floor(left / d));
-      if (k) {
-        used[d] = k;
-        tmp[d] -= k;
-        left -= k * d;
-      }
-    }
-    if (left === 0) {
-      normalizeCup(tmp);
-      return { ok: true, rail: tmp, used, breaks };
-    }
-    const step = breakOne(r, left);
+    const took = attempt(r, amount);
+    if (took.left === 0) return { ok: true, rail: took.rail, used: took.used, breaks };
+    const step = breakToward(r, amount);
     if (!step) return restack(rail, amount, breaks);
     breaks.push(step);
   }

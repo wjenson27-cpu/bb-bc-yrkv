@@ -10,10 +10,15 @@ import * as R from "./replay.mjs";
 import * as Et from "./etiquette.mjs";
 import * as PC from "./point-celebration.mjs";
 import * as PT from "./point-tier.mjs";
+import { cancelMoments, showPSO } from "./pso.mjs";
 import { SETS, orient, cssMatrix, turn, axisTotals } from "./tc-dice.mjs";
 import { resolveSwipe } from "./swipe.mjs";
 import * as Badges from "./badges.mjs";
 import * as IAP from "./iap.mjs";
+import { TEST_BUILD } from "./build-flags.mjs";
+import * as Lg from "./lingo.mjs";
+import * as LC from "./lingo-ctrl.mjs";
+import { callButton, learnRowHTML } from "./lingo-view.mjs";
 
 const A = "../assets/";
 const STORE = "bb-table-craps-v1";
@@ -30,6 +35,7 @@ const settings = {
   numbet: "place",
   premium: false,
   set: "3V",
+  lingoLinks: true,
 };
 
 let game = E.createGame({ profile: "table" });
@@ -62,7 +68,15 @@ let compareSeeds = 100;
 let etiquetteAt = 0;
 let etiquetteSeen = [];
 let toastTimer = 0;
+let toastKey = "";
 let queuedTip = "";
+let payNote = "";
+let setFaces = [orient(3, 5), orient(3, 1)];
+let showingRoll = false;
+let lingo = LC.freshLingo();
+let swallowLingo = false;
+let lastRoll = null;
+const LINGO_HINT = " Long-press for lingo.";
 let compareWorker = null;
 let compareJob = 0;
 let compareProgress = "";
@@ -83,6 +97,7 @@ function load() {
     game = raw.game;
     E.tableTotal(game);
     if (raw.settings) Object.assign(settings, raw.settings);
+    applySet(settings.set);
     if (raw.rail && Rail.railMatches(raw.rail, game.bankroll)) rail = raw.rail;
     else {
       rail = Rail.railBreakdown(game.bankroll);
@@ -203,6 +218,7 @@ function sideHTML() {
   for (let a = 1; a <= 6; a++) hops.push([a, a]);
   for (let a = 1; a <= 6; a++) for (let b = a + 1; b <= 6; b++) hops.push([a, b]);
   return "<div class='tc-side'>" +
+    "<button type='button' class='hopcue' data-act='hops'>Hops · scroll to one-roll bets</button>" +
     "<section class='tc-firetile" + (open ? " open" : " locked") + "'><header><b>FIRE BET</b><span class='chip'>" + (open ? "OPEN · UNTIL THE FIRST ROLL" : "LOCKED · NEW SHOOTER") + "</span></header>" +
     fireRail("l") +
     "<div class='pay'><span><b>4 pts</b> 24 to 1</span><span><b>5 pts</b> 249 to 1</span><span><b>6 pts</b> 999 to 1</span></div>" +
@@ -212,7 +228,7 @@ function sideHTML() {
     "<section class='tc-reps'><header><b>REPEATERS</b><span class='edge r'>18–22%</span></header><div class='reps'>" +
     reps.map(([n, pay]) => "<button class='rep' data-act='spot' data-kind='repeater:" + n + "'><b>" + n + "</b><small>" + pay + " FOR 1</small></button>").join("") +
     "</div></section>" +
-    "<section class='tc-hops'><header><b>HOPS · ONE ROLL</b><span class='edge r'>11–14%</span></header><p class='scrollhint'>Scroll for every hop</p><div class='hg'>" +
+    "<section class='tc-hops' id='hops'><header><b>HOPS · ONE ROLL</b><span class='edge r'>11–14%</span></header><p class='scrollhint'>Scroll for every hop</p><div class='hg'>" +
     hops.map(([a, b]) => "<button class='hop" + (a === b ? " hard" : "") + "' data-act='spot' data-kind='hop:" + a + "-" + b + "'><span><img src='" + A + "dice/faces/face-" + a + ".svg' alt=''><img src='" + A + "dice/faces/face-" + b + ".svg' alt=''></span><small>" + (a === b ? "30" : "15") + " TO 1</small></button>").join("") +
     "</div></section></div>";
 }
@@ -229,7 +245,7 @@ function shooterHTML() {
   const set = SETS[settings.set] || SETS["3V"];
   const bowl = [orient(5, 1), orient(3, 2), orient(2, 6), orient(6, 4), orient(4, 5)];
   const axes = axisTotals(set).map((row) => row[1]).join(" · ");
-  const last = lastFaces ? "<div class='result'><small>LAST ROLL</small>" + pips(lastFaces.d1, lastFaces.d2, 32) + "</div>" : "<div class='result'><small>LAST ROLL</small><span>No roll yet</span></div>";
+  const last = lastFaces ? "<div class='result'><small>LAST ROLL</small>" + pips(lastFaces.d1, lastFaces.d2, 32) + rollCallHTML() + "</div>" : "<div class='result'><small>LAST ROLL</small><span>No roll yet</span></div>";
   return "<div class='tc-shooter'>" +
     "<div class='table'><div class='wall'></div><div class='tlabel'>BOTH DICE MUST HIT THE BACK WALL</div>" + fireRail("s") +
     "<div class='lockcap'>" + (game.fireOpen ? "OPEN · BEFORE THE FIRST ROLL" : "LOCKED · " + (game.firePoints || []).length + " OF 6") + "</div></div>" +
@@ -240,7 +256,7 @@ function shooterHTML() {
     }).join("") + "</div>" +
     "<div class='setview'><div class='pair'>" + cubeHTML(diceFaces[0], "lg") + cubeHTML(diceFaces[1], "lg b") + "</div>" +
     "<div class='gest'><span>↑↓ drag to flip</span><span>↔ drag to spin</span><span>tap = quarter turn</span></div>" +
-    "<div class='readout'><small>YOUR SET · " + set.name + "</small><b>Top " + pips(diceFaces[0].top, diceFaces[1].top, 18) + "</b><span>On axis: " + axes + "</span></div></div>" +
+    "<div class='readout'><small>YOUR SET · " + set.name + "</small><b>Top " + pips(setFaces[0].top, setFaces[1].top, 18) + "</b><span>On axis: " + axes + "</span></div></div>" +
     last +
     "<div class='meter'><small>THROW POWER</small><div class='bar'><i style='left:" + throwPower + "%'></i></div><small class='r'>" + (throwPower < 18 ? "SOFT · NO ROLL" : throwPower < 45 ? "EASY" : throwPower < 75 ? "MEDIUM" : "HARD") + "</small></div>" +
     "<p class='note'>Set dice are practice only. The throw does not change the roll. A soft toss is a no-roll and draws nothing.</p></div>";
@@ -254,6 +270,7 @@ function pickerHTML() {
     return c.filters.indexOf(filter) >= 0 || c.risk === filter;
   });
   return "<div class='tc-sheet tc-picker'><header class='sh'><small>TABLE CRAPS · STRATEGIES</small><h1>Pick a strategy</h1>" +
+    learnRowHTML("table") +
     "<div class='filters'>" + ["all", "light", "dark", "hedge", "press", "warn", "free", "premium"].map((f) => "<button data-act='filter' data-f='" + f + "' class='" + (filter === f ? "on" : "") + "'>" + f + "</button>").join("") + "</div>" +
     "<div class='sum'><span><b>16</b> Free</span><span><b>8</b> Premium</span><button class='cmp' data-act='screen' data-screen='compare'>COMPARE</button></div></header>" +
     "<div class='list'>" + rows.map((c) => "<button class='strow" + (c.warning ? " warn" : "") + "' data-act='strat' data-id='" + c.id + "'><span class='rk'>" + c.n + "</span><span class='nm'><b>" + c.name + "</b><small>" + c.id + "</small></span><span class='edge'>" + c.edge + "</span><span class='tier " + (c.warning ? "warn" : c.tier === "premium" ? "prem" : "free") + "'>" + (c.warning ? "FREE · WARNING" : c.tier === "premium" ? "PREMIUM" : "FREE") + "</span></button>").join("") + "</div>" +
@@ -335,7 +352,7 @@ function paywallHTML() {
     "<small>ONE-TIME UNLOCK</small><h1>Table Craps Premium</h1><ul>" +
     ["Custom house rules: 10x odds, Field 3:1, presets", "8 Premium strategies + tutorials", "Strategy Comparison: replay up to 6 plans", "Fair Dice CSV export · saved presets"].map((t) => "<li>" + t + "</li>").join("") +
     "</ul><p class='honest'>Premium doesn't change the dice or the odds. Practice chips only. Sold per app: applies to Table Craps only.</p>" +
-    "<button class='buy' data-act='unlock'>Unlock for $4.99</button><div class='sub'><button data-act='restore'>Restore purchases</button><button data-act='screen' data-screen='play'>Not now</button></div>" +
+    "<button class='buy' data-act='unlock'>Unlock for $4.99</button><p class='paystatus' role='status'>" + (payNote || "") + "</p><div class='sub'><button data-act='restore'>Restore purchases</button><button data-act='screen' data-screen='play'>Not now</button></div>" +
     "<p class='fine'>One-time purchase · no subscription · 18+ · practice only</p></div>";
 }
 
@@ -352,6 +369,8 @@ function menuHTML() {
   const last = etiquetteAt >= deck.length - 1;
   return "<div class='tc-sheet'><h1>Table</h1><button data-act='leave' style='height:44px'>Leave table</button>" +
     "<a href='../' style='display:flex;align-items:center;height:44px'>Bubble Craps</a>" +
+    "<button data-act='lingo' style='height:44px'>Craps Lingo</button>" +
+    "<label>Lingo links on roll calls <button data-act='lingo-links' style='height:44px'>" + (settings.lingoLinks !== false ? "On" : "Off") + "</button></label>" +
     "<label>Color up <select data-act='color-setting'><option value='offer'" + (settings.colorUp === "offer" ? " selected" : "") + ">Offer</option><option value='auto'" + (settings.colorUp === "auto" ? " selected" : "") + ">Auto</option><option value='off'" + (settings.colorUp === "off" ? " selected" : "") + ">Off</option></select></label>" +
     "<label>Theme <select data-act='theme'><option value='billy'>Billy navy</option><option value='midnight'" + (settings.theme === "midnight" ? " selected" : "") + ">Midnight</option><option value='classic'" + (settings.theme === "classic" ? " selected" : "") + ">Classic</option><option value='highlimit'" + (settings.theme === "highlimit" ? " selected" : "") + ">High limit</option></select></label>" +
     "<p>" + TR.RULE0_LINE + "</p><h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip</p>" +
@@ -369,16 +388,28 @@ function fairHTML() {
     "<button data-act='screen' data-screen='play' style='height:44px'>Back to the table</button></div>";
 }
 
+function hintSpots(html) {
+  return html.replace(/data-act='(spot|num)'/g, "data-act='$1' title='Long-press for lingo.'");
+}
+function rollCallHTML() {
+  if (!lastRoll || settings.lingoLinks === false) return "";
+  const term = Lg.callTerm(lastRoll, "table");
+  if (!term) return "";
+  const text = lastRoll.result === "no-roll" ? "No roll" : (lastRoll.word || "");
+  if (!text) return "";
+  return callButton(text, term, term.srLabel);
+}
 function stageHTML() {
+  if (screen === "lingo") return LC.screenHTML("table", lingo, A, "regular");
   if (screen === "picker") return pickerHTML();
   if (screen === "tutorial") return tutorialHTML();
   if (screen === "compare") return compareHTML();
   if (screen === "paywall") return paywallHTML();
   if (screen === "fair") return fairHTML();
   if (menu) return menuHTML();
-  if (page === 0) return sideHTML();
+  if (page === 0) return hintSpots(sideHTML());
   if (page === 2) return shooterHTML();
-  return feltHTML();
+  return hintSpots(feltHTML());
 }
 function kindName(kind) {
   if (kind === "place") return "Place";
@@ -414,24 +445,32 @@ function render() {
     hudPips +
     "<img class='puck' data-puck alt='" + (point ? "Point " + point : "Puck off") + "' src='" + A + "icons/puck-" + (point ? "on" : "off") + ".svg'>" +
     "<button class='fair' data-act='fair'>FAIR</button></header>" +
-    "<main class='tc-stage' id='stage'>" + stageHTML() + conv + sessionCard + "</main>" +
+    "<main class='tc-stage' id='stage'>" + stageHTML() + conv + sessionCard +
+    (toastText && screen === "play" && !menu ? "<div class='tc-toast' role='status'><b>" + toastText + "</b>" + (changeNote ? "<small>" + changeNote + "</small>" : "") + "</div>" : "") +
+    (screen === "play" && !menu ? LC.peekBlock("table", lingo, A, "regular") + LC.sheetBlock("table", lingo, game, { asset: A, rolling, money, tutorOn: settings.tutor, mode: "regular" }) : "") +
+    "</main>" +
     "<div class='tc-dots'>" + left +
     "<span class='dots'>" + [0, 1, 2].map((i) => "<button data-act='page' data-page='" + i + "' aria-label='" + ["Side bets", "Board", "Dice"][i] + "'><i class='" + (page === i ? "on" : "") + "'></i></button>").join("") + "</span>" +
     right + "</div>" +
     "<footer class='tc-dock'>" + offerHTML + railHTML() + shoot + "</footer>" +
     "<nav class='tc-keys'><button data-act='screen' data-screen='play'" + (screen === "play" && !menu ? " class='on'" : "") + ">BETS</button><button data-act='screen' data-screen='picker'>STRATEGIES</button><button data-act='tutor'>TUTOR</button><button data-act='menu'>STATS</button></nav>" +
-    (toastText && screen === "play" && !menu ? "<div class='tc-notice toast' role='status'><b>" + toastText + "</b>" + (changeNote ? "<small>" + changeNote + "</small>" : "") + "</div>" : "<div class='tc-notice'><span>18+</span> PRACTICE ONLY · NO REAL MONEY</div>");
+    "<div class='tc-notice'><span>18+</span> PRACTICE ONLY · NO REAL MONEY</div>";
   fitTable();
   armToastHide();
 }
 
 function armToastHide() {
+  if (toastText === toastKey) return;
+  toastKey = toastText;
   clearTimeout(toastTimer);
   if (!toastText) return;
+  const key = toastText;
   toastTimer = setTimeout(() => {
+    if (toastText !== key) return;
     changeNote = "";
     toastText = queuedTip;
     queuedTip = "";
+    toastKey = "";
     render();
   }, 3000);
 }
@@ -445,7 +484,9 @@ function fitTable() {
   const f = document.getElementById("felt");
   const stage = document.getElementById("stage");
   if (!f || !stage) return;
-  const feltLand = land && h > 360;
+  const feltLand = land;
+  const tight = land && h <= 360;
+  const offerUp = !!offer;
   f.classList.toggle("land", feltLand);
   const st = stage.getBoundingClientRect();
   const ring = land && h <= 360 ? 3 : land ? 5 : h < 700 ? 4.5 : 8.5 * Math.min(1, w / 390);
@@ -480,25 +521,37 @@ function fitTable() {
   } else {
     k = Math.min(1.1, Math.max(0.72, aw / 420));
     gap = 3;
-    const come = MIN;
-    const ats = MIN, field = MIN, line = MIN;
+    const floor = tight ? 18 : MIN;
+    const come = floor;
+    const ats = floor, field = floor, line = floor;
     const pad = 8;
-    const nums = Math.max(72, ah - (ats + come + field + line) - 4 * gap - pad);
+    const nums = Math.max(tight ? 36 : 72, ah - (ats + come + field + line) - 4 * gap - pad);
     rows = [ats, nums, come, field, line];
     f.style.setProperty("--g", gap + "px");
     f.style.setProperty("--fp", "4px");
   }
-  const total = rows.reduce((a, b) => a + b, 0);
-  if (total > ah + 4) {
+  const squeeze = feltLand ? tight : offerUp;
+  let total = rows.reduce((a, b) => a + b, 0);
+  if (squeeze && total > ah) {
+    const scale = ah / total;
+    const floor = feltLand ? 16 : 20;
+    rows = rows.map((r) => Math.max(floor, r * scale));
+    total = rows.reduce((a, b) => a + b, 0);
+    if (total > ah) {
+      const again = ah / total;
+      rows = rows.map((r) => r * again);
+    }
+  }
+  if (!squeeze && total > ah + 4) {
     f.style.height = Math.ceil(total + 12) + "px";
     f.style.alignSelf = "start";
     stage.style.overflowY = "auto";
   } else {
     f.style.height = "100%";
     f.style.alignSelf = "";
-    stage.style.overflowY = "";
+    stage.style.overflowY = tight ? "hidden" : "";
   }
-  f.style.gridTemplateRows = rows.map((r) => Math.max(MIN, r).toFixed(1) + "px").join(" ");
+  f.style.gridTemplateRows = rows.map((r) => r.toFixed(1) + "px").join(" ");
   f.style.setProperty("--k", k.toFixed(4));
   const strip = feltLand ? 16 : (h < 700 ? 12 : Math.max(16, 18 * k));
   const lay = feltLand ? 16 : (h < 700 ? 12 : Math.max(16, 16 * k));
@@ -542,6 +595,7 @@ function fanFrom(rect, cents) {
 }
 
 function placeSpot(kind, number) {
+  cancelMoments();
   if (rolling) { maybeNudge("bet_while_rolling"); return; }
   let amount = settings.chip;
   const spot = { kind, number };
@@ -587,20 +641,44 @@ function checkSession() {
   else if (worth >= lim.goalAt) sessionPrompt = "Win goal. You are up 30% from " + money(sessionBase) + ".";
 }
 
+function legalFront(top) {
+  return top === 1 || top === 6 ? 2 : 1;
+}
+function applySet(name) {
+  const set = SETS[name] || SETS["3V"];
+  setFaces = set.dice.map((d) => orient(d.top, d.front));
+  diceFaces = setFaces.map((d) => Object.assign({}, d));
+  showingRoll = false;
+}
 function showRolled(d1, d2) {
   lastFaces = { d1, d2 };
+  diceFaces = [orient(d1, legalFront(d1)), orient(d2, legalFront(d2))];
+  showingRoll = true;
+}
+function noteLingo(id) {
+  let store = { badges: {}, progress: {} };
+  try { store = JSON.parse(localStorage.getItem("bb-table-badges-v1") || "") || store; } catch { /* fresh */ }
+  store = Badges.noteAction(store, { type: "lingo", id }).store;
+  localStorage.setItem("bb-table-badges-v1", JSON.stringify(store));
+}
+function watchLingo(id) {
+  LC.armDwell(lingo, id, noteLingo);
 }
 
 function doRoll() {
   if (rolling) { maybeNudge("bet_while_rolling"); return; }
+  lingo.peekId = null;
   if (throwPower < 18 && page === 2) {
     toastText = "No roll. Both dice have to reach the back wall. Nothing was drawn.";
+    lastRoll = { result: "no-roll", d1: 0, d2: 0, total: 0, hard: false, phaseBefore: game.phase };
+    const term = Lg.callTerm(lastRoll, "table");
+    if (term) LC.rememberCall(lingo, term.id);
     maybeNudge("no_roll");
     render();
     return;
   }
   rolling = true;
-  PC.cancelCelebration();
+  cancelMoments();
   offer = null;
   changeNote = "";
   if (strategyId && !sessionPrompt) {
@@ -609,9 +687,17 @@ function doRoll() {
   }
   const passBefore = game.bets.pass;
   const pointBefore = game.point;
+  const phaseBefore = game.phase;
+  const handBefore = { rolls: game.hand.rolls || 0, points: game.hand.points || 0 };
+  const betsBefore = E.tableTotal(game);
   const fireBefore = (game.firePoints || []).length;
   const fireBetBefore = game.bets.fire || 0;
-  const dice = E.rollDice();
+  let custom = null;
+  /*TEST_HOOK_START*/
+  if (TEST_BUILD && typeof window.__tcRng === "function") custom = window.__tcRng;
+  delete window.__tcRng;
+  /*TEST_HOOK_END*/
+  const dice = custom ? E.rollDice(custom) : E.rollDice();
   if (!dice || !dice.d1) {
     rolling = false;
     toastText = (dice && dice.error) || TR.NO_ROLL;
@@ -624,6 +710,10 @@ function doRoll() {
   if (strategyId && !sessionPrompt) game = TS.afterRoll(game, strategyId, settled, { unit: 1000 });
   sync();
   rolling = false;
+  const cap = E.rollCaption(dice.d1, dice.d2);
+  lastRoll = { d1: dice.d1, d2: dice.d2, total: dice.d1 + dice.d2, hard: !!(settled.dice && settled.dice.hard), phaseBefore, result: settled.result, word: cap.word };
+  const callTerm = Lg.callTerm(lastRoll, "table");
+  if (callTerm) LC.rememberCall(lingo, callTerm.id);
   const gained = Rail.colorUpOffer(rail);
   if (gained && settings.colorUp === "auto") {
     rail = Rail.railColorUp(rail).rail;
@@ -631,12 +721,46 @@ function doRoll() {
   } else if (gained && settings.colorUp === "offer") {
     offer = (rail[100] > 20 ? rail[100] + " × $1" : rail[500] + " × $5") + " on the rail. Color up?";
   }
-  if (settled.result === "seven-out") maybeNudge("new_shooter");
-  checkSession();
-  toastText = settled.narrative;
+  const sevenOut = settled.result === "seven-out" && phaseBefore === "point";
+  if (sevenOut) maybeNudge("new_shooter");
+  if (!sevenOut) checkSession();
+  toastText = sevenOut ? "" : settled.narrative;
   const feltFrom = document.querySelector(".numbox.point, .spot.pass");
   render();
-  if (settled.net > 0) flyChip(feltFrom, document.querySelector(".stack.sel") || document.querySelector(".tc-rail"), 2500, 320);
+  if (!sevenOut && settled.net > 0) flyChip(feltFrom, document.querySelector(".stack.sel") || document.querySelector(".tc-rail"), 2500, 320);
+  if (sevenOut) {
+    const length = handBefore.rolls + 1;
+    const prev = Number(localStorage.getItem("bb-table-longest") || 0);
+    const record = prev > 0 && length > prev;
+    localStorage.setItem("bb-table-longest", String(Math.max(prev, length)));
+    const fireDec = (settled.decisions || []).find((d) => d.bet === "Fire Bet" && d.result === "win" && (d.level === 4 || d.level === 5));
+    const shown = showPSO({
+      app: "tc",
+      point: pointBefore,
+      d1: dice.d1,
+      d2: dice.d2,
+      net: settled.net,
+      hadBets: betsBefore > 0,
+      hand: { rolls: length, points: handBefore.points },
+      record,
+      fire: fireDec ? { points: fireDec.level, pay: fireDec.profit } : null,
+      puck: [document.querySelector(".tc-hud .puck")],
+      dice: [document.querySelector(".tc-shooter .setview .pair"), document.querySelector(".tc-hud .puck")],
+      sweepFrom: [...document.querySelectorAll("#felt .bet")],
+      railTo: document.querySelector(".tc-rail"),
+      avoid: [document.querySelector(".tc-shoot"), document.querySelector(".tc-rail")],
+      billie: { light: A + "mascots/billie/billie-C-sevenout.svg", long: A + "mascots/billie/billie-C-hello.svg" },
+      faces: A + "dice/faces/",
+      puckOn: A + "icons/puck-on.svg",
+      chip: A + "chips/chip-25-value.svg",
+      reduced: reducedMQ.matches,
+      sfx: () => {},
+      haptic: () => {},
+    });
+    const dur = shown && shown.variant ? shown.variant.dur : 1200;
+    setTimeout(() => { checkSession(); if (sessionPrompt) render(); }, dur);
+    return;
+  }
   if (settled.result === "point-made") {
     const points = game.hand.points;
     const tier = PT.celebrationTier(points, { meterOn: true, blazing: settled.tier === "blazing" });
@@ -699,11 +823,84 @@ function finishEtiquette() {
   render();
 }
 
+function showOnBoard(id) {
+  const term = Lg.termById(id, "table");
+  const target = LC.boardTarget(term, "table");
+  lingo.sheet = null;
+  lingo.peekId = null;
+  lingo.confirm = false;
+  screen = "play";
+  menu = false;
+  if (!target.ok) { toastText = target.reason; render(); return; }
+  const sel = LC.spotSelector(target.link, "table");
+  if (target.link !== "ui:rail" && page !== 1) page = 1;
+  render();
+  const el = document.querySelector(sel);
+  document.querySelectorAll(".lingo-hl").forEach((n) => n.classList.remove("lingo-hl"));
+  if (el) {
+    el.classList.add("lingo-hl");
+    if (reducedMQ.matches) setTimeout(() => el.classList.remove("lingo-hl"), 1500);
+  } else toastText = target.reason || "That spot isn't on this board.";
+  render();
+  const again = document.querySelector(sel);
+  if (again) again.classList.add("lingo-hl");
+}
 function onClick(e) {
+  if (swallowLingo) {
+    swallowLingo = false;
+    const held = e.target.closest("[data-act='spot'], [data-act='num']");
+    if (held) return;
+  }
   const t = e.target.closest("[data-act]");
   if (!t) return;
   const act = t.dataset.act;
-  if ((act === "seed" || act === "color-setting" || act === "theme" || act === "csv-file") && e.type === "click") return;
+  if ((act === "seed" || act === "color-setting" || act === "theme" || act === "csv-file" || act === "lingo-q") && e.type === "click") return;
+  if (act === "hops") {
+    const hops = document.getElementById("hops");
+    if (hops) hops.scrollIntoView({ block: "start" });
+    return;
+  }
+  if (act === "lingo" || act === "lingo-open" || act === "lingo-row") {
+    if (t.dataset.id) lingo.cardId = t.dataset.id;
+    lingo.peekId = null;
+    lingo.sheet = null;
+    screen = "lingo";
+    menu = false;
+    render();
+    if (lingo.cardId) watchLingo(lingo.cardId);
+    return;
+  }
+  if (act === "lingo-close") { screen = "play"; lingo.cardId = null; watchLingo(""); render(); return; }
+  if (act === "lingo-cat") { lingo.category = t.dataset.cat || "all"; render(); return; }
+  if (act === "lingo-peek") {
+    lingo.peekId = t.dataset.id;
+    LC.rememberCall(lingo, t.dataset.id);
+    render();
+    watchLingo(t.dataset.id);
+    return;
+  }
+  if (act === "peek-close") { lingo.peekId = null; watchLingo(""); render(); return; }
+  if (act === "sheet-close") {
+    if (e.target.closest(".lingo-sheet") && !e.target.closest(".lingo-grab, .lingo-x")) return;
+    lingo.sheet = null;
+    lingo.confirm = false;
+    watchLingo("");
+    render();
+    return;
+  }
+  if (act === "lingo-why") { lingo.why = !lingo.why; render(); return; }
+  if (act === "lingo-show") { showOnBoard(t.dataset.id); return; }
+  if (act === "lingo-take") {
+    if (!lingo.sheet) return;
+    const probe = E.removeBet(game, lingo.sheet);
+    if (probe.needsConfirm && !t.dataset.confirm) { lingo.confirm = true; render(); return; }
+    const res = E.removeBet(game, lingo.sheet, null, { confirm: true });
+    if (res.ok) { game = res.state; sync(); lingo.sheet = null; lingo.confirm = false; }
+    else toastText = res.error || "";
+    render();
+    return;
+  }
+  if (act === "lingo-links") { settings.lingoLinks = settings.lingoLinks === false; save(); render(); return; }
   if (act === "chip") { settings.chip = Number(t.dataset.chip); changeNote = ""; render(); return; }
   if (act === "roll" || act === "throw") { doRoll(); return; }
   if (act === "go-shooter") { page = 2; screen = "play"; menu = false; maybeNudge("set_dice"); render(); return; }
@@ -791,11 +988,13 @@ function onClick(e) {
       if (res.ok && localStorage.getItem("bb-table-entitlement") === "1") {
         settings.premium = true;
         localStorage.setItem(PREM, "1");
+        payNote = "";
         toastText = "Premium unlocked on this device. Practice chips only.";
         screen = "compare";
       } else {
         settings.premium = localStorage.getItem("bb-table-entitlement") === "1";
-        toastText = (res && res.error) || "Purchase unavailable.";
+        payNote = (res && res.error) || "Purchases are not available in this build.";
+        screen = "paywall";
       }
       render();
     });
@@ -806,12 +1005,14 @@ function onClick(e) {
       if (res.ok && res.entitlement === "1") {
         settings.premium = true;
         localStorage.setItem(PREM, "1");
+        payNote = "";
         toastText = "Purchases restored. Practice chips only.";
         screen = "compare";
       } else {
         settings.premium = false;
         localStorage.removeItem(PREM);
-        toastText = "No purchases to restore.";
+        payNote = (res && res.error) || "No purchases to restore.";
+        screen = "paywall";
       }
       render();
     });
@@ -922,8 +1123,7 @@ function onClick(e) {
   if (act === "leave") { leave(); return; }
   if (act === "set") {
     settings.set = t.dataset.set;
-    const set = SETS[settings.set] || SETS["3V"];
-    diceFaces = set.dice.map((d) => orient(d.top, d.front));
+    applySet(settings.set);
     render();
     return;
   }
@@ -958,16 +1158,50 @@ app.addEventListener("pointerdown", (e) => {
   }
   touchDice = flickArm || !!e.target.closest(".meter");
   const hold = e.target.closest("[data-act='num'], [data-act='spot']");
-  if (hold) {
+  if (hold && !e.target.closest(".tc-shoot, .tc-keys, [data-act='throw']")) {
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let moved = false;
     const timer = setTimeout(() => {
-      const kind = hold.dataset.kind || settings.numbet;
-      const n = hold.dataset.n || "";
-      toastText = "Preview " + kind + (n ? " " + n : "") + " · " + money(settings.chip) + ". Release without a long hold to bet.";
+      if (moved) return;
+      lingo.sheet = LC.spotFromEl(hold, settings.numbet);
+      lingo.confirm = false;
+      lingo.why = false;
+      swallowLingo = true;
+      const term = Lg.termForSpot(lingo.sheet, "table");
       render();
-    }, 480);
-    hold.addEventListener("pointerup", () => clearTimeout(timer), { once: true });
-    hold.addEventListener("pointercancel", () => clearTimeout(timer), { once: true });
+      if (term) watchLingo(term.id);
+    }, 500);
+    const move = (ev) => {
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 12) { moved = true; clearTimeout(timer); }
+    };
+    const stop = () => { clearTimeout(timer); hold.removeEventListener("pointermove", move); };
+    hold.addEventListener("pointermove", move);
+    hold.addEventListener("pointerup", stop, { once: true });
+    hold.addEventListener("pointercancel", stop, { once: true });
   }
+});
+app.addEventListener("contextmenu", (e) => {
+  if (e.target.closest("[data-act='num'], [data-act='spot']")) e.preventDefault();
+});
+app.addEventListener("input", (e) => {
+  if (e.target && e.target.dataset && e.target.dataset.act === "lingo-q") {
+    lingo.query = e.target.value;
+    const pos = e.target.selectionStart;
+    render();
+    const again = document.querySelector("[data-act='lingo-q']");
+    if (again) { again.focus(); if (pos != null) again.setSelectionRange(pos, pos); }
+  }
+});
+addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!lingo.sheet && !lingo.peekId && screen !== "lingo") return;
+  lingo.sheet = null;
+  lingo.peekId = null;
+  lingo.confirm = false;
+  if (screen === "lingo") screen = "play";
+  watchLingo("");
+  render();
 });
 app.addEventListener("pointermove", (e) => {
   const bar = e.target.closest && e.target.closest(".meter .bar");
@@ -984,12 +1218,17 @@ app.addEventListener("pointerup", (e) => {
     const index = diceIndex;
     flickArm = false;
     if (index >= 0) {
+      if (showingRoll) {
+        diceFaces = setFaces.map((d) => Object.assign({}, d));
+        showingRoll = false;
+      }
       const step = (fn) => { diceFaces = diceFaces.map((face, i) => i === index ? fn(face) : face); };
       if (Math.abs(dy) >= Math.abs(dx) && dy < -24) step(turn.flipUp);
       else if (Math.abs(dy) >= Math.abs(dx) && dy > 24) step(turn.flipDown);
       else if (dx < -24) step(turn.spinLeft);
       else if (dx > 24) step(turn.spinRight);
       else step(turn.flipUp);
+      setFaces = diceFaces.map((d) => Object.assign({}, d));
     }
     if (dy < -80 && page === 2 && screen === "play") { doRoll(); return; }
     render();

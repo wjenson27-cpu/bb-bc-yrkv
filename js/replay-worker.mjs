@@ -19,7 +19,7 @@ self.onmessage = async (e) => {
   const k = Math.min(1000, Math.max(1, msg.seeds || 100));
   const rolls = Math.max(1, Number(msg.rolls) || 200);
   const base = Number(msg.seed) || 1;
-  const params = Object.assign({ atLimit: "stop" }, msg.params || {});
+  const params = Object.assign({ atLimit: "stop", lean: true }, msg.params || {});
   const nets = {};
   const extras = {};
   ids.forEach((id) => {

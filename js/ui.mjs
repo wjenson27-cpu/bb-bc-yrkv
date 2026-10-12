@@ -9,7 +9,11 @@ import { resolveSwipe } from "./swipe.mjs";
 import { chipSrc as sharedChipSrc, chipPng as sharedChipPng, breakChips as sharedBreak } from "./chips.mjs";
 import { TEST_BUILD } from "./build-flags.mjs";
 import { celebratePoint, cancelCelebration } from "./point-celebration.mjs";
+import { cancelMoments, showPSO } from "./pso.mjs";
 import { celebrationCopy, celebrationTier } from "./point-tier.mjs";
+import * as Lg from "./lingo.mjs";
+import * as LC from "./lingo-ctrl.mjs";
+import { callButton, learnRowHTML } from "./lingo-view.mjs";
 import { RULE0_LINE, NO_ROLL } from "./table-rules.mjs";
 import { deckFor, nudgeFor, nextSessionTip, ETIQUETTE, ETIQUETTE_FOOTER } from "./etiquette.mjs";
 
@@ -44,9 +48,13 @@ const settings = {
   autoPress: "off",
   autoPressMax: 3,
   seenBlaze: {},
+  lingoLinks: true,
 };
 let game = E.createGame();
 let view = "home";
+let lingo = LC.freshLingo();
+let lastRoll = null;
+let swallowLingo = false;
 let page = 1;
 let betTab = "place";
 let learnFilter = "all";
@@ -194,7 +202,10 @@ function diceReadout(d1, d2, size, opts) {
   if (opts.tag !== false) extra += "<b class='readbadge" + (total === 7 ? " seven" : "") + "'>" + total + "</b>";
   const showHard = opts.hardTag && hard && (total === 4 || total === 6 || total === 8 || total === 10);
   if (showHard) extra += "<b class='hardtag'>Hard " + total + "</b>";
-  else if (opts.call) extra += "<span class='readcall'>" + esc(opts.call) + "</span>";
+  else if (opts.call) {
+    const term = opts.roll && settings.lingoLinks !== false ? Lg.callTerm(opts.roll, "bubble") : null;
+    extra += term ? callButton(opts.call, term, term.srLabel) : "<span class='readcall'>" + esc(opts.call) + "</span>";
+  }
   return "<span class='readout s" + px + "' style='--die:" + px + "px' role='img' aria-label='" + esc(label) + "'>" +
     dieFace(d1, px) + dieFace(d2, px) + extra + "</span>";
 }
@@ -288,6 +299,26 @@ function mount() {
     <div id="overlay"></div>
   `;
   app.addEventListener("click", onClick);
+  app.addEventListener("contextmenu", (e) => {
+    if (e.target.closest("[data-act='bet']")) e.preventDefault();
+  });
+  app.addEventListener("input", (e) => {
+    if (!e.target || !e.target.dataset || e.target.dataset.act !== "lingo-q") return;
+    lingo.query = e.target.value;
+    const pos = e.target.selectionStart;
+    paint();
+    const again = document.querySelector("[data-act='lingo-q']");
+    if (again) { again.focus(); if (pos != null) again.setSelectionRange(pos, pos); }
+  });
+  addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!lingo.sheet && !lingo.peekId && view !== "lingo") return;
+    lingo.sheet = null;
+    lingo.peekId = null;
+    if (view === "lingo") view = "learn";
+    watchLingo("");
+    paint();
+  });
   const diceHost = document.createElement("div");
   diceHost.id = "dice-row";
   diceHost.className = "dice-live";
@@ -331,13 +362,25 @@ function mount() {
     swallowClick = false;
     if (e.button != null && e.button !== 0) return;
     const hold = e.target.closest("[data-act='bet']");
-    if (hold) {
+    if (hold && !e.target.closest("[data-act='roll'], [data-act='press'], [data-act='power']")) {
+      const x0 = e.clientX;
+      const y0 = e.clientY;
+      let moved = false;
       const timer = setTimeout(() => {
-        const kind = hold.dataset.kind || "bet";
-        const n = hold.dataset.number || "";
-        toast("Preview " + kind + (n ? " " + n : "") + ". Long-press shows the bet. A tap still places it.");
-      }, 480);
-      const stop = () => clearTimeout(timer);
+        if (moved) return;
+        lingo.sheet = LC.spotFromEl(hold);
+        lingo.confirm = false;
+        lingo.why = false;
+        swallowLingo = true;
+        paint();
+        const term = Lg.termForSpot(lingo.sheet, "bubble");
+        if (term) watchLingo(term.id);
+      }, 500);
+      const move = (ev) => {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 12) { moved = true; clearTimeout(timer); }
+      };
+      const stop = () => { clearTimeout(timer); hold.removeEventListener("pointermove", move); };
+      hold.addEventListener("pointermove", move);
       hold.addEventListener("pointerup", stop, { once: true });
       hold.addEventListener("pointercancel", stop, { once: true });
     }
@@ -433,7 +476,50 @@ function snap() {
   pager.style.transform = target;
 }
 
+function noteLingo(id) {
+  const noted = B.noteAction(boardData, { type: "lingo", id, mode: game.mode, now: Date.now() });
+  boardData.badges = noted.store.badges;
+  boardData.progress = noted.store.progress;
+  if (noted.store.daily) boardData.daily = noted.store.daily;
+  saveBoard();
+}
+function watchLingo(id) {
+  LC.armDwell(lingo, id, noteLingo);
+}
+function showOnBoard(id) {
+  const term = Lg.termById(id, "bubble");
+  const target = LC.boardTarget(term, "bubble");
+  lingo.sheet = null;
+  lingo.peekId = null;
+  view = "play";
+  if (!target.ok) { toast(target.reason); paint(); return; }
+  const sel = LC.spotSelector(target.link, "bubble");
+  if (target.link !== "ui:rail") page = 1;
+  paint();
+  snap();
+  const el = document.querySelector(sel);
+  if (el) {
+    el.classList.add("lingo-hl");
+    if (motionOff()) setTimeout(() => el.classList.remove("lingo-hl"), 1500);
+  } else toast(target.reason || "That spot isn't on this board.");
+}
+function mountLingo() {
+  if (view !== "play") return;
+  const stage = document.getElementById("stage");
+  if (!stage) return;
+  let host = document.getElementById("lingo-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "lingo-host";
+    stage.appendChild(host);
+  }
+  host.innerHTML = LC.peekBlock("bubble", lingo, "assets/", game.mode) + LC.sheetBlock("bubble", lingo, game, { asset: "assets/", rolling, money, tutorOn: settings.tutorOn, mode: game.mode });
+}
 function onClick(e) {
+  if (swallowLingo) {
+    swallowLingo = false;
+    if (e.target.closest("[data-act='bet']")) return;
+  }
   if (swallowClick) { swallowClick = false; return; }
   if (betsOpen && e.target.closest(".felt") && !e.target.closest(".betpanel")) {
     betsOpen = false;
@@ -445,6 +531,46 @@ function onClick(e) {
   A.unlock();
   A.setMuted(!settings.sound);
   const act = t.dataset.act;
+  if (act === "hops") return;
+  if (act === "lingo" || act === "lingo-open" || act === "lingo-row") {
+    if (t.dataset.id) lingo.cardId = t.dataset.id;
+    lingo.peekId = null;
+    lingo.sheet = null;
+    setView("lingo");
+    if (lingo.cardId) watchLingo(lingo.cardId);
+    return;
+  }
+  if (act === "lingo-close") { lingo.cardId = null; watchLingo(""); setView("learn"); return; }
+  if (act === "lingo-cat") { lingo.category = t.dataset.cat || "all"; paint(); return; }
+  if (act === "lingo-peek") {
+    lingo.peekId = t.dataset.id;
+    LC.rememberCall(lingo, t.dataset.id);
+    paint();
+    watchLingo(t.dataset.id);
+    return;
+  }
+  if (act === "peek-close") { lingo.peekId = null; watchLingo(""); paint(); return; }
+  if (act === "sheet-close") {
+    if (e.target.closest(".lingo-sheet") && !e.target.closest(".lingo-grab, .lingo-x")) return;
+    lingo.sheet = null;
+    lingo.confirm = false;
+    watchLingo("");
+    paint();
+    return;
+  }
+  if (act === "lingo-why") { lingo.why = !lingo.why; paint(); return; }
+  if (act === "lingo-show") { showOnBoard(t.dataset.id); return; }
+  if (act === "lingo-take") {
+    if (!lingo.sheet) return;
+    const probe = E.removeBet(game, lingo.sheet);
+    if (probe.needsConfirm && !t.dataset.confirm) { lingo.confirm = true; paint(); return; }
+    const res = E.removeBet(game, lingo.sheet, null, { confirm: true });
+    if (res.ok) { game = res.state; lingo.sheet = null; lingo.confirm = false; A.chip(); }
+    else toast(res.error || "");
+    save();
+    paint();
+    return;
+  }
   if (act === "view") {
     if (t.dataset.view === "play" && view === "fair") page = 2;
     setView(t.dataset.view);
@@ -699,6 +825,7 @@ function switchMode(mode) {
 }
 
 function addBet(ds) {
+  cancelMoments();
   if (rolling) return;
   const spot = spotFrom(ds);
   if (spot.kind === "dontComePoint") {
@@ -985,6 +1112,8 @@ async function doRoll(source) {
     return;
   }
   rolling = true;
+  lingo.peekId = null;
+  cancelMoments();
   clearWin();
   stopTimer();
   const pointBefore = game.point;
@@ -1005,6 +1134,7 @@ async function doRoll(source) {
   const edgeCap = maxWorkingEdge(game);
   const handBefore = { rolls: game.hand.rolls, points: game.hand.points };
   const passBefore = game.bets.pass;
+  const phaseBefore = game.phase;
   ensureHand(handBefore.rolls);
   let custom = null;
   /*TEST_HOOK_START*/
@@ -1040,31 +1170,70 @@ async function doRoll(source) {
       autoPressed = true;
     }
   }
-  rememberRoll(settled, source === "auto" ? "auto" : "manual");
+  rememberRoll(settled, source === "auto" ? "auto" : "manual", phaseBefore);
+  const cap = settled.dice || {};
+  lastRoll = { d1: cap.d1, d2: cap.d2, total: cap.total, hard: !!cap.hard, phaseBefore, result: settled.result };
+  const callId = Lg.callTermId(lastRoll);
+  if (callId) LC.rememberCall(lingo, callId);
   if (onTable === 0) emptyFelt += 1;
   else emptyFelt = 0;
-  if (settled.result === "point-made") { /* the celebration owns this sound */ }
+  const sevenOut = settled.result === "seven-out" && phaseBefore === "point";
+  if (settled.result === "point-made" || sevenOut) { /* celebration or PSO owns this sound */ }
   else if (settled.net > 0) { A.win(); haptic([12, 40, 16]); }
-  else if (settled.result === "seven-out") { A.seven(); haptic(40); }
   else A.chip();
   if (settings.showDice) page = returnPage;
   rolling = false;
   paint();
   snap();
   const big = isBigWin(settled);
-  const quiet = page === 2 || settled.result === "seven-out" || big;
-  if (!quiet) showRollToast(settled, pressNote);
-  else if (pressNote) queueToast(pressNote, "", 1200);
-  celebrate(settled, handBefore, { point: pointBefore, pass: passBefore });
+  const quiet = page === 2 || sevenOut || big;
+  if (!quiet && !sevenOut) showRollToast(settled, pressNote);
+  else if (pressNote && !sevenOut) queueToast(pressNote, "", 1200);
   noteBlaze(handBefore, settled);
   maybeTutor(settled);
   noteHandRoll(handBefore, settled, dice, hadBetNow, pointBefore, source === "auto" ? "auto" : "manual", totalBefore, edgeCap, onTable, autoPressed);
-  maybeRecord(handBefore, settled, dice, hadBetNow);
+  if (sevenOut) {
+    const record = !!maybeRecord(handBefore, settled, dice, hadBetNow, true);
+    const fireDec = (settled.decisions || []).find((d) => d.bet === "Fire Bet" && d.result === "win" && (d.level === 4 || d.level === 5));
+    const length = handBefore.rolls + 1;
+    showPSO({
+      app: "bc",
+      point: pointBefore,
+      d1: dice.d1,
+      d2: dice.d2,
+      net: settled.net,
+      hadBets: onTable > 0,
+      hand: { rolls: length, points: handBefore.points },
+      record,
+      fire: fireDec ? { points: fireDec.level, pay: fireDec.profit } : null,
+      puck: [document.querySelector(".hud-puck")],
+      dice: [document.querySelector(".dome-screen .result-line"), document.querySelector(".hud-puck")],
+      sweepFrom: [...document.querySelectorAll(".has .stack")],
+      railTo: document.querySelector(".dock .chip-btn.on"),
+      avoid: [document.querySelector("[data-act='roll']"), document.querySelector(".dome-screen .machine")],
+      billie: { light: "assets/mascots/billie/billie-C-sevenout.svg", long: "assets/mascots/billie/billie-C-hello.svg" },
+      faces: "assets/dice/faces/",
+      puckOn: "assets/icons/puck-on.svg",
+      chip: "assets/chips/chip-25-value.svg",
+      reduced: motionOff(),
+      sfx: (name) => {
+        if (!settings.sound) return;
+        if (name === "pso_light" || name === "pso_dark") { A.seven(); A.chip(); }
+        else if (name === "pso_nobets") A.pop();
+        else if (name === "fire_payout") A.win();
+      },
+      haptic: (name) => { if (settings.haptics) haptic(name === "success" ? [12, 40, 12] : 10); },
+    });
+  } else {
+    celebrate(settled, handBefore, { point: pointBefore, pass: passBefore });
+    maybeRecord(handBefore, settled, dice, hadBetNow, false);
+  }
   if (settled.result === "seven-out" && boardData.session && !boardData.session.ended) {
     const length = handBefore.rolls + 1;
     if (!boardData.session.longest || length > boardData.session.longest) boardData.session.longest = length;
   }
-  noteSession(hadBetNow, settled);
+  if (sevenOut) setTimeout(() => noteSession(hadBetNow, settled), 1200);
+  else noteSession(hadBetNow, settled);
   maybeAtsNote(settled);
   if (emptyFelt >= 3 && settings.autoRoll && !autoPause) {
     autoPause = "empty";
@@ -1076,13 +1245,13 @@ async function doRoll(source) {
   startTimer();
 }
 
-function rememberRoll(settled) {
+function rememberRoll(settled, source, phaseBefore) {
   const rec = {
     d1: settled.dice.d1,
     d2: settled.dice.d2,
     total: settled.dice.total,
     result: settled.result,
-    phaseBefore: settled.result === "natural" || settled.result === "craps" || settled.result === "point-set" ? "come-out" : "point",
+    phaseBefore: phaseBefore || (settled.result === "natural" || settled.result === "craps" || settled.result === "point-set" ? "come-out" : "point"),
     mode: game.mode,
     net: settled.net,
     hard: !!settled.dice.hard,
@@ -1887,7 +2056,7 @@ function showRecordCard(preview) {
     "<div class='actions'><button class='go' data-act='save-record'>SAVE</button>" +
     "<button class='ghost' data-act='skip-record'>SKIP</button></div></div></div>";
 }
-function maybeRecord(before, settled, dice, hadBet) {
+function maybeRecord(before, settled, dice, hadBet, silent) {
   if (settled.result !== "seven-out") return;
   if (!hadBet) return;
   if (dice && dice.source === "test") return;
@@ -1923,20 +2092,23 @@ function maybeRecord(before, settled, dice, hadBet) {
       boardData = res.data;
       saveBoard();
       const line = (res.record ? "New longest roll this week: " : "Made the board. ") + E.countPhrase(res.entry.rolls, "roll") + ".";
-      queueToast(line, "", settled.result === "seven-out" ? 3000 : 800);
+      if (!silent) queueToast(line, "", settled.result === "seven-out" ? 3000 : 800);
     }
     handMeta = freshMeta();
-    return;
+    return !!(preview && preview.record);
   }
   pendingRecord = candidate;
   boardData.pending = candidate;
   saveBoard();
   clearTimeout(recordTimer);
-  recordTimer = setTimeout(() => {
-    hideToast();
-    showRecordCard(preview);
-  }, motionOff() ? 400 : 2900);
+  if (!silent) {
+    recordTimer = setTimeout(() => {
+      hideToast();
+      showRecordCard(preview);
+    }, motionOff() ? 400 : 2900);
+  }
   handMeta = freshMeta();
+  return !!(preview && preview.record);
 }
 function leaderHTML() {
   const mode = boardMode === "crapless" ? "crapless" : "regular";
@@ -2014,7 +2186,7 @@ function badgeGallery() {
     return true;
   };
   const tiers = ["bronze", "silver", "gold", "legendary"];
-  const tierCounts = { bronze: 8, silver: 9, gold: 9, legendary: 5 };
+  const tierCounts = { bronze: 8, silver: 10, gold: 9, legendary: 5 };
   const bars = "<div class='tierbars'>" + tiers.map((tier) => {
     const have = B.BADGES.filter((b) => b.tier === tier && boardData.badges && boardData.badges[b.id]).length;
     const need = tierCounts[tier];
@@ -2027,7 +2199,7 @@ function badgeGallery() {
     ["Press & bets", ["billys_way_first_hit", "billys_way_full_circle", "press_undo", "press_then_collect", "hard_hat_trick", "hwad_win", "repeaters_all_ten"]],
     ["Discipline", ["low_edge_three_hands", "steady_up_1000", "limits_set_session", "win_goal_banked", "loss_limit_kept", "five_sessions_within_limits"]],
     ["Crapless", ["crapless_points_all_ten_lifetime", "crapless_six_points_one_hand", "crapless_corner_point"]],
-    ["Practice", ["tutor_tour_complete", "fair_dice_explorer", "daily_practice_3"]],
+    ["Practice", ["tutor_tour_complete", "fair_dice_explorer", "daily_practice_3", "table_manners", "talk_the_talk"]],
   ];
   const body = sections.map(([title, ids]) => {
     const tiles = ids.map((id) => B.badgeById(id)).filter((b) => b && keep(b)).map(badgeTile).join("");
@@ -2401,8 +2573,9 @@ function paint() {
   document.getElementById("tabs").innerHTML = tabsHTML();
   const sheet = document.getElementById("betsheet");
   if (sheet) sheet.innerHTML = play && betsOpen ? betPanelHTML() : "";
-  if (play) {
+    if (play) {
     document.getElementById("pager").innerHTML = pageHTML(0) + pageHTML(1) + pageHTML(2);
+    mountLingo();
     fitFelt();   // board fix: lay out the new felt before the first frame (no flash of the default grid)
     syncDice();
     document.getElementById("dots").innerHTML = dotsHTML();
@@ -2527,7 +2700,8 @@ function spotButton(opts) {
   return "<button class='spot" + (opts.cls ? " " + opts.cls : "") + (stake ? " has" : "") + "' data-act='bet' data-kind='" + opts.kind + "'" +
     (opts.number != null ? " data-number='" + opts.number + "'" : "") +
     (opts.pair ? " data-pair='" + opts.pair + "'" : "") + teach +
-    " aria-label='" + opts.label + (stake ? ", " + money(stake) : "") + "'>" +
+    " aria-label='" + opts.label + (stake ? ", " + money(stake) : "") + "'" +
+    " title='Long-press for lingo.'>" +
     "<small>" + opts.pay + "</small><b>" + opts.name + "</b>" + stakeLabel(stake) + (opts.extra || "") + "</button>";
 }
 
@@ -2788,7 +2962,7 @@ function domeHTML() {
     "<i class='bubble' style='left:" + left + "%;width:" + (8 + (i % 4) * 5) + "px;height:" + (8 + (i % 4) * 5) + "px;animation-delay:" + (i * 0.35) + "s'></i>").join("");
   const line = rolling
     ? "<div class='ledglass'>AIR ON · DICE OUT</div>"
-    : "<div class='result-line'>" + (game.lastDice ? diceReadout(game.lastDice.d1, game.lastDice.d2, 32, { call: game.lastDice.word, aria: game.lastDice.aria }) : "READY") + "</div>";
+    : "<div class='result-line'>" + (game.lastDice ? diceReadout(game.lastDice.d1, game.lastDice.d2, 32, { call: lastRoll && lastRoll.result === "seven-out" ? "SEVEN OUT" : game.lastDice.word, aria: game.lastDice.aria, roll: lastRoll }) : "READY") + "</div>";
   const win = !rolling && game.lastWin
     ? "<p class='hitline'>WIN · " + (game.lastWin.kind === "buy" ? "Buy " : "Place ") + game.lastWin.number + " +" + money(game.lastWin.profit) + "</p>"
     : "";
@@ -2884,6 +3058,7 @@ function panelHTML() {
   if (view === "home") return homeHTML();
   if (view === "fair") return fairHTML();
   if (view === "learn") return learnHTML();
+  if (view === "lingo") return LC.screenHTML("bubble", lingo, "assets/", game.mode);
   if (view === "premium") return premiumHTML();
   if (view === "leaderboard") return leaderHTML();
   if (view === "settings") return settingsHTML();
@@ -2906,6 +3081,7 @@ function homeHTML() {
     "<button class='cta' data-act='play' data-mode='regular'><b>PLAY REGULAR</b><small>TAP ROLL · AUTO-ROLL OPTIONAL IN SETTINGS</small></button>" +
     "<div class='ghostrow'><button class='ghost' data-act='tour'>TAKE THE TUTOR TOUR</button><button class='ghost' data-act='billy-help'>WHAT'S BILLY'S WAY?</button></div>" +
     "<button class='ghost boardlink' data-act='view' data-view='leaderboard'>BADGES AND LONGEST ROLLS</button>" +
+    "<button class='ghost boardlink' data-act='lingo'>CRAPS LINGO</button>" +
     "<a class='ghost boardlink' href='table/'>PLAY TABLE CRAPS</a>" +
     "<p class='billytip'>" + nextSessionTip(settings.tipCursor || 0, "bubble").tip.billy + "</p>" +
     "<div class='disclaimer'><b>Education only. Play money only.</b> No real gambling, no deposits, no payouts, no prizes. Every bankroll on this table is practice chips. 18+. " + RULE0_LINE + "</div></section>";
@@ -2920,7 +3096,7 @@ function learnHTML() {
     return "<article class='card learncard'>" + edgeChip(Number(pct)) + "<p class='tag'>" + c.id + "</p><div class='tagrow'>" + tags + fun + "</div><h3>" + c.name + "</h3><p class='clamp'>" + c.how + "</p><p class='muted'>" + c.bankroll + "</p>" +
       "<button class='run' data-act='strategy' data-id='" + c.id + "'>" + (c.lesson ? "Read ›" : "Run ›") + "</button></article>";
   }).join("");
-  return "<h2>Strategy library</h2><div class='filters'>" + filters.map((f) => "<button class='" + (learnFilter === f ? "on" : "") + "' data-act='filter' data-filter='" + f + "'>" + f[0].toUpperCase() + f.slice(1) + "</button>").join("") + "</div>" + cards;
+  return "<h2>Strategy library</h2>" + learnRowHTML("bubble") + "<div class='filters'>" + filters.map((f) => "<button class='" + (learnFilter === f ? "on" : "") + "' data-act='filter' data-filter='" + f + "'>" + f[0].toUpperCase() + f.slice(1) + "</button>").join("") + "</div>" + cards;
 }
 
 function premiumHTML() {
@@ -3000,6 +3176,7 @@ function longestPosted() {
 function settingsHTML() {
   const row = (key, label, detail) => "<div class='setting'><div><b>" + label + "</b><div class='muted'>" + detail + "</div></div><button class='switch" + (settings[key] ? " on" : "") + "' data-act='setting' data-key='" + key + "' role='switch' aria-checked='" + settings[key] + "' aria-label='" + label + "'><i></i></button></div>";
   return "<h2>Settings</h2>" +
+    row("lingoLinks", "Lingo links on roll calls", "Roll calls open in Craps Lingo. On by default.") +
     row("sound", "Sound", "Dome pop, dice, chips, wins") +
     row("haptics", "Haptics", "Vibration where the phone allows it") +
     row("autoRoll", "Auto-roll", "Off until you turn it on. ROLL always works.") +

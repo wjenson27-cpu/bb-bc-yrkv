@@ -160,13 +160,13 @@ test("coach clicks, one mascot, and phone pip strips", async (t) => {
     await page.locator("button.dot[aria-label='Dice']").click();
     await page.waitForSelector(".dome-billy");
     await forceRoll(3, 4);
-    await page.waitForSelector(".toast-billy");
+    await page.waitForSelector(".pso-plate .billie");
     assert.equal(await mascotCount(), 1, "seven-out on the dome is one mascot");
-    const domeHidden = await page.evaluate(() => getComputedStyle(document.querySelector(".dome-cast")).visibility);
+    const domeHidden = await page.evaluate(() => getComputedStyle(document.querySelector(".dome-billy")).visibility);
     assert.equal(domeHidden, "hidden");
-    const sevenCopy = await page.locator(".toast.seven").innerText();
+    const sevenCopy = await page.locator(".pso-plate").innerText();
     assert.match(sevenCopy, /SEVEN OUT/);
-    assert.ok(await page.locator(".toast.seven .dieface").count() >= 2, "seven-out toast shows pips");
+    assert.ok(await page.locator(".pso-plate .rd img").count() >= 2, "seven-out plate shows pips");
     const labels = await page.evaluate(() => [...document.querySelectorAll(".rolltile")].map((el) => el.getAttribute("aria-label")));
     assert.ok(labels.some((label) => /, seven out$/.test(label)), "seven-out tile says seven out");
     assert.ok(labels.some((label) => label === "three and four, seven"), "come-out 7 tile does not say seven out");

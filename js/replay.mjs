@@ -79,11 +79,13 @@ export function replay(dice, id, params) {
   const rules = (params && params.rules) || TR.defaultRules();
   const bankroll = (params && params.bankroll) || E.STARTING_BANKROLL;
   let state = fresh(rules, bankroll);
+  const lean = !!(params && params.lean);
+  if (lean) state.__lean = true;
   const atLimit = (params && params.atLimit) || "stop";
   const stopLoss = params && params.stopLoss != null ? params.stopLoss : 0.4;
   const winGoal = params && params.winGoal != null ? params.winGoal : 0.3;
-  const line = [bankroll];
-  const ledger = [];
+  const line = lean ? null : [bankroll];
+  const ledger = lean ? null : [];
   let expected = 0;
   let peak = bankroll;
   let maxDd = 0;
@@ -107,7 +109,7 @@ export function replay(dice, id, params) {
     mostAtRisk = Math.max(mostAtRisk, risk);
     if (risk) { inAction += 1; action += risk; }
     const [d1, d2] = dice[i];
-    const settled = E.settle(state, d1, d2);
+    const settled = E.settle(state, d1, d2, lean ? { inplace: true, fast: true } : undefined);
     if (!busted && !(atLimit === "stop" && limitRoll)) state = afterRoll(settled.state, id, settled, params);
     else state = settled.state;
     (settled.decisions || []).forEach((d) => {
@@ -123,8 +125,8 @@ export function replay(dice, id, params) {
     const net = worth - bankroll;
     if (!limitRoll && net <= -bankroll * stopLoss) { limitRoll = i + 1; stopKind = "loss"; }
     else if (!limitRoll && net >= bankroll * winGoal) { limitRoll = i + 1; stopKind = "goal"; }
-    line.push(worth);
-    ledger.push({
+    if (line) line.push(worth);
+    if (ledger) ledger.push({
       roll: i + 1,
       d1, d2,
       total: d1 + d2,
@@ -134,8 +136,8 @@ export function replay(dice, id, params) {
       expected: Math.round(expected),
     });
   }
-  const end = line[line.length - 1];
-  const open = openValue(state);
+  const end = line ? line[line.length - 1] : E.netWorth(state);
+  const open = lean ? [] : openValue(state);
   return {
     id,
     name: (strategyById(id) || {}).name || id,
@@ -216,7 +218,7 @@ export function manySeeds(strategyIds, params) {
   const ids = (strategyIds || []).slice(0, 6);
   const signal = params && params.signal;
   const onProgress = params && params.onProgress;
-  const runParams = Object.assign({ atLimit: "stop" }, params || {});
+  const runParams = Object.assign({ atLimit: "stop", lean: true }, params || {});
   const nets = {};
   const extras = {};
   ids.forEach((id) => {

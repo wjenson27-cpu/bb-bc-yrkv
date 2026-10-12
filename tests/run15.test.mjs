@@ -339,15 +339,15 @@ test("board, warnings, speech, seven-out toast, and the HUD avatar", async (t) =
         window.__bbRng = () => (seq[i++] - 0.5) / 6;
       });
       await page.locator("button[data-act='roll']").click();
-      await page.waitForSelector(".toast.seven .readcall", { timeout: 5000 });
+      await page.waitForSelector(".pso-plate .readcall", { timeout: 5000 });
       await page.waitForFunction(() => {
-        const toast = document.querySelector(".toast.seven");
+        const toast = document.querySelector(".pso-plate");
         if (!toast) return false;
-        const settled = getComputedStyle(toast).transform === "none";
-        return settled && toast.getBoundingClientRect().top >= -1;
+        const op = Number(getComputedStyle(toast).opacity);
+        return op > 0.4 && toast.getBoundingClientRect().top >= -1;
       });
       const toastFit = await page.evaluate(() => {
-        const toast = document.querySelector(".toast.seven");
+        const toast = document.querySelector(".pso-plate");
         const call = toast.querySelector(".readcall");
         const glass = document.querySelector(".dome-screen .machine");
         function rect(el) { const r = el.getBoundingClientRect(); return r; }
@@ -381,7 +381,7 @@ test("board, warnings, speech, seven-out toast, and the HUD avatar", async (t) =
           glass: Math.round(gr.top) + "-" + Math.round(gr.bottom),
         };
       });
-      assert.equal(toastFit.text, "SEVEN OUT", w + "x" + h);
+      assert.ok(String(toastFit.text || "").indexOf("SEVEN OUT") === 0, w + "x" + h + " " + toastFit.text);
       assert.equal(toastFit.clip, "", w + "x" + h + " " + toastFit.clip);
       assert.ok(toastFit.toastTop >= -1, w + "x" + h + " toast starts at " + toastFit.toast);
       assert.equal(toastFit.overlap, false, w + "x" + h + " toast " + toastFit.toast + " glass " + toastFit.glass);

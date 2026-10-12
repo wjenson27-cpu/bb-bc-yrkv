@@ -95,11 +95,10 @@ test("seven-out contrast and Billy clear of the longest call", async (t) => {
         window.__bbRng = () => (seq[i++] - 0.5) / 6;
       });
       await page.locator("button[data-act='roll']").click();
-      await page.waitForSelector(".toast.seven .readcall");
-      await page.waitForFunction(() => getComputedStyle(document.querySelector(".toast.seven")).transform === "none");
+      await page.waitForSelector(".pso-plate .readcall");
       const sample = await page.evaluate(() => {
-        const call = document.querySelector(".toast.seven .readcall");
-        const pill = call.closest(".readout");
+        const call = document.querySelector(".pso-plate .readcall");
+        const pill = call.closest(".pso-plate");
         const parse = (s) => {
           const m = String(s).match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
           return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
@@ -110,7 +109,7 @@ test("seven-out contrast and Billy clear of the longest call", async (t) => {
           bg: parse(getComputedStyle(pill).backgroundColor),
         };
       });
-      assert.equal(sample.text, "SEVEN OUT", w + "x" + h);
+      assert.ok(String(sample.text || "").indexOf("SEVEN OUT") === 0, w + "x" + h + " " + sample.text);
       assert.deepEqual(sample.fg, [255, 211, 106], w + "x" + h + " readcall");
       assert.ok(sample.bg, w + "x" + h + " pill");
       const ratio = contrastRatio(sample.fg, sample.bg);
@@ -150,6 +149,29 @@ test("seven-out contrast and Billy clear of the longest call", async (t) => {
         assert.equal(row.speech, 0, w + "x" + h + " " + row.word + " speech");
       });
     }
+    await boot(393, 852);
+    await page.locator("button.dot[aria-label='Dice']").click();
+    await page.waitForSelector(".dome-billy");
+    await page.evaluate(() => {
+      const seq = [4, 4];
+      let i = 0;
+      window.__bbRng = () => (seq[i++] - 0.5) / 6;
+    });
+    await page.locator("button[data-act='roll']").click();
+    await page.waitForFunction(() => {
+      const call = document.querySelector(".result-line .readcall");
+      return call && /HARD EIGHT|EIGHT/.test(call.textContent || "");
+    });
+    const live = await page.evaluate(() => {
+      const billy = document.querySelector(".dome-billy");
+      const line = document.querySelector(".result-line");
+      const br = billy.getBoundingClientRect();
+      const lr = line.getBoundingClientRect();
+      const iw = Math.min(br.right, lr.right) - Math.max(br.left, lr.left);
+      const ih = Math.min(br.bottom, lr.bottom) - Math.max(br.top, lr.top);
+      return { overlap: iw > 0.5 && ih > 0.5 ? iw : 0, text: document.querySelector(".result-line .readcall").textContent };
+    });
+    assert.equal(live.overlap, 0, "393 live hard eight overlap " + live.overlap + " " + live.text);
   } finally {
     await browser.close();
     server.kill();

@@ -24,7 +24,9 @@
 .tc-shooter .pair{display:flex;gap:16px;padding:4px 8px 0;grid-row:1/2}
 .tc-shooter .readout{display:flex;flex-direction:column;gap:4px;min-width:0}
 .tc-shooter .readout small{font:800 9px/1 var(--sans);letter-spacing:.14em;color:#C8D3E2}
-.tc-shooter .readout b{font:800 13px/1.2 var(--sans);color:#fff;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tc-shooter .readout > b{font:800 13px/1.2 var(--sans);color:#fff;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tc-shooter .readout b.tot{color:#1b2230}
+.tc-shooter .readout b.tot.seven{color:#fff}
 .tc-shooter .readout span{font:600 11.5px/1.25 var(--sans);color:#DCE6F2}
 .tc-shooter .gest{grid-column:1/-1;display:flex;gap:6px;justify-content:space-between}
 .tc-shooter .gest span{font:700 9.5px/1 var(--sans);letter-spacing:.06em;color:#C8D3E2;padding:4px 6px;border-radius:999px;border:1px dashed rgba(200,211,226,.4);white-space:nowrap}
@@ -171,6 +173,10 @@
 .tc-app.land .tc-shooter .tlabel{font-size:8.5px;letter-spacing:.1em}.tc-app.land .tc-shooter .lockcap{font-size:8.5px;letter-spacing:.06em}
 .tc-app.land .tc-cube.lg{--s:52px}
 .tc-app.land .tc-shooter .tc-fire{gap:3px;padding:2px 5px;top:36px}.tc-app.land .tc-shooter .tc-fire .med{width:19px;height:19px;font-size:10px}
+.tc-app.tight .tc-shooter .table{overflow:hidden}
+.tc-app.tight .tc-shooter .tc-fire{left:2px;right:2px;width:auto;transform:none;justify-content:space-between;gap:1px;padding:2px}
+.tc-app.tight .tc-shooter .tc-fire .med{width:14px;height:14px;font-size:8px}
+.tc-app.tight .tc-shooter .tc-fire .fl{font-size:7px}
 .tc-app.land .tc-shooter .gest{flex-wrap:wrap}.tc-app.land .tc-shooter .gest span:last-child{display:none}
 .tc-app.land .tc-shooter .setview{overflow:hidden}
 .tc-pay .buy,.tc-pay .sub,.tc-pay .sub button{flex-shrink:0}

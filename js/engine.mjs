@@ -735,7 +735,7 @@ export function placeBet(state, spot, amount, opts = {}) {
   if (commission && amount + commission > state.bankroll) {
     return { ok: false, error: "Not enough practice chips for the commission.", state };
   }
-  const next = clone(state);
+  const next = state.__lean ? state : clone(state);
   const prior = amountOf(next, s);
   addAmount(next, s, amount);
   if (prior === 0 && (s.kind === "small" || s.kind === "tall" || s.kind === "all" || s.kind === "hardAllDay")) {
@@ -761,10 +761,10 @@ export function removeBet(state, spot, amount, opts = {}) {
     return { ok: false, error: "Fire Bet stays up until the seven-out.", state };
   }
   if (s.kind === "pass" && state.phase !== "come-out") {
-    return { ok: false, error: "Pass Line stays up until it wins or loses.", state };
+    return { ok: false, error: "Contract bet: the Pass Line can't come down once a point is on. You can add Odds behind it.", state };
   }
   if (s.kind === "comePoint") {
-    return { ok: false, error: "A Come bet on a number stays until it wins or loses.", state };
+    return { ok: false, error: "Contract bet: a Come bet on a number can't come down. It stays until it wins or loses.", state };
   }
   const pointOn = state.phase === "point" && state.point;
   if (!opts.confirm && pointOn && (s.kind === "dontPass" || s.kind === "dontComePoint")) {
@@ -776,7 +776,7 @@ export function removeBet(state, spot, amount, opts = {}) {
       state,
     };
   }
-  const next = clone(state);
+  const next = state.__lean ? state : clone(state);
   const current = amountOf(next, s);
   if (current <= 0) return { ok: false, error: "No bet to take down.", state };
   let take = amount == null ? current : Math.min(amount, current);
@@ -1321,9 +1321,20 @@ function payStay(state, decisions, bet, stake, profit, extra) {
   pushDecision(decisions, bet, "win", stake, profit, extra);
 }
 
-function loseDown(state, decisions, bet, stake, clear) {
+function loseDown(state, decisions, bet, stake, clear, extra) {
   clear();
-  pushDecision(decisions, bet, "lose", stake, 0);
+  pushDecision(decisions, bet, "lose", stake, 0, extra);
+}
+
+function modeOf(state) {
+  return isCrapless(state) ? "crapless" : undefined;
+}
+
+function edgeExtra(kind, number, flat, state) {
+  if (!flat) return undefined;
+  const edge = edgeFor({ kind, number }, modeOf(state));
+  if (edge == null) return undefined;
+  return { edge, expectedLoss: (flat * edge) / 100 };
 }
 
 function placeWorking(state) {
@@ -1514,7 +1525,7 @@ function settlePlaceBuy(state, total, decisions, working) {
         state.bets.place[n] = 0;
         state.originals.place[n] = 0;
         if (state.billyMark) state.billyMark.place[n] = false;
-        pushDecision(decisions, "Place " + n, "lose", p, 0);
+        pushDecision(decisions, "Place " + n, "lose", p, 0, edgeExtra("place", n, p, state));
       }
       const buy = state.bets.buy[n];
       if (buy) {
@@ -1528,7 +1539,7 @@ function settlePlaceBuy(state, total, decisions, working) {
   }
   if (state.bets.place[total]) {
     const stake = state.bets.place[total];
-    payStay(state, decisions, "Place " + total, stake, placeProfit(stake, total));
+    payStay(state, decisions, "Place " + total, stake, placeProfit(stake, total), edgeExtra("place", total, stake, state));
   }
   if (state.bets.buy[total]) {
     const stake = state.bets.buy[total];
@@ -1595,10 +1606,10 @@ function settleNewCome(state, total, decisions) {
     if (win) {
       state.bankroll += amt * 2;
       state.bets.come = 0;
-      pushDecision(decisions, "Come", "win", amt, amt);
+      pushDecision(decisions, "Come", "win", amt, amt, edgeExtra("come", null, amt, state));
     } else if (lose) {
       state.bets.come = 0;
-      pushDecision(decisions, "Come", "lose", amt, 0);
+      pushDecision(decisions, "Come", "lose", amt, 0, edgeExtra("come", null, amt, state));
     } else {
       state.bets.come = 0;
       const slot = ensureCome(state.bets.comeBets, total);
@@ -1618,10 +1629,10 @@ function settleNewCome(state, total, decisions) {
     if ((bar2 && (total === 3 || total === 12)) || (!bar2 && (total === 2 || total === 3))) {
       state.bankroll += amt * 2;
       state.bets.dontCome = 0;
-      pushDecision(decisions, "Don't Come", "win", amt, amt);
+      pushDecision(decisions, "Don't Come", "win", amt, amt, edgeExtra("dontCome", null, amt, state));
     } else if (total === 7 || total === 11) {
       state.bets.dontCome = 0;
-      pushDecision(decisions, "Don't Come", "lose", amt, 0);
+      pushDecision(decisions, "Don't Come", "lose", amt, 0, edgeExtra("dontCome", null, amt, state));
     } else if ((bar2 && total === 2) || (!bar2 && total === 12)) {
       pushDecision(decisions, "Don't Come", "push", amt, 0);
     } else {
@@ -1641,24 +1652,26 @@ function settleLine(state, total, decisions, comeOut, point) {
     const passWin = total === 7 || (!crapless && total === 11);
     const passLose = !crapless && (total === 2 || total === 3 || total === 12);
     if (passWin) {
-      if (state.bets.pass) payStay(state, decisions, "Pass Line", state.bets.pass, state.bets.pass);
+      if (state.bets.pass) payStay(state, decisions, "Pass Line", state.bets.pass, state.bets.pass, edgeExtra("pass", null, state.bets.pass, state));
       if (state.bets.dontPass) {
-        loseDown(state, decisions, "Don't Pass", state.bets.dontPass, () => {
+        const flat = state.bets.dontPass;
+        loseDown(state, decisions, "Don't Pass", flat, () => {
           state.bets.dontPass = 0;
           state.bets.dontPassOdds = 0;
-        });
+        }, edgeExtra("dontPass", null, flat, state));
       }
       result = "natural";
       narrative = crapless ? "Come-out 7. Pass wins." : "Come-out " + total + ". Pass wins.";
     } else if (passLose) {
       if (state.bets.pass) {
-        loseDown(state, decisions, "Pass Line", state.bets.pass, () => { state.bets.pass = 0; });
+        const flat = state.bets.pass;
+        loseDown(state, decisions, "Pass Line", flat, () => { state.bets.pass = 0; }, edgeExtra("pass", null, flat, state));
       }
       const bar2 = TR.isTable(state) && TR.rulesOf(state).bar === 2;
       if (state.bets.dontPass) {
         const barred = bar2 ? total === 2 : total === 12;
         if (barred) pushDecision(decisions, "Don't Pass", "push", state.bets.dontPass, 0);
-        else payStay(state, decisions, "Don't Pass", state.bets.dontPass, state.bets.dontPass);
+        else payStay(state, decisions, "Don't Pass", state.bets.dontPass, state.bets.dontPass, edgeExtra("dontPass", null, state.bets.dontPass, state));
       }
       result = "craps";
       narrative = "Craps " + total + ". Pass loses." + ((bar2 ? total === 2 : total === 12) ? (bar2 ? " Don't Pass bars 2." : " Don't Pass bars 12.") : "");
@@ -1670,16 +1683,18 @@ function settleLine(state, total, decisions, comeOut, point) {
     }
   } else if (total === 7) {
     if (state.bets.pass || state.bets.passOdds) {
-      const stake = state.bets.pass + state.bets.passOdds;
+      const flat = state.bets.pass;
+      const stake = flat + state.bets.passOdds;
       state.bets.pass = 0;
       state.bets.passOdds = 0;
-      if (stake) pushDecision(decisions, "Pass Line", "lose", stake, 0);
+      if (stake) pushDecision(decisions, "Pass Line", "lose", stake, 0, edgeExtra("pass", null, flat, state));
     }
     if (state.bets.dontPass) {
+      const flat = state.bets.dontPass;
       const odds = state.bets.dontPassOdds;
       const oProfit = layOddsProfit(odds, point);
-      state.bankroll += state.bets.dontPass + oProfit + odds;
-      pushDecision(decisions, "Don't Pass", "win", state.bets.dontPass + odds, state.bets.dontPass + oProfit);
+      state.bankroll += flat + oProfit + odds;
+      pushDecision(decisions, "Don't Pass", "win", flat + odds, flat + oProfit, edgeExtra("dontPass", null, flat, state));
       state.bets.dontPassOdds = 0;
     }
     state.phase = "come-out";
@@ -1688,17 +1703,19 @@ function settleLine(state, total, decisions, comeOut, point) {
     narrative = "Seven-out.";
   } else if (total === point) {
     if (state.bets.pass) {
+      const flat = state.bets.pass;
       const odds = state.bets.passOdds;
       const oProfit = passOddsProfit(odds, point);
-      state.bankroll += state.bets.pass + oProfit + odds;
-      pushDecision(decisions, "Pass Line", "win", state.bets.pass + odds, state.bets.pass + oProfit);
+      state.bankroll += flat + oProfit + odds;
+      pushDecision(decisions, "Pass Line", "win", flat + odds, flat + oProfit, edgeExtra("pass", null, flat, state));
       state.bets.passOdds = 0;
     }
     if (state.bets.dontPass || state.bets.dontPassOdds) {
-      const stake = state.bets.dontPass + state.bets.dontPassOdds;
+      const flat = state.bets.dontPass;
+      const stake = flat + state.bets.dontPassOdds;
       state.bets.dontPass = 0;
       state.bets.dontPassOdds = 0;
-      if (stake) pushDecision(decisions, "Don't Pass", "lose", stake, 0);
+      if (stake) pushDecision(decisions, "Don't Pass", "lose", stake, 0, edgeExtra("dontPass", null, flat, state));
     }
     state.phase = "come-out";
     state.point = null;
@@ -1715,7 +1732,8 @@ export function settle(state, d1, d2, opts) {
     return { ok: false, error: "Dice must be 1–6.", state };
   }
   ensureState(state);
-  const next = opts && opts.inplace ? state : clone(state);
+  const fast = opts && opts.fast;
+  const next = (opts && (opts.inplace || opts.fast)) ? state : clone(state);
   const total = d1 + d2;
   const hard = d1 === d2;
   const comeOut = next.phase === "come-out";
@@ -1743,8 +1761,10 @@ export function settle(state, d1, d2, opts) {
       push: (bet, result, stake, profit, extra) => pushDecision(decisions, bet, result, stake, profit, extra),
     });
   }
-  next.history.unshift({ d1, d2, total, hard, result: line.result });
-  if (next.history.length > 20) next.history.length = 20;
+  if (!fast) {
+    next.history.unshift({ d1, d2, total, hard, result: line.result });
+    if (next.history.length > 20) next.history.length = 20;
+  }
 
   const sevenOut = line.result === "seven-out";
   if (sevenOut) {
@@ -1779,8 +1799,8 @@ export function settle(state, d1, d2, opts) {
     result: line.result,
     dice: next.lastDice,
     net,
-    tier: blazingTier(blazingScore(next.hand), next.hand.points),
-    score: blazingScore(next.hand),
+    tier: fast ? null : blazingTier(blazingScore(next.hand), next.hand.points),
+    score: fast ? 0 : blazingScore(next.hand),
   };
 }
 

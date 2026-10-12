@@ -1121,7 +1121,7 @@ img { max-width: 100%; display: block; }
   justify-self: center;
   display: grid;
   place-items: center;
-  background: radial-gradient(120% 90% at 50% 15%, #ff6b72, #d62637 40%, #8e0f1c);
+  background: radial-gradient(120% 90% at 50% 15%, #b31222, #8e0f1c 46%, #5a0810);
   color: #fff8ee;
   box-shadow:
     0 0 0 3px #2a0a0e,

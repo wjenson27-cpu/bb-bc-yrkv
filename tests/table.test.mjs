@@ -279,12 +279,36 @@ test("table minimums: hops and repeaters are $1, the line and Any 7 stay $10", (
   const g = table();
   assert.equal(E.placeBet(g, { kind: "hop", pair: "1-2" }, 100).ok, true);
   assert.equal(E.placeBet(g, { kind: "repeater", number: 6 }, 100).ok, true);
-  assert.equal(E.placeBet(g, { kind: "field" }, 100).ok, true);
+  assert.match(E.placeBet(g, { kind: "field" }, 100).error, /Minimum is \$10/);
+  assert.equal(E.placeBet(g, { kind: "small" }, 100).ok, true);
+  assert.equal(E.placeBet(g, { kind: "hardAllDay" }, 100).ok, true);
   assert.equal(E.placeBet(g, { kind: "hardway", number: 6 }, 100).ok, true);
   assert.match(E.placeBet(g, { kind: "any7" }, 500).error, /Minimum is \$10/);
   assert.match(E.placeBet(g, { kind: "pass" }, 500).error, /Minimum is \$10/);
   assert.match(E.placeBet(g, { kind: "place", number: 5 }, 500).error, /Minimum is \$10/);
   assert.match(E.placeBet(g, { kind: "repeater", number: 6 }, 2600).error, /Maximum/);
+});
+
+test("many seeds stays lean and reports the spread", () => {
+  const started = Date.now();
+  const res = R.manySeeds(["T1"], { seeds: 20, rolls: 200, lean: true, seed: 9 });
+  assert.equal(res.ok, true);
+  assert.ok(Date.now() - started < 8000);
+  const row = res.summary.T1;
+  assert.equal(typeof row.min, "number");
+  assert.equal(typeof row.q1, "number");
+  assert.equal(typeof row.median, "number");
+  assert.equal(typeof row.max, "number");
+  assert.equal(typeof row.expectedLoss, "number");
+  assert.ok(row.expectedLoss > 0);
+});
+
+test("pass, don't, place and come plans report a real expected loss", () => {
+  const dice = R.rollSequenceFromSeed(7, 80).dice;
+  ["T1", "T2", "T5", "T23"].forEach((id) => {
+    const run = R.replay(dice, id, { atLimit: "stop" });
+    assert.ok(run.expectedLoss > 0, id + " expected loss " + run.expectedLoss);
+  });
 });
 
 test("replays stop at the 40% loss and +30% win goal", () => {
