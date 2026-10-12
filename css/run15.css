@@ -2,7 +2,7 @@
 
 /* R15-2 Seven-out toast (all sizes): the readout must never wrap or overflow the bubble. */
 .toast.seven .readout { width: auto; flex: 0 0 auto; padding: 4px 8px; }
-.toast.seven .readcall { white-space: nowrap; color: #1b2230; }
+.toast.seven .readcall { white-space: nowrap; color: #FFD36A; }
 .toast.seven .speech { max-width: min(260px, calc(100vw - 120px)); }
 
 /* Portrait phones through 430x932: no headroom above the glass, so the toast becomes one
@@ -46,6 +46,15 @@
 
 /* R15-7: on tall phones the dome call overlapped the result line by 2px. */
 .dome-cast .speech { margin-bottom: 2px; }
+
+/* R15-A: on 360–390px-wide tall phones Billy's body crosses the result line
+   on long calls (HARD EIGHT is the widest). Nudge him left and shrink the
+   figure so the line's left edge stays clear. Short phones already scale
+   the cast to 0.55. */
+@media (min-width: 360px) and (max-width: 390px) and (min-height: 721px) and (orientation: portrait) {
+  .app.play .dome-cast { left: -8px; }
+  .app.play .dome-billy { width: 58px; }
+}
 
 /* A $1,000 prop pill was sliding 3px out of the Horn cell. Keep it on the chip, inside the spot. */
 .app.play .felt.bfx .prop .spot.has > .amt { margin-left: -2px; }

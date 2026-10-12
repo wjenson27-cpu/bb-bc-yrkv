@@ -293,6 +293,13 @@ export function blazingScore(hand) {
   return (hand?.rolls || 0) + 3 * (hand?.points || 0);
 }
 
+/** "1 roll", "0 rolls", "2 pts". Only 1 is singular; zero stays plural. */
+export function countPhrase(n, singular, plural) {
+  const num = Number.isFinite(Number(n)) ? Math.trunc(Number(n)) : 0;
+  const word = num === 1 ? singular : (plural || singular + "s");
+  return num + " " + word;
+}
+
 /** Copy for a tier change. Cosmetic only: it never feeds the rules. */
 export function blazeMoment(before, after, result) {
   const prev = before || { rolls: 0, points: 0 };
@@ -316,11 +323,12 @@ export function blazeMoment(before, after, result) {
   if (nextTier !== prevTier && nextTier !== "cold") {
     const rolls = next.rolls || 0;
     let text = "";
-    if (nextTier === "warm") text = "Warm: this hand has lasted " + rolls + " rolls so far.";
+    const soFar = countPhrase(rolls, "roll") + " so far";
+    if (nextTier === "warm") text = "Warm: this hand has lasted " + soFar + ".";
     else if (nextTier === "hot") {
-      text = "Hot hand: " + rolls + " rolls so far. About 3 hands in 10 get this far. The next roll is still random: a 7 is 1 in 6.";
+      text = "Hot hand: " + soFar + ". About 3 hands in 10 get this far. The next roll is still random: a 7 is 1 in 6.";
     } else {
-      text = "Blazing: " + rolls + " rolls this hand. About 1 hand in 12 gets here. Fun to watch; it doesn't change the odds.";
+      text = "Blazing: " + countPhrase(rolls, "roll") + " this hand. About 1 hand in 12 gets here. Fun to watch; it doesn't change the odds.";
     }
     return { tier: nextTier, prevTier, cooled: false, text, handNote: "", lessonTier: nextTier };
   }
