@@ -2,7 +2,7 @@
 
 Unlisted test build. Practice chips only. No real money. 18+.
 
-The playable app is `index.html`. Rules live in `docs/two-games-spec.md` (App 1). Mockups are in `docs/mockups/`. Brand files are in `assets/`. `reference/billy-bubs-practice/` is reference only and is not the app.
+Bubble Craps is `index.html`. Table Craps is `table/index.html` (same site, at `/table/`). Rules live in `docs/two-games-spec.md`. Brand files are in `assets/`. `reference/billy-bubs-practice/` is reference only and is not the app.
 
 GitHub Pages: https://wjenson27-cpu.github.io/bb-bc-yrkv/
 
@@ -24,7 +24,7 @@ Open http://127.0.0.1:8765/
 npm test
 ```
 
-That runs `node --test tests/*.test.mjs`. The suite covers the chip set, come-out, Don't Pass bar 12, odds and lay odds, Crapless points, come and don't come, place and buy vig, Field, hardways, Horn, C&E at 3 to 1 and 7 to 1, Hard Way All Day and ATS progress locks, Repeaters, all 21 hops, PRESS, POWER PRESS, auto-press, Billy's Way, strategies B1–B14 including Continuous Come and Hit and Split, the longest-roll board, the 30 badges, session loss limits, and the rejection-sampled RNG. The swipe test drives system Chrome through Playwright when both are installed; otherwise that one case skips.
+That runs `node --test tests/*.test.mjs`. The suite covers Bubble Craps, Table Craps, the chip rail, the 31 badges, and the rejection-sampled RNG. `npm run build` writes a production bundle with the test hook removed. The swipe test drives system Chrome through Playwright when both are installed; otherwise that one case skips.
 
 ## Spec coverage
 
@@ -48,7 +48,7 @@ That runs `node --test tests/*.test.mjs`. The suite covers the chip set, come-ou
 - Billy's Way: Regular Buy 4/5/9/10 and Place 6/8; Crapless also buys 2/3/11/12. A $5 chip is $32 Regular and $52 Crapless. Take down Billy's Way clears those spots.
 - Strategies B1–B14 with All / Regular / Crapless / Lessons. B9 is a lesson. Auto-bet maintains the set. B5 reopens after a seven-out and pauses after three lost opening spreads. B5 presses add to the bet. B8 can post a new outside set after it takes the first one down. B11 rolls 100 times, then pauses. B13 Continuous Come is uncapped by default, with an optional cap of 1–5 and odds of max, 2x, 1x, or flat. B14 Hit and Split starts Place 6 or 8 at $12, spends the win on the next step, and suspends auto-press. Its crapless extension is off by default.
 - Tutor: Dealer Billy, beginner and experienced tracks, seven-step tour, edge colors, Bubbles Billie on big wins and seven-out. Mute this tip mutes that tip only.
-- Fair Dice: totals versus expected, chi-square in plain words, per-die chi-square, hard 4/6/8/10 against 1/36, streaks, the most repeated number in a hand, last 20, above and below expected. Secure RNG with rejection sampling, Math.random fallback labeled.
+- Fair Dice: totals versus expected, chi-square in plain words, per-die chi-square, hard 4/6/8/10 against 1/36, streaks, the most repeated number in a hand, last 20, above and below expected. Secure RNG with rejection sampling. If the secure generator is missing, the roll is refused.
 - Blazing meter is cosmetic and can be turned off in Settings. The HUD reads the hand length. The first time Warm, Hot, or Blazing appears, Dealer Billy says the dice have no memory. A seven-out from a longer hand says the hand cooled off.
 - Auto-roll is optional and off by default. Intervals are 10, 15, 20, or 30 seconds, 15 the first time it is turned on. ROLL always works. It pauses when the felt is empty for three rolls, the next re-bet cannot be covered, a session limit is reached, the app is backgrounded, or the mode or bankroll is reset. It waits while a sheet or the initials card is open.
 - Session loss limit and win goal, both off by default. A reached limit pauses ROLL after the result is on screen. End session or Keep playing. Raising a loss limit, or changing the win goal, voids that session for the discipline badges.
@@ -74,7 +74,7 @@ That runs `node --test tests/*.test.mjs`. The suite covers the chip set, come-ou
 
 ### Not in this build
 
-- App 2 (table craps), payments, accounts, analytics, and external fonts or CDNs.
+- Real-money payments, accounts, analytics, and external fonts or CDNs. Table Craps Premium is a local test flag, not a store purchase.
 - Shooter-skill simulation.
 
 ## Known bugs

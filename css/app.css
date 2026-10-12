@@ -1375,9 +1375,7 @@ img { max-width: 100%; display: block; }
   pointer-events: none;
   overflow: hidden;
 }
-.winlayer .actions { pointer-events: auto; display: flex; gap: 8px; }
-.winlayer .actions button { min-height: 44px; min-width: 120px; border-radius: 12px; }
-.winlayer .actions .go { background: linear-gradient(180deg, #ffe7a0, #d8ae52); color: #2a1c04; }
+.winlayer .actions { display: none; }
 .winstamp b {
   display: block;
   font-family: var(--deco);

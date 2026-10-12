@@ -1,8 +1,10 @@
 /**
- * Billy Bubs Bubble Craps — rules engine.
+ * Billy Bubs rules engine, shared by Bubble Craps and Table Craps.
  * Pure state, integer cents, no DOM. Runs in the browser and in Node.
- * Standard rules only (Premium is a locked preview in the UI).
+ * `profile: "bubble"` is the default. Table rules live behind `profile: "table"`.
  */
+
+import * as TR from "./table-rules.mjs";
 
 export const STARTING_BANKROLL = 100_000;
 export const TABLE_MIN = 500;
@@ -99,21 +101,49 @@ function emptyBets() {
     all: 0,
     hardAllDay: 0,
     repeaters: emptyMap(NUMBERS, 0),
+    lay: emptyMap(REGULAR_NUMBERS, 0),
+    big6: 0,
+    big8: 0,
+    yo: 0,
+    fire: 0,
   };
+}
+
+function ensureState(state) {
+  if (!state || !state.bets) return state;
+  const b = state.bets;
+  if (!b.lay) b.lay = emptyMap(REGULAR_NUMBERS, 0);
+  if (b.big6 == null) b.big6 = 0;
+  if (b.big8 == null) b.big8 = 0;
+  if (b.yo == null) b.yo = 0;
+  if (b.fire == null) b.fire = 0;
+  if (!state.firePoints) state.firePoints = [];
+  if (state.fireOpen == null) state.fireOpen = true;
+  if (!state.vigHeld) state.vigHeld = {};
+  if (!state.profile) state.profile = "bubble";
+  return state;
 }
 
 export function createGame(options = {}) {
   const bank = options.bankroll != null ? options.bankroll : STARTING_BANKROLL;
+  const table = options.profile === "table";
   return {
-    mode: options.mode === "crapless" ? "crapless" : "regular",
+    mode: table ? "regular" : (options.mode === "crapless" ? "crapless" : "regular"),
+    profile: table ? "table" : "bubble",
+    rules: table ? TR.defaultRules(options.rules) : null,
     bankroll: bank,
     startingBankroll: options.startingBankroll != null ? options.startingBankroll : bank,
     phase: "come-out",
     point: null,
     betsOff: false,
     placeWorkingOnComeOut: false,
-    hardwaysWorkingOnComeOut: true,
+    hardwaysWorkingOnComeOut: table ? (options.rules && options.rules.hardwaysComeOut === false ? false : true) : true,
     comeOddsOffOnComeOut: true,
+    layWorkingOnComeOut: table,
+    dcLayOddsOnComeOut: table,
+    firePoints: [],
+    fireOpen: true,
+    vigHeld: {},
     bets: emptyBets(),
     originals: { place: emptyMap(NUMBERS, 0), buy: emptyMap(NUMBERS, 0) },
     progress: { small: {}, tall: {}, all: {}, hardAllDay: {} },
@@ -142,11 +172,16 @@ export function numbersFor(state) {
 }
 
 export function tableTotal(state) {
+  ensureState(state);
   const b = state.bets;
   let t = b.pass + b.passOdds + b.dontPass + b.dontPassOdds + b.come + b.dontCome + b.field;
   t += b.any7 + b.anyCraps + b.ce + b.horn + b.small + b.tall + b.all + b.hardAllDay;
+  t += (b.big6 || 0) + (b.big8 || 0) + (b.yo || 0) + (b.fire || 0);
   NUMBERS.forEach((n) => {
     t += (b.place[n] || 0) + (b.buy[n] || 0) + (b.repeaters[n] || 0);
+  });
+  REGULAR_NUMBERS.forEach((n) => {
+    t += (b.lay && b.lay[n]) || 0;
   });
   HARDWAYS.forEach((n) => {
     t += b.hardways[n] || 0;
@@ -229,46 +264,34 @@ export function placeProfit(cents, number) {
   }
 }
 
-/** 5% of the buy stake, floored to the cent, taken from the win only. */
-export function buyVig(cents) {
-  return Math.floor((cents * 5) / 100);
+/** 5% commission. Default is exact, floored to the cent. `round` is per20 or per25. */
+export function buyVig(cents, round) {
+  return TR.vigOf(cents, round);
 }
 
-export function buyProfit(cents, number) {
+export function buyProfit(cents, number, rules) {
   const gross = passOddsProfit(cents, number);
-  return gross - buyVig(cents);
+  return TR.buyNet(gross, cents, rules);
 }
 
-export function fieldProfit(cents, total) {
-  if (total === 2 || total === 12) return cents * 2;
-  if (total === 3 || total === 4 || total === 9 || total === 10 || total === 11) return cents;
-  return 0;
+export function fieldProfit(cents, total, rules) {
+  return TR.fieldWin(cents, total, rules);
 }
 
-export function hardwayProfit(cents, number) {
-  if (number === 4 || number === 10) return cents * 7;
-  if (number === 6 || number === 8) return cents * 9;
-  return 0;
+export function hardwayProfit(cents, number, au) {
+  return TR.hardwayWin(cents, number, au);
 }
 
-export function maxPassOdds(lineAmount, point) {
-  if (!lineAmount || !point) return 0;
-  let multiple = 3;
-  if (point === 5 || point === 9) multiple = 4;
-  else if (point === 6 || point === 8) multiple = 5;
-  else multiple = 3;
-  return lineAmount * multiple;
+export function maxPassOdds(lineAmount, point, preset) {
+  return TR.maxPassFor(lineAmount, point, preset);
 }
 
-export function maxLayOdds(lineAmount) {
-  if (!lineAmount) return 0;
-  return lineAmount * 6;
+export function maxLayOdds(lineAmount, point, preset) {
+  return TR.maxLayFor(lineAmount, point, preset);
 }
 
-export function oddsMultiple(point) {
-  if (point === 5 || point === 9) return 4;
-  if (point === 6 || point === 8) return 5;
-  return 3;
+export function oddsMultiple(point, preset) {
+  return TR.oddsMultipleFor(point, preset);
 }
 
 export function pressUnit(kind, number) {
@@ -402,14 +425,22 @@ export function rollDie(rng) {
     } while (n >= limit);
     return (n % 6) + 1;
   }
-  lastRngSource = "fallback";
-  return Math.floor(Math.random() * 6) + 1;
+  lastRngSource = "unavailable";
+  return null;
 }
 
 export function rollDice(rng) {
   const d1 = rollDie(rng);
   const d2 = rollDie(rng);
+  if (d1 == null || d2 == null) {
+    return {
+      ok: false,
+      error: TR.NO_ROLL,
+      source: "unavailable",
+    };
+  }
   const cap = rollCaption(d1, d2);
+  cap.ok = true;
   cap.source = lastRngSource;
   return cap;
 }
@@ -418,7 +449,8 @@ function clone(state) {
   return structuredClone(state);
 }
 
-function spotMin(kind) {
+function spotMin(kind, state, spot) {
+  if (TR.isTable(state)) return TR.tableMinFor(kind, spot, TR.rulesOf(state));
   if (kind === "repeater") return REPEATER_MIN;
   if (kind === "hop") return HOP_MIN;
   if (kind === "small" || kind === "tall" || kind === "all" || kind === "hardAllDay") return 100;
@@ -428,7 +460,8 @@ function spotMin(kind) {
   return TABLE_MIN;
 }
 
-function spotMax(kind) {
+function spotMax(kind, state, spot) {
+  if (TR.isTable(state)) return TR.tableMaxFor(kind, spot, TR.rulesOf(state));
   if (kind === "repeater") return REPEATER_MAX;
   if (kind === "hop") return HOP_MAX;
   if (kind === "passOdds" || kind === "dontPassOdds" || kind === "comeOdds" || kind === "dontComeOdds") return Infinity;
@@ -467,6 +500,11 @@ export function describeSpot(spot) {
     case "all": return "Roll 'Em All";
     case "hardAllDay": return "Hard Way All Day";
     case "repeater": return "Repeater " + s.number;
+    case "lay": return "Lay " + s.number;
+    case "big6": return "Big 6";
+    case "big8": return "Big 8";
+    case "yo": return "Yo";
+    case "fire": return "Fire Bet";
     default: return s.kind;
   }
 }
@@ -499,6 +537,11 @@ function amountOf(state, spot) {
     case "dontComeOdds": return (b.dontComeBets[s.number] && b.dontComeBets[s.number].odds) || 0;
     case "comePoint": return (b.comeBets[s.number] && b.comeBets[s.number].amount) || 0;
     case "dontComePoint": return (b.dontComeBets[s.number] && b.dontComeBets[s.number].amount) || 0;
+    case "lay": return (b.lay && b.lay[s.number]) || 0;
+    case "big6": return b.big6 || 0;
+    case "big8": return b.big8 || 0;
+    case "yo": return b.yo || 0;
+    case "fire": return b.fire || 0;
     default: return 0;
   }
 }
@@ -529,19 +572,36 @@ function addAmount(state, spot, delta) {
     case "repeater": b.repeaters[s.number] += delta; break;
     case "comeOdds": b.comeBets[s.number].odds += delta; break;
     case "dontComeOdds": b.dontComeBets[s.number].odds += delta; break;
+    case "lay": b.lay[s.number] += delta; break;
+    case "big6": b.big6 += delta; break;
+    case "big8": b.big8 += delta; break;
+    case "yo": b.yo += delta; break;
+    case "fire": b.fire += delta; break;
     default: break;
   }
 }
 
 function validate(state, spot, amount, removing) {
+  ensureState(state);
   const s = spot.kind === "hop" ? normalizeHop(spot) : spot;
   if (!Number.isFinite(amount) || amount <= 0) return "Bet amount must be positive.";
   if (!removing && amount > state.bankroll) return "Not enough practice chips for that bet.";
   const crapless = isCrapless(state);
   const comeOut = state.phase === "come-out";
   const kind = s.kind;
+  const table = TR.isTable(state);
+  const rules = TR.rulesOf(state);
+  const preset = TR.presetOf(state);
 
-  if (kind === "fire" || kind === "fireBet") return "Fire Bet is not in Bubble Craps.";
+  if (kind === "fire" || kind === "fireBet") {
+    if (!table) return "Fire Bet is not in Bubble Craps.";
+    if (!state.fireOpen || !comeOut || (state.hand && state.hand.rolls > 0)) return "Fire Bet: new shooter only";
+  } else if (kind === "lay" || kind === "big6" || kind === "big8" || kind === "yo") {
+    if (!table) return "Unknown bet.";
+    if ((kind === "big6" || kind === "big8") && !rules.big68) return "Big 6/8 is off at this table.";
+    if (kind === "yo" && !rules.yo) return "Yo is off at this table.";
+    if (kind === "lay" && !REGULAR_NUMBERS.includes(s.number)) return "Lay " + s.number + " is not offered.";
+  }
   if (crapless && (kind === "dontPass" || kind === "dontPassOdds" || kind === "dontCome" || kind === "dontComeOdds" || kind === "dontComePoint")) {
     return "Don't bets are not offered in Crapless.";
   }
@@ -552,14 +612,17 @@ function validate(state, spot, amount, removing) {
   } else if (kind === "passOdds") {
     if (comeOut || !state.point) return "Odds are available once a point is on.";
     if (!state.bets.pass) return "Need a Pass Line bet before taking odds.";
-    if (!removing && state.bets.passOdds + amount > maxPassOdds(state.bets.pass, state.point)) {
-      return "Max odds are " + oddsMultiple(state.point) + "x (" + formatMoney(maxPassOdds(state.bets.pass, state.point)) + ").";
+    if (!removing && state.bets.passOdds + amount > maxPassOdds(state.bets.pass, state.point, preset)) {
+      return "Max odds are " + oddsMultiple(state.point, preset) + "x (" + formatMoney(maxPassOdds(state.bets.pass, state.point, preset)) + ").";
     }
   } else if (kind === "dontPassOdds") {
     if (comeOut || !state.point) return "Lay odds are available once a point is on.";
     if (!state.bets.dontPass) return "Need a Don't Pass bet before laying odds.";
-    if (!removing && state.bets.dontPassOdds + amount > maxLayOdds(state.bets.dontPass)) {
-      return "Max lay odds are 6x the Don't Pass bet.";
+    const layCap = maxLayOdds(state.bets.dontPass, state.point, table ? preset : undefined);
+    if (!removing && state.bets.dontPassOdds + amount > layCap) {
+      return table && preset !== "345"
+        ? "Max lay odds are " + formatMoney(layCap) + "."
+        : "Max lay odds are 6x the Don't Pass bet.";
     }
   } else if (kind === "come") {
     if (comeOut) return "Come is bet while a point is on.";
@@ -568,13 +631,14 @@ function validate(state, spot, amount, removing) {
   } else if (kind === "comeOdds") {
     const cb = state.bets.comeBets[s.number];
     if (!cb || !cb.amount) return "No Come bet on " + s.number + ".";
-    if (!removing && cb.odds + amount > maxPassOdds(cb.amount, s.number)) {
-      return "Max come odds are " + oddsMultiple(s.number) + "x.";
+    if (!removing && cb.odds + amount > maxPassOdds(cb.amount, s.number, preset)) {
+      return "Max come odds are " + oddsMultiple(s.number, preset) + "x.";
     }
   } else if (kind === "dontComeOdds") {
     const db = state.bets.dontComeBets[s.number];
     if (!db || !db.amount) return "No Don't Come bet on " + s.number + ".";
-    if (!removing && db.odds + amount > maxLayOdds(db.amount)) return "Max lay odds are 6x.";
+    const layCap = maxLayOdds(db.amount, s.number, table ? preset : undefined);
+    if (!removing && db.odds + amount > layCap) return "Max lay odds are 6x.";
   } else if (kind === "place" || kind === "buy") {
     if (!numbersFor(state).includes(s.number)) return describeSpot(s) + " is not offered in this mode.";
   } else if (kind === "hardway") {
@@ -594,7 +658,7 @@ function validate(state, spot, amount, removing) {
     if (!removing && lampsLit(state, kind)) {
       return "This bet already has lamps lit. Take it down to change the stake.";
     }
-  } else if (kind === "field" || kind === "any7" || kind === "anyCraps") {
+  } else if (kind === "field" || kind === "any7" || kind === "anyCraps" || kind === "fire" || kind === "lay" || kind === "big6" || kind === "big8" || kind === "yo") {
     /* ok */
   } else {
     return "Unknown bet.";
@@ -602,12 +666,21 @@ function validate(state, spot, amount, removing) {
 
   if (!removing) {
     const next = amountOf(state, s) + amount;
-    const min = spotMin(kind);
-    const max = spotMax(kind);
+    const min = spotMin(kind, state, s);
+    const max = spotMax(kind, state, s);
     if (amountOf(state, s) === 0 && amount < min) {
       return "Minimum is " + formatMoney(min) + ".";
     }
-    if (next > max) return "Maximum is " + formatMoney(max) + ".";
+    if (next > max) {
+      if (table && kind === "place" && (s.number === 6 || s.number === 8)) return "Max $498 here";
+      return "Maximum is " + formatMoney(max) + ".";
+    }
+    if (table) {
+      const step = TR.stepOf(kind, s);
+      const pointish = kind === "passOdds" ? state.point : kind === "dontPassOdds" ? state.point : s.number;
+      const stepped = step ? TR.stepOf(kind, { number: pointish }) : 0;
+      if (stepped && next % stepped !== 0) return TR.stepMessage(kind, { number: pointish });
+    }
   }
   return null;
 }
@@ -634,10 +707,27 @@ function clearProgress(state, kind) {
 }
 
 export function placeBet(state, spot, amount, opts = {}) {
+  ensureState(state);
   const s = spot.kind === "hop" ? normalizeHop(spot) : { ...spot };
+  if (TR.isTable(state) && (s.kind === "place" || s.kind === "buy" || s.kind === "lay")) {
+    const clash = TR.numberConflict(state, s);
+    if (clash && !opts.convert) {
+      return { ok: false, convert: clash, error: "One bet per number.", state };
+    }
+    if (clash && opts.convert) {
+      const cleared = removeBet(state, { kind: clash.from, number: clash.number }, null, { confirm: true });
+      if (!cleared.ok) return cleared;
+      return placeBet(cleared.state, s, clash.amount, { convert: false, bypassMin: opts.bypassMin });
+    }
+  }
   const err = validate(state, s, amount, false);
   if (err && !(opts.bypassMin && err.startsWith("Minimum is"))) {
     return { ok: false, error: err, state };
+  }
+  const rules = TR.rulesOf(state);
+  const commission = TR.upfrontCommission(s.kind, amount, s.number, rules);
+  if (commission && amount + commission > state.bankroll) {
+    return { ok: false, error: "Not enough practice chips for the commission.", state };
   }
   const next = clone(state);
   const prior = amountOf(next, s);
@@ -647,7 +737,11 @@ export function placeBet(state, spot, amount, opts = {}) {
   }
   if (s.kind === "repeater" && prior === 0) next.repeaterCount[s.number] = 0;
   if ((s.kind === "place" || s.kind === "buy") && !opts.keepOriginal) setOriginal(next, s);
-  next.bankroll -= amount;
+  next.bankroll -= amount + commission;
+  if (commission) {
+    const key = TR.vigKey(s.kind, s.number);
+    next.vigHeld[key] = (next.vigHeld[key] || 0) + commission;
+  }
   if (next.bankroll < 0) next.bankroll = 0;
   return { ok: true, state: next };
 }
@@ -655,7 +749,11 @@ export function placeBet(state, spot, amount, opts = {}) {
 const DONT_KINDS = new Set(["dontPass", "dontCome", "dontComePoint", "dontPassOdds"]);
 
 export function removeBet(state, spot, amount, opts = {}) {
+  ensureState(state);
   const s = spot.kind === "hop" ? normalizeHop(spot) : { ...spot };
+  if (s.kind === "fire" && !state.fireOpen) {
+    return { ok: false, error: "Fire Bet stays up until the seven-out.", state };
+  }
   if (s.kind === "pass" && state.phase !== "come-out") {
     return { ok: false, error: "Pass Line stays up until it wins or loses.", state };
   }
@@ -711,11 +809,15 @@ export function removeBet(state, spot, amount, opts = {}) {
     next.progress[s.kind] = {};
   }
   if (s.kind === "repeater") next.repeaterCount[s.number] = 0;
-  if (s.kind === "place" || s.kind === "buy") {
-    setOriginal(next, s);
-    if (amountOf(next, s) === 0 && next.billyMark && next.billyMark[s.kind]) next.billyMark[s.kind][s.number] = false;
-    if (amountOf(next, s) === 0 && next.autoPress && next.autoPress.counts) {
-      delete next.autoPress.counts[s.kind + ":" + s.number];
+  if (s.kind === "place" || s.kind === "buy" || s.kind === "lay") {
+    const back = TR.refundVig(next, s.kind, s.number, take, current);
+    take += back;
+    if (s.kind === "place" || s.kind === "buy") {
+      setOriginal(next, s);
+      if (amountOf(next, s) === 0 && next.billyMark && next.billyMark[s.kind]) next.billyMark[s.kind][s.number] = false;
+      if (amountOf(next, s) === 0 && next.autoPress && next.autoPress.counts) {
+        delete next.autoPress.counts[s.kind + ":" + s.number];
+      }
     }
   }
   next.bankroll += take;
@@ -737,6 +839,7 @@ export function setBetsOff(state, off) {
 
 export function resetLayout(state) {
   const next = clone(state);
+  ensureState(next);
   next.bankroll += tableTotal(next);
   next.bets = emptyBets();
   next.originals = { place: emptyMap(NUMBERS, 0), buy: emptyMap(NUMBERS, 0) };
@@ -747,15 +850,27 @@ export function resetLayout(state) {
   next.lastWin = null;
   next.pressBlock = "after a hit";
   next.betsOff = false;
+  next.vigHeld = {};
+  next.firePoints = [];
+  next.fireOpen = true;
   if (next.autoPress) next.autoPress = { mode: next.autoPress.mode || "off", max: next.autoPress.max || 3, counts: {} };
   return next;
 }
 
 export function resetBankroll(state) {
-  const next = createGame({ mode: state.mode, bankroll: STARTING_BANKROLL });
+  const next = createGame({
+    mode: state.mode,
+    bankroll: STARTING_BANKROLL,
+    profile: state.profile,
+    rules: state.rules,
+  });
   next.placeWorkingOnComeOut = state.placeWorkingOnComeOut;
   next.hardwaysWorkingOnComeOut = state.hardwaysWorkingOnComeOut;
   next.comeOddsOffOnComeOut = state.comeOddsOffOnComeOut;
+  if (TR.isTable(state)) {
+    next.layWorkingOnComeOut = state.layWorkingOnComeOut !== false;
+    next.dcLayOddsOnComeOut = state.dcLayOddsOnComeOut !== false;
+  }
   return next;
 }
 
@@ -768,6 +883,9 @@ export function contractsWorking(state) {
 }
 
 export function switchMode(state, mode) {
+  if (TR.isTable(state) && mode === "crapless") {
+    return { ok: false, error: "Table Craps is Regular only", state };
+  }
   if ((state.hand && state.hand.rolls > 0) || contractsWorking(state)) {
     return {
       ok: false,
@@ -798,6 +916,9 @@ export function billysWayAmounts(chipCents) {
 }
 
 export function placeBillysWay(state, chipCents) {
+  if (TR.isTable(state)) {
+    return { ok: false, error: "Billy's Way is not in Table Craps.", state, placed: [], skipped: [] };
+  }
   const { buy, place } = billysWayAmounts(chipCents);
   let next = state;
   const placed = [];
@@ -1105,6 +1226,7 @@ function applyPressAdd(state, kind, number, add, type) {
 }
 
 export function press(state) {
+  if (TR.isTable(state)) return { ok: false, error: "PRESS is not in Table Craps.", state };
   const st = pressStatus(state);
   if (!st.pressOk) return { ok: false, error: st.pressReason || "Can't press", state };
   const next = clone(state);
@@ -1113,6 +1235,7 @@ export function press(state) {
 }
 
 export function powerPress(state, opts) {
+  if (TR.isTable(state)) return { ok: false, error: "POWER PRESS is not in Table Craps.", state };
   const plan = powerPlan(state, opts);
   if (!plan.ok) return { ok: false, error: plan.reason || "Can't power press", state };
   const next = clone(state);
@@ -1182,7 +1305,9 @@ export function clearPress(state) {
 
 function pushDecision(decisions, bet, result, stake, profit, extra) {
   const net = result === "win" ? profit : result === "lose" ? -stake : 0;
-  decisions.push({ bet, result, stake, profit: profit || 0, net, ...(extra || {}) });
+  const row = { bet, result, stake, profit: profit || 0, net, ...(extra || {}) };
+  if (row.expectedLoss == null && row.edge != null) row.expectedLoss = (stake * row.edge) / 100;
+  decisions.push(row);
 }
 
 function payStay(state, decisions, bet, stake, profit, extra) {
@@ -1218,12 +1343,15 @@ export function hadWorkingBet(state) {
   if (b.small > 0 || b.tall > 0 || b.all > 0 || b.hardAllDay > 0) return true;
   if (moneyMap(b.comeBets) || moneyMap(b.dontComeBets)) return true;
   if (moneyMap(b.hops) || moneyMap(b.repeaters)) return true;
+  if (b.fire > 0 || b.yo > 0 || b.big6 > 0 || b.big8 > 0) return true;
   if (hardwaysWorking(state) && moneyMap(b.hardways)) return true;
   if (placeWorking(state) && (moneyMap(b.place) || moneyMap(b.buy))) return true;
+  if (b.lay && REGULAR_NUMBERS.some((n) => b.lay[n] > 0) && !(state.betsOff || (state.phase === "come-out" && state.layWorkingOnComeOut === false))) return true;
   return false;
 }
 
 function hardwaysWorking(state) {
+  if (TR.isTable(state) && state.betsOff) return false;
   if (state.phase === "come-out" && !state.hardwaysWorkingOnComeOut) return false;
   return true;
 }
@@ -1232,11 +1360,19 @@ function comeOddsWorking(state, comeOutSnapshot) {
   return !comeOutSnapshot || !state.comeOddsOffOnComeOut;
 }
 
+function dcOddsWorking(state, comeOutSnapshot) {
+  if (!comeOutSnapshot) return true;
+  if (TR.isTable(state)) return state.dcLayOddsOnComeOut !== false;
+  return !state.comeOddsOffOnComeOut;
+}
+
 function settleOneRoll(state, d1, d2, decisions) {
   const total = d1 + d2;
   const b = state.bets;
+  const rules = TR.rulesOf(state);
   if (b.any7) {
-    if (total === 7) payStay(state, decisions, "Big Red", b.any7, b.any7 * 4);
+    const profit = TR.any7Profit(b.any7, rules);
+    if (total === 7) payStay(state, decisions, "Big Red", b.any7, profit, { edge: rules && rules.any7Pay === 4.5 ? 5.56 : 16.67 });
     else loseDown(state, decisions, "Big Red", b.any7, () => { b.any7 = 0; });
   }
   if (b.anyCraps) {
@@ -1252,9 +1388,10 @@ function settleOneRoll(state, d1, d2, decisions) {
   }
   if (b.horn) {
     const unit = b.horn / 4;
+    const pays = TR.hornMultiples(rules);
     let mult = 0;
-    if (total === 2 || total === 12) mult = 30;
-    else if (total === 3 || total === 11) mult = 15;
+    if (total === 2 || total === 12) mult = pays.hi;
+    else if (total === 3 || total === 11) mult = pays.lo;
     if (mult) payStay(state, decisions, "Horn", b.horn, unit * mult - unit * 3);
     else loseDown(state, decisions, "Horn", b.horn, () => { b.horn = 0; });
   }
@@ -1262,12 +1399,12 @@ function settleOneRoll(state, d1, d2, decisions) {
   ALL_HOPS.forEach((key) => {
     const stake = b.hops[key];
     if (!stake) return;
-    if (key === pair) payStay(state, decisions, "Hop " + key, stake, stake * hopPayTo1(key));
+    if (key === pair) payStay(state, decisions, "Hop " + key, stake, stake * TR.hopMultiple(key, rules));
     else loseDown(state, decisions, "Hop " + key, stake, () => { b.hops[key] = 0; });
   });
   if (b.field) {
-    const fp = fieldProfit(b.field, total);
-    if (fp > 0) payStay(state, decisions, "Field", b.field, fp);
+    const fp = fieldProfit(b.field, total, rules);
+    if (fp > 0) payStay(state, decisions, "Field", b.field, fp, { edge: TR.fieldEdge(rules) });
     else loseDown(state, decisions, "Field", b.field, () => { b.field = 0; });
   }
 }
@@ -1282,7 +1419,8 @@ function settleHardways(state, d1, d2, decisions) {
     if (total === 7 || (total === n && !hard)) {
       loseDown(state, decisions, "Hard " + n, stake, () => { state.bets.hardways[n] = 0; });
     } else if (total === n && hard) {
-      payStay(state, decisions, "Hard " + n, stake, hardwayProfit(stake, n));
+      const au = TR.isTable(state) && TR.rulesOf(state).hardwayAU;
+      payStay(state, decisions, "Hard " + n, stake, hardwayProfit(stake, n, au));
     }
   });
 }
@@ -1311,9 +1449,11 @@ function settleBonus(state, d1, d2, decisions) {
     if (set.includes(total)) state.progress[kind][total] = true;
     if (set.every((n) => state.progress[kind][n])) {
       const profit = stake * (BONUS_FOR[kind] - 1);
-      state.bankroll += profit;
+      const comeDown = TR.isTable(state) && TR.rulesOf(state).atsDown;
+      state.bankroll += profit + (comeDown ? stake : 0);
+      if (comeDown) state.bets[kind] = 0;
       state.progress[kind] = {};
-      pushDecision(decisions, label, "win", stake, profit, { rearmed: true });
+      pushDecision(decisions, label, "win", stake, profit, { rearmed: !comeDown });
     }
   });
   const hw = state.bets.hardAllDay;
@@ -1326,9 +1466,11 @@ function settleBonus(state, d1, d2, decisions) {
       if (hard && HARDWAYS.includes(total)) state.progress.hardAllDay[total] = true;
       if (HARDWAYS.every((n) => state.progress.hardAllDay[n])) {
         const profit = hw * (BONUS_FOR.hardAllDay - 1);
-        state.bankroll += profit;
+        const comeDown = TR.isTable(state) && TR.rulesOf(state).atsDown;
+        state.bankroll += profit + (comeDown ? hw : 0);
+        if (comeDown) state.bets.hardAllDay = 0;
         state.progress.hardAllDay = {};
-        pushDecision(decisions, "Hard Way All Day", "win", hw, profit, { rearmed: true });
+        pushDecision(decisions, "Hard Way All Day", "win", hw, profit, { rearmed: !comeDown });
       }
     }
   }
@@ -1384,9 +1526,10 @@ function settlePlaceBuy(state, total, decisions, working) {
   }
   if (state.bets.buy[total]) {
     const stake = state.bets.buy[total];
-    const vig = buyVig(stake);
-    const profit = buyProfit(stake, total);
-    payStay(state, decisions, "Buy " + total, stake, profit, { vig });
+    const rules = TR.rulesOf(state);
+    const vig = rules && rules.buyVig === "upfront" ? 0 : buyVig(stake, rules && rules.vigRound);
+    const profit = buyProfit(stake, total, rules);
+    payStay(state, decisions, "Buy " + total, stake, profit, { vig, edge: edgeFor({ kind: "buy", number: total }) });
   }
 }
 
@@ -1396,21 +1539,22 @@ function ensureCome(map, number) {
 }
 
 function settleComeContracts(state, total, decisions, comeOutSnapshot) {
-  const oddsOn = comeOddsWorking(state, comeOutSnapshot);
+  const comeOn = comeOddsWorking(state, comeOutSnapshot);
+  const dcOn = dcOddsWorking(state, comeOutSnapshot);
   if (total === 7) {
     Object.keys(state.bets.comeBets).forEach((key) => {
       const slot = state.bets.comeBets[key];
       if (!slot || !slot.amount) return;
-      const loseOdds = oddsOn ? slot.odds : 0;
-      if (!oddsOn && slot.odds) state.bankroll += slot.odds;
+      const loseOdds = comeOn ? slot.odds : 0;
+      if (!comeOn && slot.odds) state.bankroll += slot.odds;
       pushDecision(decisions, "Come " + key, "lose", slot.amount + loseOdds, 0);
     });
     state.bets.comeBets = {};
     Object.keys(state.bets.dontComeBets).forEach((key) => {
       const slot = state.bets.dontComeBets[key];
       if (!slot || !slot.amount) return;
-      const oddsStake = oddsOn ? slot.odds : 0;
-      const parked = oddsOn ? 0 : slot.odds;
+      const oddsStake = dcOn ? slot.odds : 0;
+      const parked = dcOn ? 0 : slot.odds;
       const oProfit = layOddsProfit(oddsStake, Number(key));
       state.bankroll += slot.amount * 2 + oddsStake + oProfit + parked;
       pushDecision(decisions, "Don't Come " + key, "win", slot.amount + oddsStake, slot.amount + oProfit);
@@ -1420,8 +1564,8 @@ function settleComeContracts(state, total, decisions, comeOutSnapshot) {
   }
   const slot = state.bets.comeBets[total];
   if (slot && slot.amount) {
-    const oddsStake = oddsOn ? slot.odds : 0;
-    const parked = oddsOn ? 0 : slot.odds;
+    const oddsStake = comeOn ? slot.odds : 0;
+    const parked = comeOn ? 0 : slot.odds;
     const oProfit = passOddsProfit(oddsStake, total);
     state.bankroll += slot.amount * 2 + oddsStake + oProfit + parked;
     pushDecision(decisions, "Come " + total, "win", slot.amount + oddsStake, slot.amount + oProfit);
@@ -1429,8 +1573,8 @@ function settleComeContracts(state, total, decisions, comeOutSnapshot) {
   }
   const dslot = state.bets.dontComeBets[total];
   if (dslot && dslot.amount) {
-    const loseOdds = oddsOn ? dslot.odds : 0;
-    if (!oddsOn && dslot.odds) state.bankroll += dslot.odds;
+    const loseOdds = dcOn ? dslot.odds : 0;
+    if (!dcOn && dslot.odds) state.bankroll += dslot.odds;
     pushDecision(decisions, "Don't Come " + total, "lose", dslot.amount + loseOdds, 0);
     delete state.bets.dontComeBets[total];
   }
@@ -1464,14 +1608,15 @@ function settleNewCome(state, total, decisions) {
       pushDecision(decisions, "Don't Come", "push", amt, 0);
       return;
     }
-    if (total === 2 || total === 3) {
+    const bar2 = TR.isTable(state) && TR.rulesOf(state).bar === 2;
+    if ((bar2 && (total === 3 || total === 12)) || (!bar2 && (total === 2 || total === 3))) {
       state.bankroll += amt * 2;
       state.bets.dontCome = 0;
       pushDecision(decisions, "Don't Come", "win", amt, amt);
     } else if (total === 7 || total === 11) {
       state.bets.dontCome = 0;
       pushDecision(decisions, "Don't Come", "lose", amt, 0);
-    } else if (total === 12) {
+    } else if ((bar2 && total === 2) || (!bar2 && total === 12)) {
       pushDecision(decisions, "Don't Come", "push", amt, 0);
     } else {
       state.bets.dontCome = 0;
@@ -1503,12 +1648,14 @@ function settleLine(state, total, decisions, comeOut, point) {
       if (state.bets.pass) {
         loseDown(state, decisions, "Pass Line", state.bets.pass, () => { state.bets.pass = 0; });
       }
+      const bar2 = TR.isTable(state) && TR.rulesOf(state).bar === 2;
       if (state.bets.dontPass) {
-        if (total === 12) pushDecision(decisions, "Don't Pass", "push", state.bets.dontPass, 0);
+        const barred = bar2 ? total === 2 : total === 12;
+        if (barred) pushDecision(decisions, "Don't Pass", "push", state.bets.dontPass, 0);
         else payStay(state, decisions, "Don't Pass", state.bets.dontPass, state.bets.dontPass);
       }
       result = "craps";
-      narrative = "Craps " + total + ". Pass loses." + (total === 12 ? " Don't Pass bars 12." : "");
+      narrative = "Craps " + total + ". Pass loses." + ((bar2 ? total === 2 : total === 12) ? (bar2 ? " Don't Pass bars 2." : " Don't Pass bars 12.") : "");
     } else {
       state.phase = "point";
       state.point = total;
@@ -1557,11 +1704,12 @@ function settleLine(state, total, decisions, comeOut, point) {
   return { result, narrative };
 }
 
-export function settle(state, d1, d2) {
+export function settle(state, d1, d2, opts) {
   if (!(d1 >= 1 && d1 <= 6 && d2 >= 1 && d2 <= 6)) {
     return { ok: false, error: "Dice must be 1–6.", state };
   }
-  const next = clone(state);
+  ensureState(state);
+  const next = opts && opts.inplace ? state : clone(state);
   const total = d1 + d2;
   const hard = d1 === d2;
   const comeOut = next.phase === "come-out";
@@ -1580,6 +1728,15 @@ export function settle(state, d1, d2) {
   settleComeContracts(next, total, decisions, comeOut);
   settleNewCome(next, total, decisions);
   const line = settleLine(next, total, decisions, comeOut, point);
+  if (TR.isTable(next)) {
+    TR.settleTableSide(next, {
+      d1, d2, total, hard, comeOut, point, lineResult: line.result,
+    }, {
+      payStay: (bet, stake, profit, extra) => payStay(next, decisions, bet, stake, profit, extra),
+      loseDown: (bet, stake, clear) => loseDown(next, decisions, bet, stake, clear),
+      push: (bet, result, stake, profit, extra) => pushDecision(decisions, bet, result, stake, profit, extra),
+    });
+  }
   next.history.unshift({ d1, d2, total, hard, result: line.result });
   if (next.history.length > 20) next.history.length = 20;
 
@@ -1638,6 +1795,7 @@ export function edgeFor(spot, mode) {
     all: 17.98,
     hardAllDay: 21.43,
   };
+  if (s.kind === "field" && s.rules) return TR.fieldEdge(s.rules);
   if (s.kind in table) return table[s.kind];
   if (s.kind === "hardway") return s.number === 6 || s.number === 8 ? 9.09 : 11.11;
   if (s.kind === "hop") return hopEdge(s.pair);
@@ -1656,6 +1814,10 @@ export function edgeFor(spot, mode) {
     if (s.number === 3 || s.number === 11) return 1.25;
     return 0.71;
   }
+  if (s.kind === "lay") return TR.layEdge(s.number, s.rules);
+  if (s.kind === "big6" || s.kind === "big8") return 9.09;
+  if (s.kind === "yo") return 11.11;
+  if (s.kind === "fire") return TR.fireTable(s.rules).edge;
   return null;
 }
 
@@ -1706,7 +1868,8 @@ export function isLongShot(spot) {
       kind === "place" || kind === "buy" || kind === "field") return false;
   if (kind === "any7" || kind === "ce" || kind === "horn") return false;
   return kind === "anyCraps" || kind === "hop" || kind === "hardway" || kind === "small" ||
-    kind === "tall" || kind === "all" || kind === "hardAllDay" || kind === "repeater";
+    kind === "tall" || kind === "all" || kind === "hardAllDay" || kind === "repeater" ||
+    kind === "yo" || kind === "fire";
 }
 
 const REPEATER_ODDS = {
@@ -1752,13 +1915,17 @@ function tutorPay(spot) {
  * Field has its own line. "Long shot" is only a prop under about 1 in 6.
  * "High house edge" starts at 9%.
  */
-export function tutorEdgeNote(spot, mode, experienced) {
+export function tutorEdgeNote(spot, mode, experienced, rules) {
   if (!spot) return "";
   if (spot.kind === "field") {
+    const edge = TR.fieldEdge(rules);
     if (experienced) {
+      if (edge === 0) return "Field: 16 of 36 wins (2 and 12 pay 3 to 1); 5, 6, 7 and 8 lose. 0% edge per roll.";
+      if (edge === 2.78) return "Field: 16 of 36 wins; one of 2 or 12 pays 3 to 1. 2.78% edge per roll.";
       return "Field: 16 of 36 wins (2 and 12 pay 2 to 1); 5, 6, 7 and 8 lose. 5.56% edge per roll (2.78% with 12 at 3:1).";
     }
-    return "Field: wins on 16 of 36 rolls, but the 5–8 numbers lose. 5.56% edge.";
+    if (edge === 5.56) return "Field: wins on 16 of 36 rolls, but the 5–8 numbers lose. 5.56% edge.";
+    return "Field: wins on 16 of 36 rolls, but the 5–8 numbers lose. " + edge + "% edge.";
   }
   const edge = edgeFor(spot, mode);
   const longShot = isLongShot(spot);
@@ -1810,4 +1977,22 @@ export const EDGES = {
   dontLay: 0.27,
   billyRegular: 1.71,
   billyCrapless: 1.43,
+  passCombined345: TR.COMBINED.pass345,
+  passCombined5: TR.COMBINED.pass5,
+  passCombined10: TR.COMBINED.pass10,
+  dontCombined345: TR.COMBINED.dont345,
+  dontCombined5: TR.COMBINED.dont5,
+  dontCombined10: TR.COMBINED.dont10,
+  fireStandard: 20.76,
+  fireLongSix: 24.86,
+  fire3: 20.73,
+  fireGenerous: 8.16,
+  big68: 9.09,
+  yo: 11.11,
+  lay4: 1.67,
+  lay5: 2,
+  lay6: 2.27,
+  lay4Up: 2.44,
+  lay5Up: 3.23,
+  lay6Up: 4,
 };

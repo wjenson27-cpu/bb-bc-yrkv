@@ -13,9 +13,9 @@ function roll(store, extra) {
   }, extra));
 }
 
-test("the catalog is 30 badges with the marquee ids", () => {
-  assert.equal(B.BADGES.length, 30);
-  assert.equal(B.BADGES.filter((b) => b.tier === "bronze").length, 7);
+test("the catalog is 31 badges with the marquee ids", () => {
+  assert.equal(B.BADGES.length, 31);
+  assert.equal(B.BADGES.filter((b) => b.tier === "bronze").length, 8);
   assert.equal(B.BADGES.filter((b) => b.tier === "silver").length, 9);
   assert.equal(B.BADGES.filter((b) => b.tier === "gold").length, 9);
   assert.equal(B.BADGES.filter((b) => b.tier === "legendary").length, 5);

@@ -360,12 +360,6 @@
   animation: sunspin 12s linear infinite;
 }
 @keyframes sunspin { to { transform: rotate(360deg); } }
-.winlayer .actions .ghost {
-  min-height: 40px;
-  background: transparent;
-  color: #f6edd8;
-  border: 1.5px solid #e4cc8f;
-}
 .winstamp p {
   margin: 0;
   font-family: var(--sans);

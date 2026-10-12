@@ -6,9 +6,14 @@ import * as L from "./leaderboard.mjs";
 import * as B from "./badges.mjs";
 import * as Sess from "./session.mjs";
 import { resolveSwipe } from "./swipe.mjs";
+import { chipSrc as sharedChipSrc, chipPng as sharedChipPng, breakChips as sharedBreak } from "./chips.mjs";
+import { TEST_BUILD } from "./build-flags.mjs";
+import { celebratePoint, cancelCelebration } from "./point-celebration.mjs";
+import { celebrationCopy, celebrationTier } from "./point-tier.mjs";
+import { RULE0_LINE, NO_ROLL } from "./table-rules.mjs";
+import { deckFor, nudgeFor, nextSessionTip, ETIQUETTE, ETIQUETTE_FOOTER } from "./etiquette.mjs";
 
 const STORE = "bb-bubble-craps-v1";
-const CHIP_FILE = { 100: "1", 500: "5", 2500: "25", 10000: "100", 50000: "500" };
 const FACE_ROT = {
   1: "rotateX(0deg) rotateY(0deg)",
   2: "rotateX(0deg) rotateY(-90deg)",
@@ -131,25 +136,16 @@ function haptic(pattern) {
 function motionOff() { return settings.reduced || reducedMQ.matches; }
 
 function chipSrc(cents, mark) {
-  return "assets/chips/chip-" + (CHIP_FILE[cents] || "5") + (mark ? "-value-mark" : "-value") + ".svg";
+  return sharedChipSrc(cents, mark, "assets/chips/");
 }
 function chipPng(cents) {
-  return "assets/chips/chip-" + (CHIP_FILE[cents] || "5") + "-value-mark@64.png";
+  return sharedChipPng(cents, "assets/chips/");
 }
 function chipHTML(cents) {
   return '<img alt="" width="36" height="36" src="' + chipPng(cents) + '">';
 }
 function breakChips(cents, cap) {
-  const denoms = [50000, 10000, 2500, 500, 100];
-  const chips = [];
-  let left = Math.max(0, cents || 0);
-  for (const d of denoms) {
-    const n = Math.min(cap, Math.floor(left / d));
-    for (let i = 0; i < n && chips.length < cap; i++) chips.push(d);
-    left -= Math.floor(left / d) * d;
-    if (chips.length >= cap) break;
-  }
-  return chips;
+  return sharedBreak(cents, cap);
 }
 function chipStack(cents) {
   if (!cents) return "";
@@ -620,6 +616,18 @@ function onClick(e) {
   if (act === "badge") { openBadge(t.dataset.id); return; }
   if (act === "reset-records") { confirmResetRecords(); return; }
   if (act === "reset-records-yes") { wipeRecords(); return; }
+  if (act === "etiquette-done") {
+    ETIQUETTE.forEach((tip, i) => {
+      const noted = B.noteAction(boardData, { type: "etiquette", id: tip.id, complete: i === ETIQUETTE.length - 1 });
+      boardData.badges = noted.store.badges;
+      boardData.progress = noted.store.progress;
+      if (noted.unlocked.length) queueUnlocks(noted.unlocked);
+    });
+    saveBoard();
+    toast("Table Manners" + (boardData.badges.table_manners ? " unlocked." : " noted."));
+    setView("settings");
+    return;
+  }
 }
 
 function setView(next) {
@@ -714,6 +722,11 @@ function addBet(ds) {
   A.chip();
   haptic(10);
   let lesson = "";
+  if (settings.tutorOn && (spot.kind === "dontPass" || spot.kind === "dontCome") && !seenTips.firstDont) {
+    seenTips.firstDont = true;
+    const tip = nudgeFor("first_dont", "bubble");
+    if (tip) lesson = tip.billy;
+  }
   if (settings.tutorOn && spot.kind === "hop" && !seenTips.hop && !mutedTips.hop) {
     seenTips.hop = true;
     lesson = "A hop is one exact pair on the next roll. A hardway stays up for the pair or a 7.";
@@ -929,8 +942,7 @@ function runStrategy(id) {
 }
 
 function testRngAllowed() {
-  const h = location.hostname;
-  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "";
+  return TEST_BUILD;
 }
 function autoShort() {
   if (game.bankroll <= 0 && E.tableTotal(game) === 0) return true;
@@ -967,10 +979,20 @@ async function doRoll(source) {
   ensureSession(Date.now(), totalBefore);
   const edgeCap = maxWorkingEdge(game);
   const handBefore = { rolls: game.hand.rolls, points: game.hand.points };
+  const passBefore = game.bets.pass;
   ensureHand(handBefore.rolls);
-  const custom = testRngAllowed() && typeof window.__bbRng === "function" ? window.__bbRng : null;
-  const dice = custom ? E.rollDice(custom) : E.rollDice();
+  let custom = null;
+  /*TEST_HOOK_START*/
+  if (TEST_BUILD && typeof window.__bbRng === "function") custom = window.__bbRng;
   delete window.__bbRng;
+  /*TEST_HOOK_END*/
+  const dice = custom ? E.rollDice(custom) : E.rollDice();
+  if (!dice || !dice.d1) {
+    rolling = false;
+    toast((dice && dice.error) || NO_ROLL);
+    paint();
+    return;
+  }
   const from = page;
   if (settings.showDice) { returnPage = from; page = 2; }
   paint();
@@ -996,7 +1018,8 @@ async function doRoll(source) {
   rememberRoll(settled, source === "auto" ? "auto" : "manual");
   if (onTable === 0) emptyFelt += 1;
   else emptyFelt = 0;
-  if (settled.net > 0) { A.win(); haptic([12, 40, 16]); }
+  if (settled.result === "point-made") { /* the celebration owns this sound */ }
+  else if (settled.net > 0) { A.win(); haptic([12, 40, 16]); }
   else if (settled.result === "seven-out") { A.seven(); haptic(40); }
   else A.chip();
   if (settings.showDice) page = returnPage;
@@ -1004,10 +1027,10 @@ async function doRoll(source) {
   paint();
   snap();
   const big = isBigWin(settled);
-  const quiet = page === 2 || settled.result === "seven-out" || big;
+  const quiet = page === 2 || settled.result === "seven-out" || big || settled.result === "point-made";
   if (!quiet) showRollToast(settled, pressNote);
   else if (pressNote) queueToast(pressNote, "", 1200);
-  celebrate(settled, handBefore);
+  celebrate(settled, handBefore, { point: pointBefore, pass: passBefore });
   noteBlaze(handBefore, settled);
   maybeTutor(settled);
   noteHandRoll(handBefore, settled, dice, hadBetNow, pointBefore, source === "auto" ? "auto" : "manual", totalBefore, edgeCap, onTable, autoPressed);
@@ -1119,6 +1142,7 @@ function noteHandRoll(before, settled, dice, hadBet, pointBefore, source, totalB
       if (hit && armed[Number(hit[2])]) collectNumber = Number(hit[2]);
     });
   }
+  if (dice && dice.source === "test") return;
   const ev = B.evaluateRoll({ badges: boardData.badges, progress: boardData.progress }, {
     mode: game.mode,
     handRolls: length,
@@ -1165,7 +1189,7 @@ function queueUnlocks(ids) {
 }
 function badgeBlocked() {
   if (rolling || document.querySelector(".recordcard")) return true;
-  if (document.body.classList.contains("bigwin") || document.querySelector(".winlayer")) return true;
+  if (document.body.classList.contains("bigwin") || document.body.classList.contains("pc-on") || document.querySelector(".winlayer")) return true;
   return false;
 }
 function badgeHost() {
@@ -1638,6 +1662,7 @@ function isBigWin(settled) {
 }
 function clearWin() {
   clearTimeout(celeTimer);
+  cancelCelebration();
   document.body.classList.remove("bigwin");
   const el = document.getElementById("overlay");
   if (el && el.querySelector(".winlayer")) el.innerHTML = "";
@@ -1663,10 +1688,12 @@ function showBigWin(settled) {
     "<p>PRACTICE CHIPS</p>" +
     (lines.length ? "<em>" + lines.join("<br>") + "</em>" : "") + "</div>" +
     "<img class='win-billie' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'></div>" +
-    burstChips(settled.net) +
-    "<div class='actions'><button class='go' data-act='collect'>Collect</button><button class='ghost' data-act='add-win'>Add a chip</button></div></div>";
+    burstChips(settled.net) + "</div>";
   clearTimeout(celeTimer);
-  celeTimer = setTimeout(clearWin, 3500);
+  celeTimer = setTimeout(clearWin, 2500);
+  const skip = () => clearWin();
+  addEventListener("pointerdown", skip, { capture: true, passive: true, once: true });
+  addEventListener("keydown", skip, { capture: true, passive: true, once: true });
 }
 function addWinningChip() {
   const lw = game.lastWin;
@@ -1689,14 +1716,40 @@ function sevenToast(settled, extra) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, 2800);
 }
-function celebrate(settled, before) {
+function celebrate(settled, before, extra) {
   if (settled.result === "seven-out") {
-    let extra = "";
+    let note = "";
     if (settings.blazing !== false && before) {
       const moment = E.blazeMoment(before, settled.state.hand, settled.result);
-      extra = [moment.text, moment.handNote].filter(Boolean).join(" ");
+      note = [moment.text, moment.handNote].filter(Boolean).join(" ");
     }
-    sevenToast(settled, extra);
+    sevenToast(settled, note);
+    return;
+  }
+  if (settled.result === "point-made") {
+    const points = settled.state.hand.points || 1;
+    const tier = celebrationTier(points, { meterOn: settings.blazing !== false, blazing: settled.tier === "blazing" });
+    const quiet = !(extra && extra.pass > 0);
+    const copy = celebrationCopy({
+      tier, quiet, point: extra && extra.point, points, hard: settled.dice && settled.dice.hard, net: settled.net,
+    });
+    const targets = [document.querySelector(".puckimg, .hud-puck, .puck"), document.querySelector(".dome-screen .result-line, .result")].filter(Boolean);
+    celebratePoint({
+      targets: targets.length ? targets : [document.getElementById("app") || document.body],
+      avoid: [document.querySelector("[data-act='roll']"), document.querySelector(".dock")],
+      point: extra && extra.point,
+      net: quiet ? 0 : settled.net,
+      big: !quiet && isBigWin(settled),
+      tier,
+      quiet,
+      duration: copy.duration,
+      line: copy.call,
+      cheer: copy.cheer,
+      billie: "assets/mascots/billie/billie-C-winner.svg",
+      chip: "assets/chips/chip-25-value.svg",
+      reduced: motionOff(),
+      sfx: (name) => { if (settings.sound && name) A.win(); },
+    });
     return;
   }
   if (isBigWin(settled)) showBigWin(settled);
@@ -1921,7 +1974,7 @@ function badgeGallery() {
     return true;
   };
   const tiers = ["bronze", "silver", "gold", "legendary"];
-  const tierCounts = { bronze: 7, silver: 9, gold: 9, legendary: 5 };
+  const tierCounts = { bronze: 8, silver: 9, gold: 9, legendary: 5 };
   const bars = "<div class='tierbars'>" + tiers.map((tier) => {
     const have = B.BADGES.filter((b) => b.tier === tier && boardData.badges && boardData.badges[b.id]).length;
     const need = tierCounts[tier];
@@ -2071,7 +2124,7 @@ function currentTip() {
 function tutorSteps() {
   const crapless = game.mode === "crapless";
   return [
-    { id: "s1", title: "Practice chips", body: "Education only. Play money only. No real gambling, no deposits, no cash-out, no prizes. The machine rolls. Regular has the lower edge. Crapless is a variant." },
+    { id: "s1", title: "Practice chips", body: "Education only. Play money only. No real gambling, no deposits, no payouts, no prizes. The machine rolls. Regular has the lower edge. Crapless is a variant. " + RULE0_LINE },
     { id: "s2", title: "Puck OFF", body: "Come-out roll. Bet the Pass Line. Your bankroll says Practice chips." },
     { id: "s3", title: "Come-out results", body: crapless ? "Only a 7 wins Pass right away. 2, 3, 11, and 12 become the point. Come-out 7 with ATS up: Pass wins, and any 7 loses Low Rolls, High Rolls, and Roll 'Em All." : "7 and 11 win. 2, 3, and 12 lose. 4, 5, 6, 8, 9, and 10 become the point. A 7 also loses ATS." },
     { id: "s4", title: "Odds", body: "When the puck is ON, add Odds. There is no house edge on odds, up to 3x, 4x, or 5x. The expected loss in chips stays tied to the flat bet. Swings get bigger." },
@@ -2779,6 +2832,7 @@ function panelHTML() {
   if (view === "premium") return premiumHTML();
   if (view === "leaderboard") return leaderHTML();
   if (view === "settings") return settingsHTML();
+  if (view === "etiquette") return etiquetteHTML();
   return homeHTML();
 }
 
@@ -2797,7 +2851,8 @@ function homeHTML() {
     "<button class='cta' data-act='play' data-mode='regular'><b>PLAY REGULAR</b><small>TAP ROLL · AUTO-ROLL OPTIONAL IN SETTINGS</small></button>" +
     "<div class='ghostrow'><button class='ghost' data-act='tour'>TAKE THE TUTOR TOUR</button><button class='ghost' data-act='billy-help'>WHAT'S BILLY'S WAY?</button></div>" +
     "<button class='ghost boardlink' data-act='view' data-view='leaderboard'>BADGES AND LONGEST ROLLS</button>" +
-    "<div class='disclaimer'><b>Education only. Play money only.</b> No real gambling, no deposits, no cash-out, no prizes. Every bankroll on this table is practice chips. 18+.</div></section>";
+    "<a class='ghost boardlink' href='table/'>PLAY TABLE CRAPS</a>" +
+    "<div class='disclaimer'><b>Education only. Play money only.</b> No real gambling, no deposits, no payouts, no prizes. Every bankroll on this table is practice chips. 18+.</div></section>";
 }
 
 function learnHTML() {
@@ -2916,7 +2971,21 @@ function settingsHTML() {
     "<button class='ghost' data-act='fair-reset'>Reset Fair Dice history</button>" +
     "<button class='ghost' data-act='end-session' data-reason='end'>End session</button>" +
     "<button class='ghost' data-act='reset-records'>Reset badges and records</button>" +
-    "<p class='muted'>RNG: " + (E.getRngSource() === "fallback" ? "basic (fallback)" : "secure") + ". Dice use your device's secure random generator, with rejection sampling so every face is equal.</p>";
+    "<button class='ghost' data-act='view' data-view='etiquette'>Dealer Billy's table tips</button>" +
+    "<p class='muted'>RNG: " + (E.getRngSource() === "unavailable" ? "unavailable" : "secure") + ". Dice use your device's secure random generator, with rejection sampling so every face is equal.</p>";
+}
+
+function etiquetteHTML() {
+  const deck = deckFor("bubble");
+  const session = nextSessionTip(settings.tipCursor || 0, "bubble");
+  const card = (t, tag) => "<article class='card'><h3>" + t.n + ". " + t.topic + (tag ? " · " + tag : "") + "</h3><p>" + t.billy + "</p><p>" + t.why + "</p></article>";
+  return "<h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip: " + session.tip.billy + "</p>" +
+    deck.both.map((t) => card(t, "Both")).join("") +
+    "<h3>At a live table</h3>" +
+    deck.live.map((t) => card(t, "Live table")).join("") +
+    "<p>" + ETIQUETTE_FOOTER + "</p>" +
+    "<button class='cta' data-act='etiquette-done'>Got it</button>" +
+    "<button class='ghost' data-act='view' data-view='settings'>Back</button>";
 }
 
 function fairHTML() {
@@ -2977,8 +3046,8 @@ function fairHTML() {
       const st = F.streakStats(rolls);
       return "<article class='card'><h3>Streaks</h3><p>Longest run without a 7: " + st.longestDry + ". Current run without a 7: " + st.currentDry + ".</p><p>In these rolls, longest hand: " + E.countPhrase(st.longestHand, "roll") + ". This hand: " + (game.hand.rolls || 0) + ". Longest hand all time: " + longestPosted() + ".</p><p>" + repeat + "</p><p class='muted'>A long gap is not a sign the next roll is different. A 7 is still 1 in 6.</p></article>";
     })() +
-    "<p>Every roll uses your device's secure random generator. Each die is a fair 1 to 6, and the two dice are independent. Nothing on this screen, not your bets, your streak, or the Blazing meter, can change the next roll.</p>" +
-    "<p class='muted'>RNG: " + (E.getRngSource() === "fallback" ? "basic (fallback)" : "secure") + ".</p>" +
+    "<p>" + RULE0_LINE + "</p>" +
+    "<p class='muted'>RNG: secure.</p>" +
     "<article class='card'><h3>Last 20</h3><div class='rollstrip fairstrip'>" + rollTiles(lastFair, { newestFirst: false, markLatest: true }) + "</div></article>" +
     fairHistoryList(rolls) +
     "<p class='billytip'><img src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt='Dealer Billy'><span>Every roll is random, from a secure generator. A seven is always 1 in 6.</span></p>" +
@@ -2987,6 +3056,7 @@ function fairHTML() {
 }
 
 load();
+settings.tipCursor = ((settings.tipCursor || 0) + 1) % ETIQUETTE.length;
 boardData = L.readStore(boardStore);
 if (!settings.lossLimit) settings.lossLimit = { kind: "off", amount: 2500, pct: 25 };
 if (!settings.winGoal) settings.winGoal = { kind: "off", amount: 2500, pct: 25 };
@@ -3000,7 +3070,8 @@ if (boardData.pending && !(boardData.initials && boardData.initials.asked)) {
   if (preview.madeWeek || preview.madeAll) showRecordCard(preview);
 }
 if (view === "play") startTimer();
-if (testRngAllowed()) {
+/*TEST_HOOK_START*/
+if (TEST_BUILD) {
   window.__bbShowMarquee = (id) => {
     const def = B.badgeById(id || "spin_the_block");
     if (def) showBadgeToast(def);
@@ -3012,3 +3083,4 @@ if (testRngAllowed()) {
     if (!badgeTimer) pumpBadges();
   };
 }
+/*TEST_HOOK_END*/

@@ -18,7 +18,7 @@
 - **rev 3:** Billy's Way buys 5/9 and is Bubble-only; Hard Way All Day stays up after a win; Premium Hard Way All Day payouts.
 - **rev 2:** Standard and Premium rules, multiplayer, defined bets.
 
-> **Education only. Play money only. No real gambling, no deposits, no cash-out, no prizes.** In both apps, label every bankroll "Practice chips". Put this disclaimer in the onboarding, the first Tutor screen, the multiplayer lobby (App 2) and the store listings.
+> **Education only. Play money only. No real gambling, no deposits, no payouts, no prizes.** In both apps, label every bankroll "Practice chips". Put this disclaimer in the onboarding, the first Tutor screen, the multiplayer lobby (App 2) and the store listings.
 
 ---
 
@@ -1433,7 +1433,7 @@ Mockups 07 and 08. Presets: Standard, MGM, Caesars, Strat 10x, Downtown 10x, Cus
 
 ## A2.7 Multiplayer (App 2)
 
-> Play money only. Every player has a separate practice bankroll. No transfers, wagers between players, prizes or cash-out of any kind.
+> Play money only. Every player has a separate practice bankroll. No transfers, wagers between players, prizes or withdrawals of any kind.
 
 ### A2.7.1 Modes
 - **Pass-and-play (local):** one device, 2 to 6 players taking turns.
@@ -1496,7 +1496,7 @@ Mockups 07 and 08. Presets: Standard, MGM, Caesars, Strat 10x, Downtown 10x, Cus
 | Per-player Tutor tracks | Chat (preset quick phrases first, with moderation), emoji reactions |
 | Standard rules only, or the host's Premium rules if the device owner is Premium | Spectator seats, per-player stats history |
 
-Online always uses play money. No real-money, prize or cash-out wording.
+Online always uses play money. No real-money, prize or withdrawal wording.
 
 # END MATTER
 
@@ -1514,7 +1514,7 @@ Reviewed `/workspace/bb-mockups/app1-bubble` (screens 01–11) and `/workspace/b
 | 7 | App 1 `09-strategy-picker` | Shows **Hard Way All Day** as a "side play" strategy card; it's a bet, not one of B1–B12. | Move it to the Lessons tab as "Side bets explained" (keep the 21.43% badge). |
 | 8 | All screens | Repeaters and the Blazing meter are now drawn (rounds 6–7). The **left Side-bets screen with the 21-hop grid isn't** drawn yet. | Draw the left screen (Repeaters + Hops; + the Fire Bet tile in App 2) and the 3 dots. Remove any Repeater rack from the board/Bet Panel (S4.1). |
 | 9 | App 2 `07-premium-custom-rules` | ATS is labeled **"Regular only"**, which is redundant (App 2 is Regular only). | Drop the label in App 2. |
-| 10 | Both home screens (footer) | Footer reads "Education only. Play money only. No real gambling, deposits, cash-out or prizes." It says the right thing, but it names cash-out. | Optional: shorten it to "18+ · Education only · Play money only · No real gambling." |
+| 10 | Both home screens (footer) | Footer reads "Education only. Play money only. No real gambling, deposits, payouts or prizes." It says the right thing. | Optional: shorten it to "18+ · Education only · Play money only · No real gambling." |
 | 11 | MOTION-SOUND-SPEC M20 | Repeater payout plate reads **"REPEATER SIX · 90 TO 1"**. The real table is **90 FOR 1** (89 to 1). | Change the plate to "90 FOR 1" (or "+89 TO 1" as the profit). |
 | 12 | MOTION-SOUND-SPEC M21–M22, CRAPS-LINGO §6, Design Desk G2 | Five levels with **"Heater"** and **"On Fire"** as tier names (labels, haptics, callouts like "He's on a heater!" and "On fire! Same bet?"). | **Decided (Bill, rev 7):** the **Blazing meter** has exactly **Cold · Warm · Hot · Blazing**. Use 4 segments, 4 haptic levels (Warm `tick`, Hot `press`, Blazing `success`) and 4 callouts: Warm "Dice are warming up." · Hot "Dice are hot! Same odds, just fun." · Blazing "Blazing hand!" · Cool-off "Cooled off." Flames are for Blazing only, and decoration only. M22 "Heater" dice heat folds into Hot; "On Fire" folds into Blazing. Keep it separate from the App 2 Fire Bet rail. |
 | 13 | Design Desk G1 | Pays written **"40:1"** (to 1); edges computed on that basis. | Use "40 FOR 1" everywhere; edges in S1.7. |
