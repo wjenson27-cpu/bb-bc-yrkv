@@ -11,9 +11,10 @@ import { TEST_BUILD } from "./build-flags.mjs";
 import { celebratePoint, cancelCelebration } from "./point-celebration.mjs";
 import { cancelMoments, showPSO } from "./pso.mjs";
 import { celebrationCopy, celebrationTier } from "./point-tier.mjs";
-import * as Lg from "./lingo.mjs";
+import * as Lg from "bb-lingo";
 import * as LC from "./lingo-ctrl.mjs";
 import { callButton, learnRowHTML } from "./lingo-view.mjs";
+import { rotateGateHTML } from "./rotate.mjs";
 import { RULE0_LINE, NO_ROLL } from "./table-rules.mjs";
 import { deckFor, nudgeFor, nextSessionTip, ETIQUETTE, ETIQUETTE_FOOTER } from "./etiquette.mjs";
 
@@ -55,6 +56,24 @@ let view = "home";
 let lingo = LC.freshLingo();
 let lastRoll = null;
 let swallowLingo = false;
+let lingoOrigin = null;
+function betSpot(node) {
+  const hold = node && node.closest ? node.closest("[data-act='bet']") : null;
+  if (!hold || hold.closest("[data-act='roll'], [data-act='press'], [data-act='power']")) return null;
+  return hold;
+}
+function openLingoFrom(el) {
+  lingoOrigin = LC.originSelector(el);
+  lingo.sheet = LC.spotFromEl(el);
+  lingo.confirm = false;
+  lingo.why = false;
+  lingo.peekId = null;
+  swallowLingo = true;
+  paint();
+  const term = Lg.termForSpot(lingo.sheet, "bubble");
+  if (term) watchLingo(term.id);
+  LC.focusSheet();
+}
 let page = 1;
 let betTab = "place";
 let learnFilter = "all";
@@ -296,11 +315,15 @@ function mount() {
     <main class="panel hidden" id="panel"></main>
     <nav class="tabs" id="tabs" aria-label="Sections"></nav>
     <p class="legal">18+ · Practice only · No real money</p>
+    ${rotateGateHTML()}
     <div id="overlay"></div>
   `;
   app.addEventListener("click", onClick);
   app.addEventListener("contextmenu", (e) => {
-    if (e.target.closest("[data-act='bet']")) e.preventDefault();
+    const hold = betSpot(e.target);
+    if (!hold) return;
+    e.preventDefault();
+    openLingoFrom(hold);
   });
   app.addEventListener("input", (e) => {
     if (!e.target || !e.target.dataset || e.target.dataset.act !== "lingo-q") return;
@@ -311,13 +334,20 @@ function mount() {
     if (again) { again.focus(); if (pos != null) again.setSelectionRange(pos, pos); }
   });
   addEventListener("keydown", (e) => {
+    if (LC.lingoKey(e) && !e.target.closest("input, textarea")) {
+      const hold = betSpot(document.activeElement);
+      if (hold) { e.preventDefault(); openLingoFrom(hold); return; }
+    }
     if (e.key !== "Escape") return;
     if (!lingo.sheet && !lingo.peekId && view !== "lingo") return;
+    const back = lingoOrigin;
     lingo.sheet = null;
     lingo.peekId = null;
+    lingoOrigin = null;
     if (view === "lingo") view = "learn";
     watchLingo("");
     paint();
+    LC.focusOrigin(back);
   });
   const diceHost = document.createElement("div");
   diceHost.id = "dice-row";
@@ -368,13 +398,7 @@ function mount() {
       let moved = false;
       const timer = setTimeout(() => {
         if (moved) return;
-        lingo.sheet = LC.spotFromEl(hold);
-        lingo.confirm = false;
-        lingo.why = false;
-        swallowLingo = true;
-        paint();
-        const term = Lg.termForSpot(lingo.sheet, "bubble");
-        if (term) watchLingo(term.id);
+        openLingoFrom(hold);
       }, 500);
       const move = (ev) => {
         if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 12) { moved = true; clearTimeout(timer); }
@@ -552,10 +576,13 @@ function onClick(e) {
   if (act === "peek-close") { lingo.peekId = null; watchLingo(""); paint(); return; }
   if (act === "sheet-close") {
     if (e.target.closest(".lingo-sheet") && !e.target.closest(".lingo-grab, .lingo-x")) return;
+    const back = lingoOrigin;
     lingo.sheet = null;
     lingo.confirm = false;
+    lingoOrigin = null;
     watchLingo("");
     paint();
+    LC.focusOrigin(back);
     return;
   }
   if (act === "lingo-why") { lingo.why = !lingo.why; paint(); return; }
@@ -2601,6 +2628,7 @@ function paint() {
     document.getElementById("panel").innerHTML = panelHTML();
     requestAnimationFrame(() => measureChrome());
   }
+  LC.markSpots(app);
 }
 
 function hudHTML() {

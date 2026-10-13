@@ -180,7 +180,7 @@ test("dome readouts, lockup, Field rings, and FAIR fit", async (t) => {
           };
         });
         assert.equal(field.pay, "2 AND 12 PAY DOUBLE", tag);
-        assert.equal(field.aria, "Field: 2, 3, 4, 9, 10, 11, 12; 2 and 12 pay 2 to 1", tag);
+        assert.equal(field.aria, "Field: 2, 3, 4, 9, 10, 11, 12; 2 and 12 pay 2 to 1. Long-press for lingo.", tag);
         assert.deepEqual(field.rings.map((n) => n.t), ["2", "12"], tag);
         field.rings.forEach((n) => {
           assert.ok(n.visual >= 8, tag + " numeral " + n.t + " " + n.visual.toFixed(1) + "px");
@@ -197,7 +197,9 @@ test("dome readouts, lockup, Field rings, and FAIR fit", async (t) => {
           assert.match(field.home, /hud-billy-A-36@1x\.png$/, tag);
         }
       }
-      await page.locator("button.dot[aria-label='Dice']").click();
+      const diceDot = page.locator("button.dot[aria-label='Dice']");
+      if (w > h && h < 400) await diceDot.evaluate((el) => el.click());
+      else await diceDot.click();
       await page.waitForSelector("#dice-row .cube");
       await page.waitForTimeout(250);
       const dome = await readDome();

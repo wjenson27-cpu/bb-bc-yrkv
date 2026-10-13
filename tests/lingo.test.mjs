@@ -11,6 +11,17 @@ test("lingo schema, counts, and bubble never ships Fire", () => {
   assert.ok(Lg.termById("fire_bet", "table"));
 });
 
+test("crapless notes stay in crapless", () => {
+  const dont = Lg.termById("dont_pass", "bubble");
+  assert.equal(Lg.noteFor(dont, "bubble", "regular"), "");
+  assert.equal(Lg.noteFor(dont, "table", "regular"), "");
+  assert.match(Lg.noteFor(dont, "bubble", "crapless"), /Don't side/);
+  assert.match(Lg.noteFor(dont, "table", "crapless"), /Don't side/);
+  const field = Lg.termById("field", "bubble");
+  assert.doesNotMatch(Lg.noteFor(field, "bubble", "regular"), /Not in Crapless/);
+  assert.doesNotMatch(Lg.noteFor(field, "table", "regular"), /Not in Crapless/);
+});
+
 test("lingo search fixtures", () => {
   const nina = Lg.search("nina", "bubble").hits.map((t) => t.id);
   assert.equal(nina[0], "nina");

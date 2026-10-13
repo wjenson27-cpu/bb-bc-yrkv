@@ -1,6 +1,7 @@
 /**
  * One static server, then the suite one file at a time.
- * Browser tests share port 8765 and never kill it mid-run.
+ * Starts 8765 when it is free. A foreign listener is left alone;
+ * browser tests bind the next port that serves this checkout.
  */
 import { spawn } from "node:child_process";
 import { readdirSync } from "node:fs";

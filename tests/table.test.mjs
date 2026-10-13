@@ -627,6 +627,14 @@ test("production bundle strips hooks", () => {
   assert.equal(/__bb/.test(ui), false);
   assert.equal(/Math\.random\(/.test(engine), false);
   assert.equal(/cash out|cash-out/i.test(ui + readFileSync(new URL("../dist/js/table-ui.mjs", import.meta.url), "utf8")), false);
+  const bubbleLingo = readFileSync(new URL("../dist/js/lingo.json", import.meta.url), "utf8");
+  const tableLingo = readFileSync(new URL("../dist/js/lingo.table.json", import.meta.url), "utf8");
+  const tableMod = readFileSync(new URL("../dist/js/lingo-table.mjs", import.meta.url), "utf8");
+  assert.equal(/\bFire\b/.test(bubbleLingo), false);
+  assert.equal(/fire_bet/.test(bubbleLingo), false);
+  assert.match(tableLingo, /fire_bet/);
+  assert.match(tableLingo, /Fire Bet/);
+  assert.match(tableMod, /from "\.\/lingo\.table\.json"/);
 });
 
 test("tutor field line and long-shot gate", () => {

@@ -327,7 +327,7 @@ test("store polish: marquees, FAIR, dome pips, and the 320 play column", async (
     await page.setViewportSize({ width: 390, height: 844 });
     await boot({ tutorOn: false });
     await page.locator("button.dot[aria-label='Side bets']").click();
-    await page.locator("button[aria-label='Hop 2-2']").click();
+    await page.locator("button[aria-label^='Hop 2-2']").click();
     await forceRoll(2, 2);
     await page.waitForSelector(".winlayer");
     await page.evaluate(() => window.__bbShowMarquee("spin_the_block"));

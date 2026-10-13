@@ -103,9 +103,9 @@ test("coach clicks, one mascot, and phone pip strips", async (t) => {
     }
 
     await boot();
-    await page.locator("button[aria-label='Pass Line']").click();
+    await page.locator("button[aria-label^='Pass Line']").click();
     await forceRoll(2, 4);
-    await page.locator("button[aria-label='Place 8']").click();
+    await page.locator("button[aria-label^='Place 8']").click();
     await forceRoll(4, 4);
     await page.locator("button[data-act='press']").click();
     await page.waitForSelector(".coach");
@@ -135,12 +135,12 @@ test("coach clicks, one mascot, and phone pip strips", async (t) => {
     await page.locator("button.homebtn").click();
     await page.locator("button[data-act='tour']").click();
     await page.locator(".coach button[data-act='close']").click();
-    await page.locator("button[aria-label='Pass Line']").click();
+    await page.locator("button[aria-label^='Pass Line']").click();
     await forceRoll(4, 2);
     if (await page.locator(".coach").count()) {
       await page.locator(".coach button[data-act='close']").click();
     }
-    await page.locator("button[aria-label='Place 6']").click();
+    await page.locator("button[aria-label^='Place 6']").click();
     await forceRoll(3, 3);
     await page.waitForSelector(".coach");
     await page.waitForSelector(".toast-billie.board-cheer", { state: "attached" });
@@ -149,7 +149,7 @@ test("coach clicks, one mascot, and phone pip strips", async (t) => {
     assert.equal(cheerHidden, "hidden");
 
     await boot({ tutorOn: false });
-    await page.locator("button[aria-label='Pass Line']").click();
+    await page.locator("button[aria-label^='Pass Line']").click();
     await forceRoll(3, 4);
     const natural = await page.evaluate(() => {
       const tiles = [...document.querySelectorAll(".rolltile")];

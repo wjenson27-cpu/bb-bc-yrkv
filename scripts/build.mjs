@@ -25,6 +25,20 @@ for (const rel of ["js/build-flags.mjs", "js/ui.mjs", "js/table-ui.mjs", "js/iap
   writeFileSync(path, strip(readFileSync(path, "utf8")));
 }
 
+const fullLingo = JSON.parse(readFileSync(join(dist, "js/lingo.json"), "utf8"));
+writeFileSync(join(dist, "js/lingo.table.json"), JSON.stringify(fullLingo));
+const bubbleLingo = {
+  ...fullLingo,
+  terms: fullLingo.terms.filter((t) => (t.apps || []).includes("bubble")),
+};
+writeFileSync(join(dist, "js/lingo.json"), JSON.stringify(bubbleLingo));
+const tableMod = readFileSync(join(dist, "js/lingo.mjs"), "utf8")
+  .replace('from "./lingo.json"', 'from "./lingo.table.json"');
+writeFileSync(join(dist, "js/lingo-table.mjs"), tableMod);
+if (/fire_bet/.test(JSON.stringify(bubbleLingo))) throw new Error("Fire left in the Bubble glossary");
+if (!/fire_bet/.test(JSON.stringify(fullLingo))) throw new Error("Fire missing from the Table glossary");
+if (!/lingo\.table\.json/.test(tableMod)) throw new Error("table lingo module still reads the Bubble file");
+
 const flags = readFileSync(join(dist, "js/build-flags.mjs"), "utf8");
 const ui = readFileSync(join(dist, "js/ui.mjs"), "utf8");
 const engine = readFileSync(join(dist, "js/engine.mjs"), "utf8");

@@ -3,7 +3,7 @@
  * The release of a long-press never places a chip. Callers swallow that click.
  */
 import * as E from "./engine.mjs";
-import * as Lg from "./lingo.mjs";
+import * as Lg from "bb-lingo";
 import * as V from "./lingo-view.mjs";
 
 export function freshLingo() {
@@ -93,9 +93,63 @@ export function spotSelector(link, app) {
   return "[data-kind='" + kind + "']";
 }
 
+export function lingoKey(e) {
+  if (!e || e.metaKey || e.ctrlKey || e.altKey) return false;
+  if (e.key === "ContextMenu") return true;
+  if (e.key === "F10" && e.shiftKey) return true;
+  if (e.key === "l" || e.key === "L") return true;
+  return false;
+}
+
+export function markSpots(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-act='bet'], [data-act='spot'], [data-act='num']").forEach((el) => {
+    if (el.closest("[data-act='roll'], [data-act='press'], [data-act='power'], .tc-shoot, .tc-keys, [data-act='throw']")) return;
+    el.setAttribute("aria-keyshortcuts", "L Shift+F10");
+    el.setAttribute("aria-haspopup", "dialog");
+    const label = el.getAttribute("aria-label") || "";
+    if (label.indexOf("Long-press for lingo") < 0) {
+      el.setAttribute("aria-label", (label ? label + ". " : "") + "Long-press for lingo.");
+    }
+  });
+}
+
+export function focusSheet() {
+  const head = document.querySelector(".lingo-sheet h2");
+  if (!head) return;
+  head.tabIndex = -1;
+  head.focus();
+}
+
+/** Stable selector for the spot that opened the sheet. render() replaces the node. */
+export function originSelector(el) {
+  if (!el || !el.getAttribute) return "";
+  const act = el.getAttribute("data-act") || "";
+  let sel = act ? "[data-act='" + act.replace(/'/g, "") + "']" : "";
+  for (const name of ["kind", "number", "pair", "n"]) {
+    const v = el.getAttribute("data-" + name);
+    if (v) sel += "[data-" + name + "='" + String(v).replace(/'/g, "") + "']";
+  }
+  return sel;
+}
+
+export function focusOrigin(sel) {
+  if (!sel || typeof document === "undefined") return;
+  const el = document.querySelector(sel);
+  if (el && el.focus) el.focus();
+}
+
 export function screenHTML(app, session, asset, mode) {
   const term = session.cardId ? Lg.termById(session.cardId, app) : null;
-  const card = term ? V.termCardHTML(term, { app, asset, mode }) : "";
+  const target = term ? boardTarget(term, app) : null;
+  const card = term ? V.termCardHTML(term, {
+    app,
+    asset,
+    mode,
+    showMe: true,
+    showDisabled: !!(target && !target.ok),
+    showReason: target && !target.ok ? target.reason : "",
+  }) : "";
   return V.lingoScreenHTML(app, {
     asset,
     category: session.category,

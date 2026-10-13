@@ -3,14 +3,44 @@
 .lingo-call:focus-visible{outline:2px solid #FFD36A}
 .lingo-peek{position:absolute;left:8px;right:8px;bottom:8px;z-index:30;max-height:45%;overflow:auto;border-radius:18px;background:#FBF5E8;color:#1b2230;box-shadow:0 14px 34px rgba(0,0,0,.6);padding:10px 12px 8px}
 .lingo-peek .lingo-card h2{color:#1b2230;font-size:17px}
-.lingo-peek .aka{color:#4a5363}
+.lingo-peek .lingo-card .aka,
+.lingo-peek .aka{color:#3a4150}
+.lingo-peek .lingo-card .mean,
 .lingo-peek .mean{color:#1b2230;font-size:13.5px}
 .lingo-peek .lingo-note{color:#1b2230;background:#f3e7c7;border-color:#9C7428}
 .lingo-peek .lingo-foot{color:#4a5363}
 .lingo-peek .lingo-btn,.lingo-peek .lingo-rel button{color:#1b2230;border-color:#c9b98f;background:#fff}
+.tc-stage:has(.lingo-peek) .result,.stage:has(.lingo-peek) .result-line{position:relative;z-index:6}
+@media (orientation:portrait){
+  .lingo-peek{max-height:min(40vh,200px)}
+  .tc-stage:has(.lingo-peek) .tc-shooter{display:flex;flex-direction:column;align-items:stretch;height:100%;overflow:auto}
+  .tc-stage:has(.lingo-peek) .tc-shooter .result{order:-1;flex:0 0 auto;background:rgba(4,8,14,.94)}
+}
+body:has(.lingo-sheet) .dome-billy,
+body:has(.lingo-peek) .dome-billy{visibility:hidden}
 @media (orientation:landscape) and (max-height:500px){
-  .lingo-peek{left:auto;right:8px;top:8px;bottom:8px;width:min(300px,46%);max-height:none}
-  .tc-shooter .result,.dome-screen .result-line{max-width:calc(52% - 8px)}
+  .lingo-peek{left:auto;right:8px;top:8px;bottom:8px;width:min(200px,38%);max-height:none}
+  .tc-stage:has(.lingo-peek),.stage:has(.lingo-peek){justify-content:flex-start}
+  .tc-stage:has(.lingo-peek) .tc-shooter,
+  .stage:has(.lingo-peek) .dome-screen{
+    width:calc(100% - min(200px, 38%) - 16px);
+    max-width:calc(100% - min(200px, 38%) - 16px);
+    margin-right:auto;
+  }
+}
+@media (max-width:359px){
+  .app.play .lingo-btn,
+  .app.play .lingo-rel button,
+  .app.play .lingo-call,
+  .app.play .lingo-x,
+  .app.play .lingo-grab{
+    min-height:calc(44px * 352px / 100vw);
+    min-width:calc(44px * 352px / 100vw);
+  }
+  .app.play .lingo-x,.app.play .lingo-grab{
+    width:calc(44px * 352px / 100vw);
+    height:calc(44px * 352px / 100vw);
+  }
 }
 .lingo-scrim{position:absolute;inset:0;z-index:28;background:rgba(4,8,12,.62);display:flex;align-items:flex-end;justify-content:center;padding:8px 8px 0}
 .lingo-sheet{position:relative;width:min(100%,440px);max-height:min(85%,calc(100% - 8px));overflow:auto;background:#0B1626;border:1px solid #9C7428;border-bottom:0;border-radius:20px 20px 0 0;padding:6px 14px 14px;color:#F6EDD8}

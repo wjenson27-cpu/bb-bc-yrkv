@@ -16,9 +16,10 @@ import { resolveSwipe } from "./swipe.mjs";
 import * as Badges from "./badges.mjs";
 import * as IAP from "./iap.mjs";
 import { TEST_BUILD } from "./build-flags.mjs";
-import * as Lg from "./lingo.mjs";
+import * as Lg from "bb-lingo";
 import * as LC from "./lingo-ctrl.mjs";
 import { callButton, learnRowHTML } from "./lingo-view.mjs";
+import { rotateGateHTML } from "./rotate.mjs";
 
 const A = "../assets/";
 const STORE = "bb-table-craps-v1";
@@ -31,6 +32,7 @@ const settings = {
   theme: "billy",
   colorUp: "offer",
   sound: true,
+  haptics: true,
   tutor: true,
   numbet: "place",
   premium: false,
@@ -75,8 +77,29 @@ let setFaces = [orient(3, 5), orient(3, 1)];
 let showingRoll = false;
 let lingo = LC.freshLingo();
 let swallowLingo = false;
+let lingoOrigin = null;
+function betSpot(node) {
+  const hold = node && node.closest ? node.closest("[data-act='num'], [data-act='spot']") : null;
+  if (!hold || hold.closest(".tc-shoot, .tc-keys, [data-act='throw']")) return null;
+  return hold;
+}
+function psoHaptic(name) {
+  if (settings.haptics === false || !navigator.vibrate) return;
+  navigator.vibrate(name === "success" ? [12, 40, 12] : 10);
+}
+function openLingoFrom(el) {
+  lingoOrigin = LC.originSelector(el);
+  lingo.sheet = LC.spotFromEl(el, settings.numbet);
+  lingo.confirm = false;
+  lingo.why = false;
+  lingo.peekId = null;
+  swallowLingo = true;
+  const term = Lg.termForSpot(lingo.sheet, "table");
+  render();
+  if (term) watchLingo(term.id);
+  LC.focusSheet();
+}
 let lastRoll = null;
-const LINGO_HINT = " Long-press for lingo.";
 let compareWorker = null;
 let compareJob = 0;
 let compareProgress = "";
@@ -454,7 +477,9 @@ function render() {
     right + "</div>" +
     "<footer class='tc-dock'>" + offerHTML + railHTML() + shoot + "</footer>" +
     "<nav class='tc-keys'><button data-act='screen' data-screen='play'" + (screen === "play" && !menu ? " class='on'" : "") + ">BETS</button><button data-act='screen' data-screen='picker'>STRATEGIES</button><button data-act='tutor'>TUTOR</button><button data-act='menu'>STATS</button></nav>" +
-    "<div class='tc-notice'><span>18+</span> PRACTICE ONLY · NO REAL MONEY</div>";
+    "<div class='tc-notice'><span>18+</span> PRACTICE ONLY · NO REAL MONEY</div>" +
+    rotateGateHTML();
+  LC.markSpots(app);
   fitTable();
   armToastHide();
 }
@@ -755,7 +780,7 @@ function doRoll() {
       chip: A + "chips/chip-25-value.svg",
       reduced: reducedMQ.matches,
       sfx: () => {},
-      haptic: () => {},
+      haptic: psoHaptic,
     });
     const dur = shown && shown.variant ? shown.variant.dur : 1200;
     setTimeout(() => { checkSession(); if (sessionPrompt) render(); }, dur);
@@ -882,10 +907,13 @@ function onClick(e) {
   if (act === "peek-close") { lingo.peekId = null; watchLingo(""); render(); return; }
   if (act === "sheet-close") {
     if (e.target.closest(".lingo-sheet") && !e.target.closest(".lingo-grab, .lingo-x")) return;
+    const back = lingoOrigin;
     lingo.sheet = null;
     lingo.confirm = false;
+    lingoOrigin = null;
     watchLingo("");
     render();
+    LC.focusOrigin(back);
     return;
   }
   if (act === "lingo-why") { lingo.why = !lingo.why; render(); return; }
@@ -1164,13 +1192,7 @@ app.addEventListener("pointerdown", (e) => {
     let moved = false;
     const timer = setTimeout(() => {
       if (moved) return;
-      lingo.sheet = LC.spotFromEl(hold, settings.numbet);
-      lingo.confirm = false;
-      lingo.why = false;
-      swallowLingo = true;
-      const term = Lg.termForSpot(lingo.sheet, "table");
-      render();
-      if (term) watchLingo(term.id);
+      openLingoFrom(hold);
     }, 500);
     const move = (ev) => {
       if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 12) { moved = true; clearTimeout(timer); }
@@ -1182,7 +1204,10 @@ app.addEventListener("pointerdown", (e) => {
   }
 });
 app.addEventListener("contextmenu", (e) => {
-  if (e.target.closest("[data-act='num'], [data-act='spot']")) e.preventDefault();
+  const hold = betSpot(e.target);
+  if (!hold) return;
+  e.preventDefault();
+  openLingoFrom(hold);
 });
 app.addEventListener("input", (e) => {
   if (e.target && e.target.dataset && e.target.dataset.act === "lingo-q") {
@@ -1194,14 +1219,21 @@ app.addEventListener("input", (e) => {
   }
 });
 addEventListener("keydown", (e) => {
+  if (LC.lingoKey(e) && !(e.target && e.target.closest && e.target.closest("input, textarea, select"))) {
+    const hold = betSpot(document.activeElement);
+    if (hold) { e.preventDefault(); openLingoFrom(hold); return; }
+  }
   if (e.key !== "Escape") return;
   if (!lingo.sheet && !lingo.peekId && screen !== "lingo") return;
+  const back = lingoOrigin;
   lingo.sheet = null;
   lingo.peekId = null;
   lingo.confirm = false;
+  lingoOrigin = null;
   if (screen === "lingo") screen = "play";
   watchLingo("");
   render();
+  LC.focusOrigin(back);
 });
 app.addEventListener("pointermove", (e) => {
   const bar = e.target.closest && e.target.closest(".meter .bar");

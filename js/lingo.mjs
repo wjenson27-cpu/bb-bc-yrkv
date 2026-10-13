@@ -198,7 +198,7 @@ export function noteFor(term, app, mode) {
   if (!term || !term.notes) return "";
   if (mode === "crapless" && term.notes.crapless) return term.notes.crapless;
   const key = app === "table" ? "table" : "bubble";
-  return term.notes[key] || term.notes.crapless || "";
+  return term.notes[key] || "";
 }
 
 export function tagClass(tag) {

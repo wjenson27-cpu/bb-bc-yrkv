@@ -142,7 +142,7 @@ test("a mouse click posts a felt bet and a hit lights PRESS", async (t) => {
     await page.goto("http://127.0.0.1:" + port + "/index.html", { waitUntil: "networkidle" });
     await page.click("button[data-mode='regular']");
     await page.waitForSelector("#stage[data-page='1']");
-    const pass = page.locator("button[aria-label='Pass Line']");
+    const pass = page.locator("button[aria-label^='Pass Line']");
     const box = await pass.boundingBox();
     assert.ok(box && box.width > 10, "Pass Line is on screen");
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -157,7 +157,7 @@ test("a mouse click posts a felt bet and a hit lights PRESS", async (t) => {
     });
     await page.click("button[aria-label='Roll the dice']");
     await page.waitForFunction(() => /POINT\s+SIX/.test(document.body.innerText), null, { timeout: 8000 });
-    const place = page.locator("button[aria-label='Place 6']");
+    const place = page.locator("button[aria-label^='Place 6']");
     const pbox = await place.boundingBox();
     assert.ok(pbox, "Place 6 is on screen");
     await page.mouse.click(pbox.x + pbox.width / 2, pbox.y + pbox.height / 2);

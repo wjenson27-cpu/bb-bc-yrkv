@@ -46,7 +46,32 @@ test("568 landscape, 320 color-up, and the lingo take-down sheet", async (t) => 
     assert.ok(land.noticeTop < land.vh, "notice " + land.noticeTop);
     assert.notEqual(land.dots, "none");
 
-    await page.locator("[data-act='go-shooter']").click();
+    const gate = await page.evaluate(() => {
+      const g = document.querySelector(".rotate-gate");
+      const come = document.querySelector("[data-kind='come']");
+      const cr = come.getBoundingClientRect();
+      const hit = document.elementFromPoint(cr.left + cr.width / 2, cr.top + cr.height / 2);
+      const notice = document.querySelector(".tc-notice");
+      const nr = notice.getBoundingClientRect();
+      const nh = document.elementFromPoint(nr.left + Math.min(24, nr.width / 2), nr.top + nr.height / 2);
+      const hud = document.querySelector(".tc-hud");
+      const hr = hud.getBoundingClientRect();
+      const hh = document.elementFromPoint(hr.left + 12, hr.top + hr.height / 2);
+      return {
+        shown: getComputedStyle(g).display !== "none",
+        text: g.innerText,
+        covered: !!(hit && hit.closest(".rotate-gate")),
+        notice: !!(nh && (notice === nh || notice.contains(nh))),
+        hud: !!(hh && (hud === hh || hud.contains(hh))),
+      };
+    });
+    assert.equal(gate.shown, true);
+    assert.match(gate.text, /Rotate to portrait/);
+    assert.equal(gate.covered, true, "come tap hits the rotate card");
+    assert.equal(gate.notice, true, "18+ stays above the card");
+    assert.equal(gate.hud, true, "HUD stays above the card");
+
+    await page.locator("[data-act='go-shooter']").evaluate((el) => el.click());
     const peek = await page.evaluate(() => {
       const fire = document.querySelector(".tc-fire");
       if (!fire) return { ok: true };

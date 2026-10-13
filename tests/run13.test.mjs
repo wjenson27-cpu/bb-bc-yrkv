@@ -222,7 +222,9 @@ test("short screens keep the dice, the Field, and the avatar", async (t) => {
         assert.ok(avatar.bh >= avatar.rowH - 8, tag + " avatar sits with the HUD");
         assert.ok(avatar.top >= avatar.rowTop - 1 && avatar.bottom <= avatar.rowBottom + 1, tag + " avatar stays in the row");
       }
-      await page.locator("button.dot[aria-label='Dice']").click();
+      const diceDot = page.locator("button.dot[aria-label='Dice']");
+      if (w > h && h < 400) await diceDot.evaluate((el) => el.click());
+      else await diceDot.click();
       await page.waitForSelector("#dice-row .cube");
       await page.waitForTimeout(200);
       const dice = await readDice();

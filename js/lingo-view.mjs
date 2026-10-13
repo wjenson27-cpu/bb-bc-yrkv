@@ -2,7 +2,7 @@
  * Craps Lingo screens. Visuals follow the Design Desk lingo handoff
  * (scoped classes so they don't restyle the rest of the app).
  */
-import { FOOTER, EMPTY, counts, grouped, search, noteFor, tagClass, termsFor } from "./lingo.mjs";
+import { FOOTER, EMPTY, counts, grouped, search, noteFor, tagClass, termsFor } from "bb-lingo";
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -24,6 +24,10 @@ export function termCardHTML(term, opts) {
   const aka = (term.aliases || []).slice(0, 3).join(" · ");
   const say = term.say ? "<span class='say'>Say it " + esc(term.say) + "</span>" : "";
   const rel = (term.related || []).map((id) => "<button type='button' class='lingo-btn' data-act='lingo-open' data-id='" + esc(id) + "'>" + esc(id.replace(/_/g, " ")) + "</button>").join("");
+  const show = o.showMe
+    ? "<div class='lingo-row'><button type='button' class='lingo-btn' data-act='lingo-show' data-id='" + esc(term.id) + "'" + (o.showDisabled ? " disabled" : "") + ">Show me on the board</button></div>" +
+      (o.showReason ? "<p class='lingo-note'>" + esc(o.showReason) + "</p>" : "")
+    : "";
   const cls = "lingo-card" + (o.compact ? " compact" : "");
   return "<article class='" + cls + "' data-term='" + esc(term.id) + "'>" +
     "<h2>" + esc(term.term) + "</h2>" +
@@ -33,6 +37,7 @@ export function termCardHTML(term, opts) {
     "<p class='mean'>" + esc(term.meaning) + "</p>" +
     "<div class='lingo-plate' data-mascot='billy'><img src='" + asset + "mascots/dealer-billy/small/billy-A-avatar-round.svg' alt='Dealer Billy'><div><span class='who'>Dealer Billy</span><q>" + esc(term.call) + "</q>" + say + "</div></div>" +
     (note ? "<p class='lingo-note'>" + esc(note) + "</p>" : "") +
+    show +
     (rel ? "<div class='lingo-rel'>" + rel + "</div>" : "") +
     (o.footer === false ? "" : "<p class='lingo-foot'>" + FOOTER + "</p>") +
     "</article>";

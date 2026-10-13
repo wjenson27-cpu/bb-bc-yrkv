@@ -164,6 +164,28 @@ test("board, warnings, speech, seven-out toast, and the HUD avatar", async (t) =
       for (const [w, h] of sizes) {
         await boot(w, h, heavy(mode), mode);
         const tag = mode + " " + w + "x" + h;
+        if (w > h && h < 400) {
+          const gate = await page.evaluate(() => {
+            const g = document.querySelector(".rotate-gate");
+            const spot = document.querySelector(".felt button.spot");
+            const r = spot.getBoundingClientRect();
+            const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            const legal = document.querySelector(".legal");
+            const lr = legal.getBoundingClientRect();
+            const legalHit = document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2);
+            return {
+              shown: getComputedStyle(g).display !== "none",
+              text: g.innerText,
+              covered: !!(top && top.closest(".rotate-gate")),
+              footer: !!(legalHit && (legal === legalHit || legal.contains(legalHit))),
+            };
+          });
+          assert.equal(gate.shown, true, tag);
+          assert.match(gate.text, /Rotate to portrait/);
+          assert.equal(gate.covered, true, tag + " felt stays under the rotate card");
+          assert.equal(gate.footer, true, tag + " 18+ stays tappable");
+          continue;
+        }
         const layout = await page.evaluate(() => {
           function box(el) {
             const r = el.getBoundingClientRect();
