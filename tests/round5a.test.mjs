@@ -287,8 +287,8 @@ test("round 5a bubble and table surfaces", async (t) => {
       window.__tcRng = () => (seq.shift() - 0.5) / 6;
     });
     await table.locator("[data-act='throw']").click();
-    await table.waitForFunction(() => window.__vib && window.__vib.length > 0);
-    assert.deepEqual(await table.evaluate(() => window.__vib[0]), [12, 40, 12]);
+    await table.waitForFunction(() => window.__vib && window.__vib.some((v) => Array.isArray(v)));
+    assert.deepEqual(await table.evaluate(() => window.__vib.find((v) => Array.isArray(v))), [12, 40, 12]);
 
     async function openPeek(width, height) {
       await table.setViewportSize({ width, height });

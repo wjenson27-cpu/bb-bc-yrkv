@@ -122,6 +122,7 @@ test("568 landscape, 320 color-up, and the lingo take-down sheet", async (t) => 
     });
     await page.locator("[data-act='go-shooter']").click();
     await page.locator("[data-act='throw']").click();
+    await page.waitForFunction(() => /puck-on/.test((document.querySelector(".tc-hud .puck") || {}).getAttribute("src") || ""));
     await page.locator("[data-act='page'][data-page='1']").first().click();
     await page.evaluate(() => {
       const pass = document.querySelector("[data-kind='pass']");

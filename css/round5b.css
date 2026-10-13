@@ -1,0 +1,124 @@
+/* Round 5b: sheets, Your Dice, 44px Bubble taps, iPad columns. */
+
+.r5-host{position:relative;z-index:62}
+.r5-scrim{position:fixed;inset:0;z-index:64;background:rgba(4,8,14,.72);display:flex;align-items:flex-end;justify-content:center}
+.r5-sheet{width:min(560px,100%);max-height:min(86vh,760px);overflow:auto;background:#141A22;color:#F6EDD8;border-radius:18px 18px 0 0;padding:14px 14px 18px;border:1px solid rgba(201,169,97,.45)}
+.r5-sheet h1{margin:0;font:800 22px/1.2 Georgia,serif}
+.r5-sheet small{letter-spacing:.12em;font:700 10px/1 Archivo,sans-serif;color:#C9A961}
+.r5-x{position:absolute;right:12px;top:10px;width:44px;height:44px;border-radius:12px;border:1px solid rgba(201,169,97,.5);background:transparent;color:#fff;font-size:22px}
+.r5-head{position:relative;padding-right:48px}
+.r5-note{font:600 13px/1.4 Archivo,sans-serif;color:#E6E0D4}
+.r5-chart svg{width:100%;height:auto;background:#0c141c;border-radius:12px}
+.r5-chart text{fill:#C8D3E2;font:600 10px Archivo,sans-serif}
+.r5-row,.r5-btn,.r5-seg button,.r5-pairs button,.r5-keypad button,.yd-face{min-height:44px;min-width:44px}
+.r5-seg{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.r5-seg button,.r5-btn{border-radius:12px;border:1px solid rgba(226,188,98,.4);background:#1c2a3c;color:#F6EDD8;padding:8px 10px;font:800 12px/1.2 Archivo,sans-serif}
+.r5-seg button.on,.r5-btn.go{background:linear-gradient(#FFE7A0,#E2BC62);color:#2A1A00}
+.r5-row{display:flex;width:100%;text-align:left;gap:8px;align-items:center;margin:4px 0;background:#101820;color:#fff;border-radius:12px;border:1px solid rgba(255,255,255,.08);padding:8px}
+.r5-sum{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
+.r5-sum b{display:block;font:800 16px/1.2 Archivo,sans-serif}
+.r5-sum small{display:block}
+.r5-banner{display:flex;align-items:center;min-height:44px;padding:6px 10px;border-radius:12px;background:#062320;color:#6FE3D0;font:800 12px/1.2 Archivo,sans-serif;letter-spacing:.04em}
+.r5-yours{display:inline-flex;align-items:center;min-height:22px;padding:0 6px;border-radius:999px;background:#062320;color:#6FE3D0;font:800 10px/1 Archivo,sans-serif}
+.r5-pairs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.r5-keypad{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.r5-qstrip{display:flex;gap:6px;margin:6px 0}
+.r5-qstrip button{flex:1;min-height:44px;border-radius:12px;border:1px solid rgba(226,188,98,.45);background:#102033;color:#F6EDD8;font:800 11px/1.2 Archivo,sans-serif}
+.r5-lock{opacity:.55}
+
+/* Bubble chrome taps. The 320 zoom column and the landscape HUD row keep their fitted sizes. */
+@media (min-width: 360px) {
+  .app.play .chip-btn,
+  .app.play .press-btn,
+  .app.play .key,
+  .app.play .switch,
+  .app.play .btab,
+  .app.play .step,
+  .app.play .mode-switch button,
+  .app.play .setting button,
+  .app.play .seg button,
+  .app.play .trackseg button,
+  .app.play .undo button,
+  .app.play .cta,
+  .app.play .ghost,
+  .app.play .fairchip,
+  .app.play .numbox,
+  .app.play .spot {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (min-width: 360px) and (min-height: 700px) and (orientation: portrait) {
+  .app.play .hud-row1 { height: 44px; }
+  .app.play .homebtn,
+  .app.play .homebtn img,
+  .app.play .homebtn img.home-avatar {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+  .app.play .felt.bfx.lay-tall.mode-regular {
+    grid-template-rows: 16px 48px 104px var(--hit) 44px minmax(0, 1fr) 44px;
+  }
+  .app.play .felt.bfx.lay-tall.mode-crapless {
+    grid-template-rows: 16px 48px 156px var(--hit) 44px minmax(0, 1fr) 44px;
+  }
+  .app.play .felt.bfx .passline .spot,
+  .app.play .felt.bfx .fieldband .spot,
+  .app.play .felt.bfx .ats .spot,
+  .app.play .autoswipe,
+  .app.play [data-act="for"],
+  .app.play [data-act="toast-go"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .app.play .felt.bfx .passline .spot,
+  .app.play .felt.bfx .fieldband .spot,
+  .app.play .felt.bfx .ats .spot { height: auto; }
+}
+@media (min-width: 1024px), (min-width: 768px) and (min-height: 900px) {
+  .app.play button,
+  .app.play .spot,
+  .app.play .chip-btn,
+  .app.play .key,
+  .app.play .press-btn,
+  .app.play .homebtn,
+  .app.play .homebtn img,
+  .app.play .dot,
+  .app.play .edgepill,
+  .app.play .felt.bfx .passline .spot,
+  .app.play .felt.bfx .fieldband .spot,
+  .app.play .felt.bfx .ats .spot {
+    min-width: 48px;
+    min-height: 48px;
+  }
+  .app.play .felt.bfx.lay-tall.mode-regular {
+    grid-template-rows: 16px 52px 104px var(--hit) 48px minmax(0, 1fr) 48px;
+  }
+  .app.play .felt.bfx.lay-tall.mode-crapless {
+    grid-template-rows: 16px 52px 156px var(--hit) 48px minmax(0, 1fr) 48px;
+  }
+  .app.play .felt.bfx .passline .spot,
+  .app.play .felt.bfx .fieldband .spot,
+  .app.play .felt.bfx .ats .spot { height: auto; }
+  .app.play .felt {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+}
+@media (min-width: 1366px) {
+  .app.play .felt { grid-template-columns: 1fr 1fr 1fr; }
+  .tc-app {
+    grid-template-columns: 62% 38%;
+    grid-template-rows: auto minmax(0,1fr) auto auto;
+    grid-template-areas: "hud hud" "stage dock" "stage keys" "notice notice";
+  }
+  .tc-app .tc-dots { display: none; }
+}
+
+/* PSO dip stays off ROLL / SHOOT and the dock. */
+.pso-dip{
+  -webkit-mask-image: linear-gradient(#000 0, #000 calc(100% - 150px), transparent calc(100% - 88px));
+  mask-image: linear-gradient(#000 0, #000 calc(100% - 150px), transparent calc(100% - 88px));
+}

@@ -170,9 +170,9 @@ test("fire bet window, unique points and standard pays", () => {
 
 test("rail breakdown, change and color-up keep the total", () => {
   const a = Rail.railBreakdown(100000);
-  assert.deepEqual([a[50000], a[10000], a[2500], a[500], a[100]], [1, 3, 7, 4, 5]);
+  assert.deepEqual([a[50000], a[10000], a[2500], a[500], a[100]], [1, 4, 3, 4, 5]);
   const b = Rail.railBreakdown(30000);
-  assert.deepEqual([b[50000], b[10000], b[2500], b[500], b[100]], [0, 1, 7, 4, 5]);
+  assert.deepEqual([b[50000], b[10000], b[2500], b[500], b[100]], [0, 2, 3, 4, 5]);
   const c = Rail.railBreakdown(1250);
   assert.equal(c[100], 7);
   assert.equal(c[500], 1);

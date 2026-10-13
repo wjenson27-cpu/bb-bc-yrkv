@@ -37,6 +37,7 @@ test("table cubes match all 36 rolls and the set readout stays put", async (t) =
     page.on("pageerror", (err) => errors.push(String(err)));
     await page.goto("http://127.0.0.1:" + server.port + "/table/index.html", { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => window.__tcReady);
+    await page.evaluate(() => { window.__tcRollSpeed = "instant"; });
     await page.locator("[data-act='go-shooter']").click();
     await page.waitForSelector(".setview .pair .tc-cube");
     for (let a = 1; a <= 6; a++) {

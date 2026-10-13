@@ -22,11 +22,13 @@ export function onScreen(el) {
 const firstOnScreen = (list) => (list || []).flat().filter(Boolean).find(onScreen) || null;
 
 /** Pick the version (S4.4). net is the whole-roll result in cents, after Fire/Repeater/HWAD. */
-export function psoVariant({ hadBets, net, hand, record, fire }) {
+export function psoVariant({ hadBets, net, hand, record, fire, speed }) {
   const long = !!record || (hand && ((hand.points || 0) >= 3 || (hand.rolls || 0) >= 20));
   const side = !hadBets ? "nobets" : net > 0 ? "dark" : "light";
   const big = !!(fire && fire.pay > 0);                       // Fire 4/5 payout plays inside the PSO at the Big tier
-  const dur = big || long ? 2000 : 1200;                       // Base 1.2 s · Big 2.0 s (S4.3); PSO never uses Huge
+  let dur = big || long ? 2000 : 1200;                        // Base 1.2 s · Big 2.0 s (PM-10); PSO never uses Huge
+  if (speed === "fast") dur = big || long ? 1200 : 800;
+  if (speed === "instant") dur = big || long ? 800 : 600;
   return { side, long, record: !!record, big, dur };
 }
 

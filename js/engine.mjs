@@ -457,6 +457,10 @@ function clone(state) {
 
 function spotMin(kind, state, spot) {
   if (TR.isTable(state)) return TR.tableMinFor(kind, spot, TR.rulesOf(state));
+  if (kind === "place" && spot && (spot.number === 6 || spot.number === 8)) {
+    const min = state.bubbleMin || TABLE_MIN;
+    return Math.ceil(min / 600) * 600;
+  }
   if (kind === "repeater") return REPEATER_MIN;
   if (kind === "hop") return HOP_MIN;
   if (kind === "small" || kind === "tall" || kind === "all" || kind === "hardAllDay") return 100;
@@ -468,6 +472,13 @@ function spotMin(kind, state, spot) {
 
 function spotMax(kind, state, spot) {
   if (TR.isTable(state)) return TR.tableMaxFor(kind, spot, TR.rulesOf(state));
+  if (state.bubbleMax) {
+    if (kind === "passOdds" || kind === "dontPassOdds" || kind === "comeOdds" || kind === "dontComeOdds") return Infinity;
+    if (kind === "place" && spot && (spot.number === 6 || spot.number === 8)) return Math.floor(state.bubbleMax / 600) * 600;
+    if (kind === "hop" || kind === "repeater" || kind === "fire" || kind === "horn" || kind === "ce") {
+      /* side-bet limits stay the same in every tier */
+    } else return state.bubbleMax;
+  }
   if (kind === "repeater") return REPEATER_MAX;
   if (kind === "hop") return HOP_MAX;
   if (kind === "passOdds" || kind === "dontPassOdds" || kind === "comeOdds" || kind === "dontComeOdds") return Infinity;
@@ -1420,7 +1431,8 @@ function settleOneRoll(state, d1, d2, decisions) {
     else loseDown(state, decisions, "Hop " + key, stake, () => { b.hops[key] = 0; });
   });
   if (b.field) {
-    const fp = fieldProfit(b.field, total, rules);
+    const pays = state.fieldPays || rules;
+    const fp = fieldProfit(b.field, total, pays);
     if (fp > 0) payStay(state, decisions, "Field", b.field, fp, { edge: TR.fieldEdge(rules) });
     else loseDown(state, decisions, "Field", b.field, () => { b.field = 0; });
   }
@@ -1741,9 +1753,10 @@ export function settle(state, d1, d2, opts) {
   const decisions = [];
   const working = placeWorking(next);
 
-  next.stats.rolls += 1;
+  const entered = opts && opts.diceSource === "entered";
+  if (!entered) next.stats.rolls += 1;
   next.lastDice = rollCaption(d1, d2);
-  next.lastDice.source = getRngSource();
+  next.lastDice.source = entered ? "entered" : getRngSource();
   settleOneRoll(next, d1, d2, decisions);
   settleHardways(next, d1, d2, decisions);
   settleBonus(next, d1, d2, decisions);
@@ -1761,7 +1774,7 @@ export function settle(state, d1, d2, opts) {
       push: (bet, result, stake, profit, extra) => pushDecision(decisions, bet, result, stake, profit, extra),
     });
   }
-  if (!fast) {
+  if (!fast && !entered) {
     next.history.unshift({ d1, d2, total, hard, result: line.result });
     if (next.history.length > 20) next.history.length = 20;
   }

@@ -381,7 +381,7 @@
 | PM-07 | Dealer Billy call (number word from the readout) + Bubbles Billie cheer; strings per tier exactly | S4.3, A2.4 voice rule | String fixtures; Billie lines contain no bet advice | REUSE Billie / Billy art |
 | PM-08 | Sound per tier via `audio.win()` + runs; Settings › Sound off → silent | S4.3 | Audio calls counted per tier; muted → 0 nodes started | REUSE `js/audio.mjs` `win` |
 | PM-09 | Haptics per tier; follow Settings › Haptics | S4.3 | `vibrate` patterns exact; haptics off → not called | REUSE `haptic` |
-| PM-10 | **≤ 2.5 s total** (Base 1.6, Big 2.0, Huge 2.5, stinger inside), self-clears | S4.3 | Timer fixtures; overlay gone by 2.5 s + 1 frame | REUSE `celeTimer` |
+| PM-10 | **≤ 2.5 s total** (Base 1.2, Big 2.0, Huge 2.5, stinger inside), self-clears | S4.3 | Timer fixtures; overlay gone by 2.5 s + 1 frame | REUSE `celeTimer` |
 | PM-11 | **Tap to skip;** non-modal overlay, taps pass through to the board | S4.3 | Tap stamp → gone; tap a spot under the overlay → bet placed | NEW |
 | PM-12 | **Never blocks or delays the next roll; clears on roll start (R10-2)** | S4.3, QA run 10/11 | ROLL / swipe / keyboard / auto-roll at 100 ms into a Huge: roll starts that frame, overlay removed (`clearWin()` at the top of `doRoll`); auto-roll interval unchanged ± 50 ms | REUSE `clearWin` |
 | PM-13 | Same-roll Big Win merged (one overlay with the Big Win amount) | S4.3, Open question 6 | Point made + `isBigWin` → 1 overlay; `.winlayer` count = 1 | REUSE+ADAPT `showBigWin`, `isBigWin` |
