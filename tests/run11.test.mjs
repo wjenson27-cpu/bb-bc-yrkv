@@ -4,6 +4,7 @@
  * FAIR on screen without dropping the 4th Blazing segment.
  */
 import test from "node:test";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -29,12 +30,6 @@ async function loadPlaywright() {
   }
 }
 
-function serve(port) {
-  return spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
-    cwd: root,
-    stdio: "ignore",
-  });
-}
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -55,9 +50,8 @@ test("strips, landscape coach, heat sheet, and phone HUD", async (t) => {
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8818;
-  const server = serve(port);
-  await wait(400);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,
@@ -135,6 +129,33 @@ test("strips, landscape coach, heat sheet, and phone HUD", async (t) => {
     for (const size of [{ w: 844, h: 390 }, { w: 932, h: 430 }]) {
       await page.setViewportSize({ width: size.w, height: size.h });
       await boot();
+      if (size.h < 400) {
+        const gate = await page.evaluate(() => {
+          const g = document.querySelector(".rotate-gate");
+          const roll = document.querySelector("button[data-act='roll']");
+          const box = roll.getBoundingClientRect();
+          const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          const hud = document.querySelector(".hud");
+          const hr = hud.getBoundingClientRect();
+          const hudHit = document.elementFromPoint(hr.left + 20, hr.top + hr.height / 2);
+          const legal = document.querySelector(".legal");
+          const lr = legal.getBoundingClientRect();
+          const legalHit = document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2);
+          return {
+            shown: getComputedStyle(g).display !== "none",
+            text: g.innerText,
+            covered: !!(top && top.closest(".rotate-gate")),
+            hud: !!(hudHit && (hud === hudHit || hud.contains(hudHit))),
+            legal: !!(legalHit && (legal === legalHit || legal.contains(legalHit))),
+          };
+        });
+        assert.equal(gate.shown, true, size.w + " rotate card");
+        assert.match(gate.text, /Rotate to portrait/);
+        assert.equal(gate.covered, true, size.w + " ROLL stays under the card");
+        assert.equal(gate.hud, true, size.w + " HUD stays up");
+        assert.equal(gate.legal, true, size.w + " footer stays up");
+        continue;
+      }
       await page.locator("button[data-act='billy']").click();
       await page.waitForSelector(".coach");
       const hit = await page.evaluate(() => {
@@ -338,7 +359,7 @@ test("strips, landscape coach, heat sheet, and phone HUD", async (t) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await boot({ tutorOn: false });
     await page.locator("button.dot[aria-label='Side bets']").click();
-    await page.locator("button[aria-label='Hop 2-2']").click();
+    await page.locator("button[aria-label^='Hop 2-2']").click();
     await forceRoll(2, 2);
     await page.waitForSelector(".winlayer");
     const hard = await page.evaluate(() => {
@@ -369,9 +390,9 @@ test("strips, landscape coach, heat sheet, and phone HUD", async (t) => {
     assert.equal(await page.locator(".winlayer").count(), 0);
 
     await boot();
-    await page.locator("button[aria-label='Pass Line']").click();
+    await page.locator("button[aria-label^='Pass Line']").click();
     await forceRoll(2, 4);
-    await page.locator("button[aria-label='Place 8']").click();
+    await page.locator("button[aria-label^='Place 8']").click();
     await forceRoll(4, 4);
     await page.locator("button[data-act='press']").click();
     await page.waitForSelector(".coach .kicker");

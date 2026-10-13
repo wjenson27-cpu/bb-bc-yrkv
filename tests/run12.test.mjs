@@ -3,6 +3,7 @@
  * from roll 1, and the 320px play column scales onto the screen.
  */
 import test from "node:test";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -26,12 +27,6 @@ async function loadPlaywright() {
   }
 }
 
-function serve(port) {
-  return spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
-    cwd: root,
-    stdio: "ignore",
-  });
-}
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -64,9 +59,8 @@ test("store polish: marquees, FAIR, dome pips, and the 320 play column", async (
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8828;
-  const server = serve(port);
-  await wait(400);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,
@@ -118,7 +112,7 @@ test("store polish: marquees, FAIR, dome pips, and the 320 play column", async (
 
     async function showMarquee(id) {
       await page.evaluate((badge) => window.__bbShowMarquee(badge), id);
-      await page.waitForSelector(".badgetoast.marquee[data-id='" + id + "']");
+      await page.waitForSelector(".badgetoast.marquee[data-id='" + id + "'] .facts");
     }
 
     const titles = [
@@ -333,7 +327,7 @@ test("store polish: marquees, FAIR, dome pips, and the 320 play column", async (
     await page.setViewportSize({ width: 390, height: 844 });
     await boot({ tutorOn: false });
     await page.locator("button.dot[aria-label='Side bets']").click();
-    await page.locator("button[aria-label='Hop 2-2']").click();
+    await page.locator("button[aria-label^='Hop 2-2']").click();
     await forceRoll(2, 2);
     await page.waitForSelector(".winlayer");
     await page.evaluate(() => window.__bbShowMarquee("spin_the_block"));
@@ -347,7 +341,7 @@ test("store polish: marquees, FAIR, dome pips, and the 320 play column", async (
     await page.evaluate(() => window.__bbQueueMarquee("spin_the_block"));
     await wait(500);
     assert.equal(await page.locator(".badgetoast.marquee").count(), 0, "queued marquee waits for the scrim");
-    await page.locator("button[data-act='collect']").click();
+    await page.evaluate(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })));
     await page.waitForSelector(".badgetoast.marquee");
     assert.equal(await page.locator(".winlayer").count(), 0);
     assert.match(await page.locator(".badgetoast.marquee b").innerText(), /Spin the Block/);

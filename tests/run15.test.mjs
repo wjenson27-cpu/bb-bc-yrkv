@@ -3,6 +3,7 @@
  * the dome speech gap, the seven-out toast, and the HUD avatar.
  */
 import test from "node:test";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -75,9 +76,6 @@ test("a unit note and the first hop lesson share the toast with the warning", ()
   assert.equal(E.tutorToastLine({ kind: "ce" }, "regular", false, "C&E uses $2 units. $1 stayed in practice chips.", false), "C&E uses $2 units. $1 stayed in practice chips.");
 });
 
-function serve(port) {
-  return spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], { cwd: root, stdio: "ignore" });
-}
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -126,9 +124,8 @@ test("board, warnings, speech, seven-out toast, and the HUD avatar", async (t) =
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8871;
-  const server = serve(port);
-  await wait(300);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,
@@ -167,6 +164,28 @@ test("board, warnings, speech, seven-out toast, and the HUD avatar", async (t) =
       for (const [w, h] of sizes) {
         await boot(w, h, heavy(mode), mode);
         const tag = mode + " " + w + "x" + h;
+        if (w > h && h < 400) {
+          const gate = await page.evaluate(() => {
+            const g = document.querySelector(".rotate-gate");
+            const spot = document.querySelector(".felt button.spot");
+            const r = spot.getBoundingClientRect();
+            const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            const legal = document.querySelector(".legal");
+            const lr = legal.getBoundingClientRect();
+            const legalHit = document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2);
+            return {
+              shown: getComputedStyle(g).display !== "none",
+              text: g.innerText,
+              covered: !!(top && top.closest(".rotate-gate")),
+              footer: !!(legalHit && (legal === legalHit || legal.contains(legalHit))),
+            };
+          });
+          assert.equal(gate.shown, true, tag);
+          assert.match(gate.text, /Rotate to portrait/);
+          assert.equal(gate.covered, true, tag + " felt stays under the rotate card");
+          assert.equal(gate.footer, true, tag + " 18+ stays tappable");
+          continue;
+        }
         const layout = await page.evaluate(() => {
           function box(el) {
             const r = el.getBoundingClientRect();
@@ -342,15 +361,15 @@ test("board, warnings, speech, seven-out toast, and the HUD avatar", async (t) =
         window.__bbRng = () => (seq[i++] - 0.5) / 6;
       });
       await page.locator("button[data-act='roll']").click();
-      await page.waitForSelector(".toast.seven .readcall", { timeout: 5000 });
+      await page.waitForSelector(".pso-plate .readcall", { timeout: 5000 });
       await page.waitForFunction(() => {
-        const toast = document.querySelector(".toast.seven");
+        const toast = document.querySelector(".pso-plate");
         if (!toast) return false;
-        const settled = getComputedStyle(toast).transform === "none";
-        return settled && toast.getBoundingClientRect().top >= -1;
+        const op = Number(getComputedStyle(toast).opacity);
+        return op > 0.4 && toast.getBoundingClientRect().top >= -1;
       });
       const toastFit = await page.evaluate(() => {
-        const toast = document.querySelector(".toast.seven");
+        const toast = document.querySelector(".pso-plate");
         const call = toast.querySelector(".readcall");
         const glass = document.querySelector(".dome-screen .machine");
         function rect(el) { const r = el.getBoundingClientRect(); return r; }
@@ -384,7 +403,7 @@ test("board, warnings, speech, seven-out toast, and the HUD avatar", async (t) =
           glass: Math.round(gr.top) + "-" + Math.round(gr.bottom),
         };
       });
-      assert.equal(toastFit.text, "SEVEN OUT", w + "x" + h);
+      assert.ok(String(toastFit.text || "").indexOf("SEVEN OUT") === 0, w + "x" + h + " " + toastFit.text);
       assert.equal(toastFit.clip, "", w + "x" + h + " " + toastFit.clip);
       assert.ok(toastFit.toastTop >= -1, w + "x" + h + " toast starts at " + toastFit.toast);
       assert.equal(toastFit.overlap, false, w + "x" + h + " toast " + toastFit.toast + " glass " + toastFit.glass);

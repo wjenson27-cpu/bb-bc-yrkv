@@ -51,9 +51,13 @@
    on long calls (HARD EIGHT is the widest). Nudge him left and shrink the
    figure so the line's left edge stays clear. Short phones already scale
    the cast to 0.55. */
-@media (min-width: 360px) and (max-width: 390px) and (min-height: 721px) and (orientation: portrait) {
-  .app.play .dome-cast { left: -8px; }
-  .app.play .dome-billy { width: 58px; }
+@media (min-width: 360px) and (max-width: 390px) and (min-height: 780px) and (orientation: portrait) {
+  .app.play .dome-cast { left: -18px; }
+  .app.play .dome-billy { width: 52px; }
+}
+@media (min-width: 391px) and (max-width: 430px) and (min-height: 780px) and (orientation: portrait) {
+  .app.play .dome-cast { left: -42px; }
+  .app.play .dome-billy { width: 46px; }
 }
 
 /* A $1,000 prop pill was sliding 3px out of the Horn cell. Keep it on the chip, inside the spot. */

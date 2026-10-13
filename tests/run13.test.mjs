@@ -3,6 +3,7 @@
  * paying number, and the HUD avatar is a square Dealer Billy crop.
  */
 import test from "node:test";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -32,12 +33,6 @@ async function loadPlaywright() {
   }
 }
 
-function serve(port) {
-  return spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
-    cwd: root,
-    stdio: "ignore",
-  });
-}
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -70,9 +65,8 @@ test("short screens keep the dice, the Field, and the avatar", async (t) => {
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8844;
-  const server = serve(port);
-  await wait(300);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,
@@ -228,7 +222,9 @@ test("short screens keep the dice, the Field, and the avatar", async (t) => {
         assert.ok(avatar.bh >= avatar.rowH - 8, tag + " avatar sits with the HUD");
         assert.ok(avatar.top >= avatar.rowTop - 1 && avatar.bottom <= avatar.rowBottom + 1, tag + " avatar stays in the row");
       }
-      await page.locator("button.dot[aria-label='Dice']").click();
+      const diceDot = page.locator("button.dot[aria-label='Dice']");
+      if (w > h && h < 400) await diceDot.evaluate((el) => el.click());
+      else await diceDot.click();
       await page.waitForSelector("#dice-row .cube");
       await page.waitForTimeout(200);
       const dice = await readDice();

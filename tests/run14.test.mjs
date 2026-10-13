@@ -3,6 +3,7 @@
  * new top-left brand, and Field rings plus tutor warnings follow rev 13d.
  */
 import test from "node:test";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -50,9 +51,6 @@ test("tutor long shot starts under 1 in 6 and high edge at 9%", () => {
   assert.match(E.tutorEdgeNote({ kind: "anyCraps" }, "regular", true), /Wins 4 of 36/);
 });
 
-function serve(port) {
-  return spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], { cwd: root, stdio: "ignore" });
-}
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -75,9 +73,8 @@ test("dome readouts, lockup, Field rings, and FAIR fit", async (t) => {
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8854;
-  const server = serve(port);
-  await wait(300);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,
@@ -183,7 +180,7 @@ test("dome readouts, lockup, Field rings, and FAIR fit", async (t) => {
           };
         });
         assert.equal(field.pay, "2 AND 12 PAY DOUBLE", tag);
-        assert.equal(field.aria, "Field: 2, 3, 4, 9, 10, 11, 12; 2 and 12 pay 2 to 1", tag);
+        assert.equal(field.aria, "Field: 2, 3, 4, 9, 10, 11, 12; 2 and 12 pay 2 to 1. Long-press for lingo.", tag);
         assert.deepEqual(field.rings.map((n) => n.t), ["2", "12"], tag);
         field.rings.forEach((n) => {
           assert.ok(n.visual >= 8, tag + " numeral " + n.t + " " + n.visual.toFixed(1) + "px");
@@ -200,7 +197,9 @@ test("dome readouts, lockup, Field rings, and FAIR fit", async (t) => {
           assert.match(field.home, /hud-billy-A-36@1x\.png$/, tag);
         }
       }
-      await page.locator("button.dot[aria-label='Dice']").click();
+      const diceDot = page.locator("button.dot[aria-label='Dice']");
+      if (w > h && h < 400) await diceDot.evaluate((el) => el.click());
+      else await diceDot.click();
       await page.waitForSelector("#dice-row .cube");
       await page.waitForTimeout(250);
       const dome = await readDome();

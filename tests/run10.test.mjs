@@ -3,6 +3,7 @@
  * phone roll strips keep their pip tiles.
  */
 import test from "node:test";
+import { ensureStaticServer } from "./listen.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -19,12 +20,6 @@ async function loadPlaywright() {
   }
 }
 
-function serve(port) {
-  return spawn("python3", ["-m", "http.server", String(port), "--bind", "127.0.0.1"], {
-    cwd: root,
-    stdio: "ignore",
-  });
-}
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,9 +31,8 @@ test("coach clicks, one mascot, and phone pip strips", async (t) => {
     t.skip("playwright-core or system Chrome is not available");
     return;
   }
-  const port = 8808;
-  const server = serve(port);
-  await wait(400);
+  const server = await ensureStaticServer(root);
+  const port = server.port;
   const browser = await pw.chromium.launch({
     executablePath: CHROME,
     headless: true,
@@ -109,9 +103,9 @@ test("coach clicks, one mascot, and phone pip strips", async (t) => {
     }
 
     await boot();
-    await page.locator("button[aria-label='Pass Line']").click();
+    await page.locator("button[aria-label^='Pass Line']").click();
     await forceRoll(2, 4);
-    await page.locator("button[aria-label='Place 8']").click();
+    await page.locator("button[aria-label^='Place 8']").click();
     await forceRoll(4, 4);
     await page.locator("button[data-act='press']").click();
     await page.waitForSelector(".coach");
@@ -141,12 +135,12 @@ test("coach clicks, one mascot, and phone pip strips", async (t) => {
     await page.locator("button.homebtn").click();
     await page.locator("button[data-act='tour']").click();
     await page.locator(".coach button[data-act='close']").click();
-    await page.locator("button[aria-label='Pass Line']").click();
+    await page.locator("button[aria-label^='Pass Line']").click();
     await forceRoll(4, 2);
     if (await page.locator(".coach").count()) {
       await page.locator(".coach button[data-act='close']").click();
     }
-    await page.locator("button[aria-label='Place 6']").click();
+    await page.locator("button[aria-label^='Place 6']").click();
     await forceRoll(3, 3);
     await page.waitForSelector(".coach");
     await page.waitForSelector(".toast-billie.board-cheer", { state: "attached" });
@@ -155,7 +149,7 @@ test("coach clicks, one mascot, and phone pip strips", async (t) => {
     assert.equal(cheerHidden, "hidden");
 
     await boot({ tutorOn: false });
-    await page.locator("button[aria-label='Pass Line']").click();
+    await page.locator("button[aria-label^='Pass Line']").click();
     await forceRoll(3, 4);
     const natural = await page.evaluate(() => {
       const tiles = [...document.querySelectorAll(".rolltile")];
@@ -166,13 +160,13 @@ test("coach clicks, one mascot, and phone pip strips", async (t) => {
     await page.locator("button.dot[aria-label='Dice']").click();
     await page.waitForSelector(".dome-billy");
     await forceRoll(3, 4);
-    await page.waitForSelector(".toast-billy");
+    await page.waitForSelector(".pso-plate .billie");
     assert.equal(await mascotCount(), 1, "seven-out on the dome is one mascot");
-    const domeHidden = await page.evaluate(() => getComputedStyle(document.querySelector(".dome-cast")).visibility);
+    const domeHidden = await page.evaluate(() => getComputedStyle(document.querySelector(".dome-billy")).visibility);
     assert.equal(domeHidden, "hidden");
-    const sevenCopy = await page.locator(".toast.seven").innerText();
+    const sevenCopy = await page.locator(".pso-plate").innerText();
     assert.match(sevenCopy, /SEVEN OUT/);
-    assert.ok(await page.locator(".toast.seven .dieface").count() >= 2, "seven-out toast shows pips");
+    assert.ok(await page.locator(".pso-plate .rd img").count() >= 2, "seven-out plate shows pips");
     const labels = await page.evaluate(() => [...document.querySelectorAll(".rolltile")].map((el) => el.getAttribute("aria-label")));
     assert.ok(labels.some((label) => /, seven out$/.test(label)), "seven-out tile says seven out");
     assert.ok(labels.some((label) => label === "three and four, seven"), "come-out 7 tile does not say seven out");

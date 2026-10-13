@@ -1,5 +1,5 @@
 /**
- * 30 practice badges. Reads a settled roll and never changes odds,
+ * 32 practice badges. Reads a settled roll and never changes odds,
  * payouts, the timer, or the dice. Storage lives in the leaderboard
  * store under `badges` and `progress` (key bb-bubble-badges-v1).
  */
@@ -35,6 +35,8 @@ export const BADGES = [
   { id: "win_goal_banked", n: 28, name: "Banked the Goal", desc: "Hit your win goal and ended the session there.", tier: "silver", hidden: false, mode: "both", section: "Limits", rule: "A win goal is set before the first roll. The win-goal prompt fires after 20 bet-rolls, and the session ends there or before the next roll. A loss limit is not required. Keep playing past the goal does not count, even if you end later. If both limits were hit, Kept My Limit counts instead.", odds: "" },
   { id: "loss_limit_kept", n: 29, name: "Kept My Limit", desc: "Reached your loss limit and stopped, just like you planned.", tier: "silver", hidden: false, mode: "both", section: "Limits", rule: "The loss-limit prompt fires after 20 bet-rolls, and the session ends there, including End session before the next roll. If both limits were hit, this one counts.", odds: "" },
   { id: "five_sessions_within_limits", n: 30, name: "Five Within Limits", desc: "Five sessions that stayed inside your limits.", tier: "gold", hidden: false, mode: "both", section: "Limits", rule: "Five qualifying sessions with a loss limit and no roll after that limit.", odds: "" },
+  { id: "table_manners", n: 31, name: "Table Manners", desc: "Read every Dealer Billy manners card.", tier: "bronze", hidden: false, mode: "both", section: "Practice", rule: "View every etiquette card and tap Got it on the last one. A bet never unlocks it.", odds: "" },
+  { id: "talk_the_talk", n: 32, name: "Talk the Talk", desc: "Learned 25 craps terms from Dealer Billy.", tier: "silver", hidden: false, mode: "both", section: "Practice", rule: "Knowing the lingo makes a real table friendlier. It doesn't change the dice.", odds: "" },
 ];
 
 const BY_ID = Object.create(null);
@@ -264,6 +266,10 @@ export function noteAction(store, action) {
     p.pressedSinceRoll = false;
   } else if (type === "tour") {
     unlock(next, p, "tutor_tour_complete", c);
+  } else if (type === "etiquette") {
+    p.etiquetteSeen = addSet(p.etiquetteSeen, action.id);
+    const need = action.total || 15;
+    if (action.complete && (p.etiquetteSeen || []).length >= need) unlock(next, p, "table_manners", c);
   } else if (type === "fair-scope") {
     p.fairScopes = addSet(p.fairScopes, action.scope);
     if (["session", "last", "all"].every((s) => p.fairScopes.indexOf(s) >= 0) && action.sawTest) {
@@ -282,6 +288,9 @@ export function noteAction(store, action) {
       if (daily.streak >= 3) unlock(next, p, "daily_practice_3", c);
     }
     return { store: { badges: next.badges, progress: p, daily }, unlocked: c._fresh.slice() };
+  } else if (type === "lingo") {
+    if (action.id) p.lingoSeen = addSet(p.lingoSeen, action.id);
+    if ((p.lingoSeen || []).length >= 25) unlock(next, p, "talk_the_talk", c);
   } else if (type === "reset-bankroll") {
     p.steady = { start: action.total || 0, broken: false, gain: 0 };
     p.lowEdgeHands = 0;
@@ -353,5 +362,9 @@ export function progressOf(progress, id) {
   }
   if (id === "fair_dice_explorer") return { have: (p.fairScopes || []).length, need: 3, text: (p.fairScopes || []).length + " / 3" };
   if (id === "five_sessions_within_limits") return { have: 0, need: 5, text: "" };
+  if (id === "talk_the_talk") {
+    const have = (p.lingoSeen || []).length;
+    return { have: Math.min(25, have), need: 25, text: have + " / 25" };
+  }
   return null;
 }

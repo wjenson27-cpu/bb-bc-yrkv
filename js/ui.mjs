@@ -6,9 +6,19 @@ import * as L from "./leaderboard.mjs";
 import * as B from "./badges.mjs";
 import * as Sess from "./session.mjs";
 import { resolveSwipe } from "./swipe.mjs";
+import { chipSrc as sharedChipSrc, chipPng as sharedChipPng, breakChips as sharedBreak } from "./chips.mjs";
+import { TEST_BUILD } from "./build-flags.mjs";
+import { celebratePoint, cancelCelebration } from "./point-celebration.mjs";
+import { cancelMoments, showPSO } from "./pso.mjs";
+import { celebrationCopy, celebrationTier } from "./point-tier.mjs";
+import * as Lg from "bb-lingo";
+import * as LC from "./lingo-ctrl.mjs";
+import { callButton, learnRowHTML } from "./lingo-view.mjs";
+import { rotateGateHTML } from "./rotate.mjs";
+import { RULE0_LINE, NO_ROLL } from "./table-rules.mjs";
+import { deckFor, nudgeFor, nextSessionTip, ETIQUETTE, ETIQUETTE_FOOTER } from "./etiquette.mjs";
 
 const STORE = "bb-bubble-craps-v1";
-const CHIP_FILE = { 100: "1", 500: "5", 2500: "25", 10000: "100", 50000: "500" };
 const FACE_ROT = {
   1: "rotateX(0deg) rotateY(0deg)",
   2: "rotateX(0deg) rotateY(-90deg)",
@@ -39,9 +49,31 @@ const settings = {
   autoPress: "off",
   autoPressMax: 3,
   seenBlaze: {},
+  lingoLinks: true,
 };
 let game = E.createGame();
 let view = "home";
+let lingo = LC.freshLingo();
+let lastRoll = null;
+let swallowLingo = false;
+let lingoOrigin = null;
+function betSpot(node) {
+  const hold = node && node.closest ? node.closest("[data-act='bet']") : null;
+  if (!hold || hold.closest("[data-act='roll'], [data-act='press'], [data-act='power']")) return null;
+  return hold;
+}
+function openLingoFrom(el) {
+  lingoOrigin = LC.originSelector(el);
+  lingo.sheet = LC.spotFromEl(el);
+  lingo.confirm = false;
+  lingo.why = false;
+  lingo.peekId = null;
+  swallowLingo = true;
+  paint();
+  const term = Lg.termForSpot(lingo.sheet, "bubble");
+  if (term) watchLingo(term.id);
+  LC.focusSheet();
+}
 let page = 1;
 let betTab = "place";
 let learnFilter = "all";
@@ -131,25 +163,16 @@ function haptic(pattern) {
 function motionOff() { return settings.reduced || reducedMQ.matches; }
 
 function chipSrc(cents, mark) {
-  return "assets/chips/chip-" + (CHIP_FILE[cents] || "5") + (mark ? "-value-mark" : "-value") + ".svg";
+  return sharedChipSrc(cents, mark, "assets/chips/");
 }
 function chipPng(cents) {
-  return "assets/chips/chip-" + (CHIP_FILE[cents] || "5") + "-value-mark@64.png";
+  return sharedChipPng(cents, "assets/chips/");
 }
 function chipHTML(cents) {
   return '<img alt="" width="36" height="36" src="' + chipPng(cents) + '">';
 }
 function breakChips(cents, cap) {
-  const denoms = [50000, 10000, 2500, 500, 100];
-  const chips = [];
-  let left = Math.max(0, cents || 0);
-  for (const d of denoms) {
-    const n = Math.min(cap, Math.floor(left / d));
-    for (let i = 0; i < n && chips.length < cap; i++) chips.push(d);
-    left -= Math.floor(left / d) * d;
-    if (chips.length >= cap) break;
-  }
-  return chips;
+  return sharedBreak(cents, cap);
 }
 function chipStack(cents) {
   if (!cents) return "";
@@ -198,7 +221,10 @@ function diceReadout(d1, d2, size, opts) {
   if (opts.tag !== false) extra += "<b class='readbadge" + (total === 7 ? " seven" : "") + "'>" + total + "</b>";
   const showHard = opts.hardTag && hard && (total === 4 || total === 6 || total === 8 || total === 10);
   if (showHard) extra += "<b class='hardtag'>Hard " + total + "</b>";
-  else if (opts.call) extra += "<span class='readcall'>" + esc(opts.call) + "</span>";
+  else if (opts.call) {
+    const term = opts.roll && settings.lingoLinks !== false ? Lg.callTerm(opts.roll, "bubble") : null;
+    extra += term ? callButton(opts.call, term, term.srLabel) : "<span class='readcall'>" + esc(opts.call) + "</span>";
+  }
   return "<span class='readout s" + px + "' style='--die:" + px + "px' role='img' aria-label='" + esc(label) + "'>" +
     dieFace(d1, px) + dieFace(d2, px) + extra + "</span>";
 }
@@ -289,9 +315,40 @@ function mount() {
     <main class="panel hidden" id="panel"></main>
     <nav class="tabs" id="tabs" aria-label="Sections"></nav>
     <p class="legal">18+ · Practice only · No real money</p>
+    ${rotateGateHTML()}
     <div id="overlay"></div>
   `;
   app.addEventListener("click", onClick);
+  app.addEventListener("contextmenu", (e) => {
+    const hold = betSpot(e.target);
+    if (!hold) return;
+    e.preventDefault();
+    openLingoFrom(hold);
+  });
+  app.addEventListener("input", (e) => {
+    if (!e.target || !e.target.dataset || e.target.dataset.act !== "lingo-q") return;
+    lingo.query = e.target.value;
+    const pos = e.target.selectionStart;
+    paint();
+    const again = document.querySelector("[data-act='lingo-q']");
+    if (again) { again.focus(); if (pos != null) again.setSelectionRange(pos, pos); }
+  });
+  addEventListener("keydown", (e) => {
+    if (LC.lingoKey(e) && !e.target.closest("input, textarea")) {
+      const hold = betSpot(document.activeElement);
+      if (hold) { e.preventDefault(); openLingoFrom(hold); return; }
+    }
+    if (e.key !== "Escape") return;
+    if (!lingo.sheet && !lingo.peekId && view !== "lingo") return;
+    const back = lingoOrigin;
+    lingo.sheet = null;
+    lingo.peekId = null;
+    lingoOrigin = null;
+    if (view === "lingo") view = "learn";
+    watchLingo("");
+    paint();
+    LC.focusOrigin(back);
+  });
   const diceHost = document.createElement("div");
   diceHost.id = "dice-row";
   diceHost.className = "dice-live";
@@ -334,6 +391,23 @@ function mount() {
   stage.addEventListener("pointerdown", (e) => {
     swallowClick = false;
     if (e.button != null && e.button !== 0) return;
+    const hold = e.target.closest("[data-act='bet']");
+    if (hold && !e.target.closest("[data-act='roll'], [data-act='press'], [data-act='power']")) {
+      const x0 = e.clientX;
+      const y0 = e.clientY;
+      let moved = false;
+      const timer = setTimeout(() => {
+        if (moved) return;
+        openLingoFrom(hold);
+      }, 500);
+      const move = (ev) => {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 12) { moved = true; clearTimeout(timer); }
+      };
+      const stop = () => { clearTimeout(timer); hold.removeEventListener("pointermove", move); };
+      hold.addEventListener("pointermove", move);
+      hold.addEventListener("pointerup", stop, { once: true });
+      hold.addEventListener("pointercancel", stop, { once: true });
+    }
     tracking = true;
     captured = false;
     fromButton = !!e.target.closest("button, a, input, [data-act]");
@@ -426,7 +500,50 @@ function snap() {
   pager.style.transform = target;
 }
 
+function noteLingo(id) {
+  const noted = B.noteAction(boardData, { type: "lingo", id, mode: game.mode, now: Date.now() });
+  boardData.badges = noted.store.badges;
+  boardData.progress = noted.store.progress;
+  if (noted.store.daily) boardData.daily = noted.store.daily;
+  saveBoard();
+}
+function watchLingo(id) {
+  LC.armDwell(lingo, id, noteLingo);
+}
+function showOnBoard(id) {
+  const term = Lg.termById(id, "bubble");
+  const target = LC.boardTarget(term, "bubble");
+  lingo.sheet = null;
+  lingo.peekId = null;
+  view = "play";
+  if (!target.ok) { toast(target.reason); paint(); return; }
+  const sel = LC.spotSelector(target.link, "bubble");
+  if (target.link !== "ui:rail") page = 1;
+  paint();
+  snap();
+  const el = document.querySelector(sel);
+  if (el) {
+    el.classList.add("lingo-hl");
+    if (motionOff()) setTimeout(() => el.classList.remove("lingo-hl"), 1500);
+  } else toast(target.reason || "That spot isn't on this board.");
+}
+function mountLingo() {
+  if (view !== "play") return;
+  const stage = document.getElementById("stage");
+  if (!stage) return;
+  let host = document.getElementById("lingo-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "lingo-host";
+    stage.appendChild(host);
+  }
+  host.innerHTML = LC.peekBlock("bubble", lingo, "assets/", game.mode) + LC.sheetBlock("bubble", lingo, game, { asset: "assets/", rolling, money, tutorOn: settings.tutorOn, mode: game.mode });
+}
 function onClick(e) {
+  if (swallowLingo) {
+    swallowLingo = false;
+    if (e.target.closest("[data-act='bet']")) return;
+  }
   if (swallowClick) { swallowClick = false; return; }
   if (betsOpen && e.target.closest(".felt") && !e.target.closest(".betpanel")) {
     betsOpen = false;
@@ -438,6 +555,49 @@ function onClick(e) {
   A.unlock();
   A.setMuted(!settings.sound);
   const act = t.dataset.act;
+  if (act === "hops") return;
+  if (act === "lingo" || act === "lingo-open" || act === "lingo-row") {
+    if (t.dataset.id) lingo.cardId = t.dataset.id;
+    lingo.peekId = null;
+    lingo.sheet = null;
+    setView("lingo");
+    if (lingo.cardId) watchLingo(lingo.cardId);
+    return;
+  }
+  if (act === "lingo-close") { lingo.cardId = null; watchLingo(""); setView("learn"); return; }
+  if (act === "lingo-cat") { lingo.category = t.dataset.cat || "all"; paint(); return; }
+  if (act === "lingo-peek") {
+    lingo.peekId = t.dataset.id;
+    LC.rememberCall(lingo, t.dataset.id);
+    paint();
+    watchLingo(t.dataset.id);
+    return;
+  }
+  if (act === "peek-close") { lingo.peekId = null; watchLingo(""); paint(); return; }
+  if (act === "sheet-close") {
+    if (e.target.closest(".lingo-sheet") && !e.target.closest(".lingo-grab, .lingo-x")) return;
+    const back = lingoOrigin;
+    lingo.sheet = null;
+    lingo.confirm = false;
+    lingoOrigin = null;
+    watchLingo("");
+    paint();
+    LC.focusOrigin(back);
+    return;
+  }
+  if (act === "lingo-why") { lingo.why = !lingo.why; paint(); return; }
+  if (act === "lingo-show") { showOnBoard(t.dataset.id); return; }
+  if (act === "lingo-take") {
+    if (!lingo.sheet) return;
+    const probe = E.removeBet(game, lingo.sheet);
+    if (probe.needsConfirm && !t.dataset.confirm) { lingo.confirm = true; paint(); return; }
+    const res = E.removeBet(game, lingo.sheet, null, { confirm: true });
+    if (res.ok) { game = res.state; lingo.sheet = null; lingo.confirm = false; A.chip(); }
+    else toast(res.error || "");
+    save();
+    paint();
+    return;
+  }
   if (act === "view") {
     if (t.dataset.view === "play" && view === "fair") page = 2;
     setView(t.dataset.view);
@@ -503,8 +663,6 @@ function onClick(e) {
     return;
   }
   if (act === "bets") { betsOpen = !betsOpen; paint(); return; }
-  if (act === "collect") { clearWin(); return; }
-  if (act === "add-win") { addWinningChip(); return; }
   if (act === "same" || act === "addchip") { focusBet(act === "same"); return; }
   if (act === "takedown") { focusTake(); return; }
   if (act === "autoswipe") { settings.showDice = !settings.showDice; save(); paint(); return; }
@@ -522,7 +680,7 @@ function onClick(e) {
     paint();
     if (was === "off" && settings.autoPress !== "off" && !seenTips.autopress) {
       seenTips.autopress = true;
-      toast("Auto-press is on. After a Billy's Way hit it adds to that number, up to your max. Same odds, more at risk. A seven-out starts the count over.");
+      openSheet("<h2>Auto-press</h2><p>After a Billy's Way hit it adds to that number, up to your max. Same odds, more at risk. A seven-out starts the count over. The B5 coach uses this same control and stops after three lost opening spreads. Edge stays 1.52%.</p><div class='actions'><button class='go' data-act='close'>Got it</button></div>");
     }
     return;
   }
@@ -620,6 +778,34 @@ function onClick(e) {
   if (act === "badge") { openBadge(t.dataset.id); return; }
   if (act === "reset-records") { confirmResetRecords(); return; }
   if (act === "reset-records-yes") { wipeRecords(); return; }
+  if (act === "etiq-next" || act === "etiq-prev" || act === "etiquette-done") {
+    const deck = deckFor("bubble").all;
+    const tip = deck[Math.min(etiquetteAt, deck.length - 1)];
+    const noted = B.noteAction(boardData, { type: "etiquette", id: tip.id, complete: false });
+    boardData.badges = noted.store.badges;
+    boardData.progress = noted.store.progress;
+    if (act === "etiq-prev") etiquetteAt = Math.max(0, etiquetteAt - 1);
+    else if (act === "etiq-next") etiquetteAt = Math.min(deck.length - 1, etiquetteAt + 1);
+    else {
+      const seen = (boardData.progress && boardData.progress.etiquetteSeen) || [];
+      if (seen.length < deck.length) {
+        toast(seen.length + " of " + deck.length + " cards viewed.");
+        paint();
+        return;
+      }
+      const done = B.noteAction(boardData, { type: "etiquette", id: tip.id, complete: true, total: deck.length });
+      boardData.badges = done.store.badges;
+      boardData.progress = done.store.progress;
+      if (done.unlocked.length) queueUnlocks(done.unlocked);
+      toast("Table Manners" + (boardData.badges.table_manners ? " unlocked." : " noted."));
+      saveBoard();
+      setView("settings");
+      return;
+    }
+    saveBoard();
+    paint();
+    return;
+  }
 }
 
 function setView(next) {
@@ -666,6 +852,7 @@ function switchMode(mode) {
 }
 
 function addBet(ds) {
+  cancelMoments();
   if (rolling) return;
   const spot = spotFrom(ds);
   if (spot.kind === "dontComePoint") {
@@ -694,7 +881,7 @@ function addBet(ds) {
   }
   if (spot.kind === "place" && (spot.number === 6 || spot.number === 8)) {
     const unit = 600;
-    let posted = Math.round((amount * 6) / 5 / unit) * unit;
+    let posted = Math.floor((amount * 6) / 5 / unit) * unit;
     if (!posted) posted = unit;
     if (posted > E.TABLE_MAX) {
       posted = Math.floor(E.TABLE_MAX / unit) * unit;
@@ -714,6 +901,11 @@ function addBet(ds) {
   A.chip();
   haptic(10);
   let lesson = "";
+  if (settings.tutorOn && (spot.kind === "dontPass" || spot.kind === "dontCome") && !seenTips.firstDont) {
+    seenTips.firstDont = true;
+    const tip = nudgeFor("first_dont", "bubble");
+    if (tip) lesson = tip.billy;
+  }
   if (settings.tutorOn && spot.kind === "hop" && !seenTips.hop && !mutedTips.hop) {
     seenTips.hop = true;
     lesson = "A hop is one exact pair on the next roll. A hardway stays up for the pair or a 7.";
@@ -929,8 +1121,7 @@ function runStrategy(id) {
 }
 
 function testRngAllowed() {
-  const h = location.hostname;
-  return h === "localhost" || h === "127.0.0.1" || h === "::1" || h === "";
+  return TEST_BUILD;
 }
 function autoShort() {
   if (game.bankroll <= 0 && E.tableTotal(game) === 0) return true;
@@ -948,6 +1139,8 @@ async function doRoll(source) {
     return;
   }
   rolling = true;
+  lingo.peekId = null;
+  cancelMoments();
   clearWin();
   stopTimer();
   const pointBefore = game.point;
@@ -967,10 +1160,21 @@ async function doRoll(source) {
   ensureSession(Date.now(), totalBefore);
   const edgeCap = maxWorkingEdge(game);
   const handBefore = { rolls: game.hand.rolls, points: game.hand.points };
+  const passBefore = game.bets.pass;
+  const phaseBefore = game.phase;
   ensureHand(handBefore.rolls);
-  const custom = testRngAllowed() && typeof window.__bbRng === "function" ? window.__bbRng : null;
-  const dice = custom ? E.rollDice(custom) : E.rollDice();
+  let custom = null;
+  /*TEST_HOOK_START*/
+  if (TEST_BUILD && typeof window.__bbRng === "function") custom = window.__bbRng;
   delete window.__bbRng;
+  /*TEST_HOOK_END*/
+  const dice = custom ? E.rollDice(custom) : E.rollDice();
+  if (!dice || !dice.d1) {
+    rolling = false;
+    toast((dice && dice.error) || NO_ROLL);
+    paint();
+    return;
+  }
   const from = page;
   if (settings.showDice) { returnPage = from; page = 2; }
   paint();
@@ -993,30 +1197,70 @@ async function doRoll(source) {
       autoPressed = true;
     }
   }
-  rememberRoll(settled, source === "auto" ? "auto" : "manual");
+  rememberRoll(settled, source === "auto" ? "auto" : "manual", phaseBefore);
+  const cap = settled.dice || {};
+  lastRoll = { d1: cap.d1, d2: cap.d2, total: cap.total, hard: !!cap.hard, phaseBefore, result: settled.result };
+  const callId = Lg.callTermId(lastRoll);
+  if (callId) LC.rememberCall(lingo, callId);
   if (onTable === 0) emptyFelt += 1;
   else emptyFelt = 0;
-  if (settled.net > 0) { A.win(); haptic([12, 40, 16]); }
-  else if (settled.result === "seven-out") { A.seven(); haptic(40); }
+  const sevenOut = settled.result === "seven-out" && phaseBefore === "point";
+  if (settled.result === "point-made" || sevenOut) { /* celebration or PSO owns this sound */ }
+  else if (settled.net > 0) { A.win(); haptic([12, 40, 16]); }
   else A.chip();
   if (settings.showDice) page = returnPage;
   rolling = false;
   paint();
   snap();
   const big = isBigWin(settled);
-  const quiet = page === 2 || settled.result === "seven-out" || big;
-  if (!quiet) showRollToast(settled, pressNote);
-  else if (pressNote) queueToast(pressNote, "", 1200);
-  celebrate(settled, handBefore);
+  const quiet = page === 2 || sevenOut || big;
+  if (!quiet && !sevenOut) showRollToast(settled, pressNote);
+  else if (pressNote && !sevenOut) queueToast(pressNote, "", 1200);
   noteBlaze(handBefore, settled);
   maybeTutor(settled);
   noteHandRoll(handBefore, settled, dice, hadBetNow, pointBefore, source === "auto" ? "auto" : "manual", totalBefore, edgeCap, onTable, autoPressed);
-  maybeRecord(handBefore, settled, dice, hadBetNow);
+  if (sevenOut) {
+    const record = !!maybeRecord(handBefore, settled, dice, hadBetNow, true);
+    const fireDec = (settled.decisions || []).find((d) => d.bet === "Fire Bet" && d.result === "win" && (d.level === 4 || d.level === 5));
+    const length = handBefore.rolls + 1;
+    showPSO({
+      app: "bc",
+      point: pointBefore,
+      d1: dice.d1,
+      d2: dice.d2,
+      net: settled.net,
+      hadBets: onTable > 0,
+      hand: { rolls: length, points: handBefore.points },
+      record,
+      fire: fireDec ? { points: fireDec.level, pay: fireDec.profit } : null,
+      puck: [document.querySelector(".hud-puck")],
+      dice: [document.querySelector(".dome-screen .result-line"), document.querySelector(".hud-puck")],
+      sweepFrom: [...document.querySelectorAll(".has .stack")],
+      railTo: document.querySelector(".dock .chip-btn.on"),
+      avoid: [document.querySelector("[data-act='roll']"), document.querySelector(".dome-screen .machine")],
+      billie: { light: "assets/mascots/billie/billie-C-sevenout.svg", long: "assets/mascots/billie/billie-C-hello.svg" },
+      faces: "assets/dice/faces/",
+      puckOn: "assets/icons/puck-on.svg",
+      chip: "assets/chips/chip-25-value.svg",
+      reduced: motionOff(),
+      sfx: (name) => {
+        if (!settings.sound) return;
+        if (name === "pso_light" || name === "pso_dark") { A.seven(); A.chip(); }
+        else if (name === "pso_nobets") A.pop();
+        else if (name === "fire_payout") A.win();
+      },
+      haptic: (name) => { if (settings.haptics) haptic(name === "success" ? [12, 40, 12] : 10); },
+    });
+  } else {
+    celebrate(settled, handBefore, { point: pointBefore, pass: passBefore });
+    maybeRecord(handBefore, settled, dice, hadBetNow, false);
+  }
   if (settled.result === "seven-out" && boardData.session && !boardData.session.ended) {
     const length = handBefore.rolls + 1;
     if (!boardData.session.longest || length > boardData.session.longest) boardData.session.longest = length;
   }
-  noteSession(hadBetNow, settled);
+  if (sevenOut) setTimeout(() => noteSession(hadBetNow, settled), 1200);
+  else noteSession(hadBetNow, settled);
   maybeAtsNote(settled);
   if (emptyFelt >= 3 && settings.autoRoll && !autoPause) {
     autoPause = "empty";
@@ -1028,13 +1272,13 @@ async function doRoll(source) {
   startTimer();
 }
 
-function rememberRoll(settled) {
+function rememberRoll(settled, source, phaseBefore) {
   const rec = {
     d1: settled.dice.d1,
     d2: settled.dice.d2,
     total: settled.dice.total,
     result: settled.result,
-    phaseBefore: settled.result === "natural" || settled.result === "craps" || settled.result === "point-set" ? "come-out" : "point",
+    phaseBefore: phaseBefore || (settled.result === "natural" || settled.result === "craps" || settled.result === "point-set" ? "come-out" : "point"),
     mode: game.mode,
     net: settled.net,
     hard: !!settled.dice.hard,
@@ -1119,6 +1363,7 @@ function noteHandRoll(before, settled, dice, hadBet, pointBefore, source, totalB
       if (hit && armed[Number(hit[2])]) collectNumber = Number(hit[2]);
     });
   }
+  if (dice && dice.source === "test") return;
   const ev = B.evaluateRoll({ badges: boardData.badges, progress: boardData.progress }, {
     mode: game.mode,
     handRolls: length,
@@ -1165,7 +1410,9 @@ function queueUnlocks(ids) {
 }
 function badgeBlocked() {
   if (rolling || document.querySelector(".recordcard")) return true;
-  if (document.body.classList.contains("bigwin") || document.querySelector(".winlayer")) return true;
+  if (document.body.classList.contains("bigwin") || document.body.classList.contains("pc-on") || document.querySelector(".winlayer")) return true;
+  const next = badgeQueue[0];
+  if (next && (next === "hand_10_rolls" || next === "hand_20_rolls" || next === "hand_40_rolls" || next === "blazing_reached") && document.querySelector(".toast.show")) return true;
   return false;
 }
 function badgeHost() {
@@ -1467,7 +1714,15 @@ function measureChrome() {
 }
 function noteFair() {
   const scope = fairScope === "last" ? "last" : fairScope === "all" ? "all" : "session";
-  const ev = B.noteAction(boardData, { type: "fair-scope", scope, sawTest: true, mode: game.mode, now: Date.now() });
+  const card = document.getElementById("fairness-card");
+  const panel = document.getElementById("panel");
+  let saw = false;
+  if (card && panel) {
+    const c = card.getBoundingClientRect();
+    const p = panel.getBoundingClientRect();
+    saw = c.top < p.bottom - 8 && c.bottom > p.top + 8;
+  }
+  const ev = B.noteAction(boardData, { type: "fair-scope", scope, sawTest: saw, mode: game.mode, now: Date.now() });
   boardData.badges = ev.store.badges;
   boardData.progress = ev.store.progress;
   if (ev.unlocked.length) queueUnlocks(ev.unlocked);
@@ -1636,8 +1891,15 @@ function isBigWin(settled) {
   const stake = winningStake(settled);
   return stake > 0 && settled.net >= stake * 25;
 }
+let winSkip = null;
 function clearWin() {
   clearTimeout(celeTimer);
+  cancelCelebration();
+  if (winSkip) {
+    removeEventListener("pointerdown", winSkip, { capture: true });
+    removeEventListener("keydown", winSkip, { capture: true });
+    winSkip = null;
+  }
   document.body.classList.remove("bigwin");
   const el = document.getElementById("overlay");
   if (el && el.querySelector(".winlayer")) el.innerHTML = "";
@@ -1663,16 +1925,12 @@ function showBigWin(settled) {
     "<p>PRACTICE CHIPS</p>" +
     (lines.length ? "<em>" + lines.join("<br>") + "</em>" : "") + "</div>" +
     "<img class='win-billie' src='assets/mascots/billie/billie-C-winner.svg' alt='Bubbles Billie'></div>" +
-    burstChips(settled.net) +
-    "<div class='actions'><button class='go' data-act='collect'>Collect</button><button class='ghost' data-act='add-win'>Add a chip</button></div></div>";
+    burstChips(settled.net) + "</div>";
   clearTimeout(celeTimer);
-  celeTimer = setTimeout(clearWin, 3500);
-}
-function addWinningChip() {
-  const lw = game.lastWin;
-  clearWin();
-  if (!lw) return;
-  addBet({ kind: lw.kind, number: lw.number, amount: settings.chip });
+  celeTimer = setTimeout(clearWin, 2500);
+  winSkip = () => clearWin();
+  addEventListener("pointerdown", winSkip, { capture: true, passive: true });
+  addEventListener("keydown", winSkip, { capture: true, passive: true });
 }
 function sevenToast(settled, extra) {
   const net = settled.net || 0;
@@ -1689,14 +1947,45 @@ function sevenToast(settled, extra) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, 2800);
 }
-function celebrate(settled, before) {
+function celebrate(settled, before, extra) {
   if (settled.result === "seven-out") {
-    let extra = "";
+    let note = "";
     if (settings.blazing !== false && before) {
       const moment = E.blazeMoment(before, settled.state.hand, settled.result);
-      extra = [moment.text, moment.handNote].filter(Boolean).join(" ");
+      note = [moment.text, moment.handNote].filter(Boolean).join(" ");
     }
-    sevenToast(settled, extra);
+    sevenToast(settled, note);
+    return;
+  }
+  if (settled.result === "point-made") {
+    const points = settled.state.hand.points || 1;
+    const tier = celebrationTier(points, { meterOn: settings.blazing !== false, blazing: settled.tier === "blazing" });
+    const quiet = !(extra && extra.pass > 0);
+    const bigWin = !quiet && isBigWin(settled);
+    const copy = celebrationCopy({
+      tier, quiet, big: bigWin, point: extra && extra.point, points, hard: settled.dice && settled.dice.hard, net: settled.net,
+    });
+    const onDome = page === 2;
+    const pointBox = extra && extra.point ? document.querySelector(".numbox [data-number='" + extra.point + "']") : null;
+    const targets = onDome
+      ? [document.querySelector(".dome-screen .result-line")].filter(Boolean)
+      : [pointBox ? pointBox.closest(".numbox") : document.querySelector(".feltpuck, .puckimg")].filter(Boolean);
+    celebratePoint({
+      targets: targets.length ? targets : [document.getElementById("app") || document.body],
+      avoid: ["[data-act='roll']", ".dock", ".hud-row1", ".tabbar"].map((s) => document.querySelector(s)),
+      point: extra && extra.point,
+      net: quiet ? 0 : settled.net,
+      big: bigWin,
+      tier,
+      quiet,
+      duration: copy.duration,
+      line: copy.call,
+      cheer: copy.cheer,
+      billie: "assets/mascots/billie/billie-C-winner.svg",
+      chip: "assets/chips/chip-25-value.svg",
+      reduced: motionOff(),
+      sfx: (name) => { if (settings.sound && name) A.win(); },
+    });
     return;
   }
   if (isBigWin(settled)) showBigWin(settled);
@@ -1794,7 +2083,7 @@ function showRecordCard(preview) {
     "<div class='actions'><button class='go' data-act='save-record'>SAVE</button>" +
     "<button class='ghost' data-act='skip-record'>SKIP</button></div></div></div>";
 }
-function maybeRecord(before, settled, dice, hadBet) {
+function maybeRecord(before, settled, dice, hadBet, silent) {
   if (settled.result !== "seven-out") return;
   if (!hadBet) return;
   if (dice && dice.source === "test") return;
@@ -1830,20 +2119,23 @@ function maybeRecord(before, settled, dice, hadBet) {
       boardData = res.data;
       saveBoard();
       const line = (res.record ? "New longest roll this week: " : "Made the board. ") + E.countPhrase(res.entry.rolls, "roll") + ".";
-      queueToast(line, "", settled.result === "seven-out" ? 3000 : 800);
+      if (!silent) queueToast(line, "", settled.result === "seven-out" ? 3000 : 800);
     }
     handMeta = freshMeta();
-    return;
+    return !!(preview && preview.record);
   }
   pendingRecord = candidate;
   boardData.pending = candidate;
   saveBoard();
   clearTimeout(recordTimer);
-  recordTimer = setTimeout(() => {
-    hideToast();
-    showRecordCard(preview);
-  }, motionOff() ? 400 : 2900);
+  if (!silent) {
+    recordTimer = setTimeout(() => {
+      hideToast();
+      showRecordCard(preview);
+    }, motionOff() ? 400 : 2900);
+  }
   handMeta = freshMeta();
+  return !!(preview && preview.record);
 }
 function leaderHTML() {
   const mode = boardMode === "crapless" ? "crapless" : "regular";
@@ -1921,7 +2213,7 @@ function badgeGallery() {
     return true;
   };
   const tiers = ["bronze", "silver", "gold", "legendary"];
-  const tierCounts = { bronze: 7, silver: 9, gold: 9, legendary: 5 };
+  const tierCounts = { bronze: 8, silver: 10, gold: 9, legendary: 5 };
   const bars = "<div class='tierbars'>" + tiers.map((tier) => {
     const have = B.BADGES.filter((b) => b.tier === tier && boardData.badges && boardData.badges[b.id]).length;
     const need = tierCounts[tier];
@@ -1934,7 +2226,7 @@ function badgeGallery() {
     ["Press & bets", ["billys_way_first_hit", "billys_way_full_circle", "press_undo", "press_then_collect", "hard_hat_trick", "hwad_win", "repeaters_all_ten"]],
     ["Discipline", ["low_edge_three_hands", "steady_up_1000", "limits_set_session", "win_goal_banked", "loss_limit_kept", "five_sessions_within_limits"]],
     ["Crapless", ["crapless_points_all_ten_lifetime", "crapless_six_points_one_hand", "crapless_corner_point"]],
-    ["Practice", ["tutor_tour_complete", "fair_dice_explorer", "daily_practice_3"]],
+    ["Practice", ["tutor_tour_complete", "fair_dice_explorer", "daily_practice_3", "table_manners", "talk_the_talk"]],
   ];
   const body = sections.map(([title, ids]) => {
     const tiles = ids.map((id) => B.badgeById(id)).filter((b) => b && keep(b)).map(badgeTile).join("");
@@ -2071,7 +2363,7 @@ function currentTip() {
 function tutorSteps() {
   const crapless = game.mode === "crapless";
   return [
-    { id: "s1", title: "Practice chips", body: "Education only. Play money only. No real gambling, no deposits, no cash-out, no prizes. The machine rolls. Regular has the lower edge. Crapless is a variant." },
+    { id: "s1", title: "Practice chips", body: "Education only. Play money only. No real gambling, no deposits, no payouts, no prizes. The machine rolls. Regular has the lower edge. Crapless is a variant. " + RULE0_LINE },
     { id: "s2", title: "Puck OFF", body: "Come-out roll. Bet the Pass Line. Your bankroll says Practice chips." },
     { id: "s3", title: "Come-out results", body: crapless ? "Only a 7 wins Pass right away. 2, 3, 11, and 12 become the point. Come-out 7 with ATS up: Pass wins, and any 7 loses Low Rolls, High Rolls, and Roll 'Em All." : "7 and 11 win. 2, 3, and 12 lose. 4, 5, 6, 8, 9, and 10 become the point. A 7 also loses ATS." },
     { id: "s4", title: "Odds", body: "When the puck is ON, add Odds. There is no house edge on odds, up to 3x, 4x, or 5x. The expected loss in chips stays tied to the flat bet. Swings get bigger." },
@@ -2155,6 +2447,13 @@ function advanceTutor() {
     boardData.badges = noted.store.badges;
     boardData.progress = noted.store.progress;
     if (noted.unlocked.length) queueUnlocks(noted.unlocked);
+    const day = new Date();
+    const key = day.getFullYear() + "-" + String(day.getMonth() + 1).padStart(2, "0") + "-" + String(day.getDate()).padStart(2, "0");
+    const daily = B.noteAction(boardData, { type: "practice-day", day: key, mode: game.mode, now: Date.now() });
+    boardData.badges = daily.store.badges;
+    boardData.progress = daily.store.progress;
+    if (daily.store.daily) boardData.daily = daily.store.daily;
+    if (daily.unlocked.length) queueUnlocks(daily.unlocked);
     saveBoard();
     closeOverlay();
     return;
@@ -2301,8 +2600,9 @@ function paint() {
   document.getElementById("tabs").innerHTML = tabsHTML();
   const sheet = document.getElementById("betsheet");
   if (sheet) sheet.innerHTML = play && betsOpen ? betPanelHTML() : "";
-  if (play) {
+    if (play) {
     document.getElementById("pager").innerHTML = pageHTML(0) + pageHTML(1) + pageHTML(2);
+    mountLingo();
     fitFelt();   // board fix: lay out the new felt before the first frame (no flash of the default grid)
     syncDice();
     document.getElementById("dots").innerHTML = dotsHTML();
@@ -2315,12 +2615,20 @@ function paint() {
     }
     requestAnimationFrame(() => { placeDice(); fitFelt(); measureChrome(); });
   } else {
-    if (view === "fair") noteFair();
+    if (view === "fair") {
+      noteFair();
+      const panel = document.getElementById("panel");
+      if (panel && !panel.dataset.fairscroll) {
+        panel.dataset.fairscroll = "1";
+        panel.addEventListener("scroll", () => { if (view === "fair") noteFair(); }, { passive: true });
+      }
+    }
     const diceHost = document.getElementById("dice-row");
     if (diceHost) { diceHost.hidden = true; }
     document.getElementById("panel").innerHTML = panelHTML();
     requestAnimationFrame(() => measureChrome());
   }
+  LC.markSpots(app);
 }
 
 function hudHTML() {
@@ -2420,7 +2728,8 @@ function spotButton(opts) {
   return "<button class='spot" + (opts.cls ? " " + opts.cls : "") + (stake ? " has" : "") + "' data-act='bet' data-kind='" + opts.kind + "'" +
     (opts.number != null ? " data-number='" + opts.number + "'" : "") +
     (opts.pair ? " data-pair='" + opts.pair + "'" : "") + teach +
-    " aria-label='" + opts.label + (stake ? ", " + money(stake) : "") + "'>" +
+    " aria-label='" + opts.label + (stake ? ", " + money(stake) : "") + "'" +
+    " title='Long-press for lingo.'>" +
     "<small>" + opts.pay + "</small><b>" + opts.name + "</b>" + stakeLabel(stake) + (opts.extra || "") + "</button>";
 }
 
@@ -2669,7 +2978,8 @@ function fairHistoryList(rolls) {
   const note = rolls.length > cap
     ? "<p class='muted'>Showing the latest " + cap + " of " + rolls.length + ". CSV export stays numeric.</p>"
     : "<p class='muted'>Same rolls as a CSV export. Die 1 and die 2 stay numbers there.</p>";
-  return "<article class='card'><h3>Roll history</h3>" + note + "<ol class='fairhist'>" + rows + "</ol></article>";
+  const pin = "<li class='pinhand'><span class='hn'>Now</span><span class='hline'>This hand · " + E.countPhrase(game.hand.rolls || 0, "roll") + (game.point ? " · point " + game.point : " · come-out") + "</span></li>";
+  return "<article class='card'><h3>Roll history</h3>" + note + "<ol class='fairhist'>" + pin + rows + "</ol></article>";
 }
 function domeHTML() {
   const tier = E.blazingTier(E.blazingScore(game.hand), game.hand.points);
@@ -2680,7 +2990,7 @@ function domeHTML() {
     "<i class='bubble' style='left:" + left + "%;width:" + (8 + (i % 4) * 5) + "px;height:" + (8 + (i % 4) * 5) + "px;animation-delay:" + (i * 0.35) + "s'></i>").join("");
   const line = rolling
     ? "<div class='ledglass'>AIR ON · DICE OUT</div>"
-    : "<div class='result-line'>" + (game.lastDice ? diceReadout(game.lastDice.d1, game.lastDice.d2, 32, { call: game.lastDice.word, aria: game.lastDice.aria }) : "READY") + "</div>";
+    : "<div class='result-line'>" + (game.lastDice ? diceReadout(game.lastDice.d1, game.lastDice.d2, 32, { call: lastRoll && lastRoll.result === "seven-out" ? "SEVEN OUT" : game.lastDice.word, aria: game.lastDice.aria, roll: lastRoll }) : "READY") + "</div>";
   const win = !rolling && game.lastWin
     ? "<p class='hitline'>WIN · " + (game.lastWin.kind === "buy" ? "Buy " : "Place ") + game.lastWin.number + " +" + money(game.lastWin.profit) + "</p>"
     : "";
@@ -2776,9 +3086,11 @@ function panelHTML() {
   if (view === "home") return homeHTML();
   if (view === "fair") return fairHTML();
   if (view === "learn") return learnHTML();
+  if (view === "lingo") return LC.screenHTML("bubble", lingo, "assets/", game.mode);
   if (view === "premium") return premiumHTML();
   if (view === "leaderboard") return leaderHTML();
   if (view === "settings") return settingsHTML();
+  if (view === "etiquette") return etiquetteHTML();
   return homeHTML();
 }
 
@@ -2797,7 +3109,10 @@ function homeHTML() {
     "<button class='cta' data-act='play' data-mode='regular'><b>PLAY REGULAR</b><small>TAP ROLL · AUTO-ROLL OPTIONAL IN SETTINGS</small></button>" +
     "<div class='ghostrow'><button class='ghost' data-act='tour'>TAKE THE TUTOR TOUR</button><button class='ghost' data-act='billy-help'>WHAT'S BILLY'S WAY?</button></div>" +
     "<button class='ghost boardlink' data-act='view' data-view='leaderboard'>BADGES AND LONGEST ROLLS</button>" +
-    "<div class='disclaimer'><b>Education only. Play money only.</b> No real gambling, no deposits, no cash-out, no prizes. Every bankroll on this table is practice chips. 18+.</div></section>";
+    "<button class='ghost boardlink' data-act='lingo'>CRAPS LINGO</button>" +
+    "<a class='ghost boardlink' href='table/'>PLAY TABLE CRAPS</a>" +
+    "<p class='billytip'>" + nextSessionTip(settings.tipCursor || 0, "bubble").tip.billy + "</p>" +
+    "<div class='disclaimer'><b>Education only. Play money only.</b> No real gambling, no deposits, no payouts, no prizes. Every bankroll on this table is practice chips. 18+. " + RULE0_LINE + "</div></section>";
 }
 
 function learnHTML() {
@@ -2809,7 +3124,7 @@ function learnHTML() {
     return "<article class='card learncard'>" + edgeChip(Number(pct)) + "<p class='tag'>" + c.id + "</p><div class='tagrow'>" + tags + fun + "</div><h3>" + c.name + "</h3><p class='clamp'>" + c.how + "</p><p class='muted'>" + c.bankroll + "</p>" +
       "<button class='run' data-act='strategy' data-id='" + c.id + "'>" + (c.lesson ? "Read ›" : "Run ›") + "</button></article>";
   }).join("");
-  return "<h2>Strategy library</h2><div class='filters'>" + filters.map((f) => "<button class='" + (learnFilter === f ? "on" : "") + "' data-act='filter' data-filter='" + f + "'>" + f[0].toUpperCase() + f.slice(1) + "</button>").join("") + "</div>" + cards;
+  return "<h2>Strategy library</h2>" + learnRowHTML("bubble") + "<div class='filters'>" + filters.map((f) => "<button class='" + (learnFilter === f ? "on" : "") + "' data-act='filter' data-filter='" + f + "'>" + f[0].toUpperCase() + f.slice(1) + "</button>").join("") + "</div>" + cards;
 }
 
 function premiumHTML() {
@@ -2889,6 +3204,7 @@ function longestPosted() {
 function settingsHTML() {
   const row = (key, label, detail) => "<div class='setting'><div><b>" + label + "</b><div class='muted'>" + detail + "</div></div><button class='switch" + (settings[key] ? " on" : "") + "' data-act='setting' data-key='" + key + "' role='switch' aria-checked='" + settings[key] + "' aria-label='" + label + "'><i></i></button></div>";
   return "<h2>Settings</h2>" +
+    row("lingoLinks", "Lingo links on roll calls", "Roll calls open in Craps Lingo. On by default.") +
     row("sound", "Sound", "Dome pop, dice, chips, wins") +
     row("haptics", "Haptics", "Vibration where the phone allows it") +
     row("autoRoll", "Auto-roll", "Off until you turn it on. ROLL always works.") +
@@ -2916,7 +3232,25 @@ function settingsHTML() {
     "<button class='ghost' data-act='fair-reset'>Reset Fair Dice history</button>" +
     "<button class='ghost' data-act='end-session' data-reason='end'>End session</button>" +
     "<button class='ghost' data-act='reset-records'>Reset badges and records</button>" +
-    "<p class='muted'>RNG: " + (E.getRngSource() === "fallback" ? "basic (fallback)" : "secure") + ". Dice use your device's secure random generator, with rejection sampling so every face is equal.</p>";
+    "<button class='ghost' data-act='view' data-view='etiquette'>Dealer Billy's table tips</button>" +
+    "<p class='muted'>RNG: " + (E.getRngSource() === "unavailable" ? "unavailable" : "secure") + ". Dice use your device's secure random generator, with rejection sampling so every face is equal.</p>";
+}
+
+let etiquetteAt = 0;
+function etiquetteHTML() {
+  const deck = deckFor("bubble").all;
+  const tip = deck[Math.min(etiquetteAt, deck.length - 1)];
+  const seen = (boardData.progress && boardData.progress.etiquetteSeen) || [];
+  const tag = tip.liveOnly ? "Live table" : "Both";
+  const last = etiquetteAt >= deck.length - 1;
+  return "<h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip</p>" +
+    "<article class='card'><h3>" + (Math.min(etiquetteAt, deck.length - 1) + 1) + " of " + deck.length + " · " + tip.topic + " · " + tag + "</h3><p>" + tip.billy + "</p><p>" + tip.why + "</p><p class='muted'>" + seen.length + " of " + deck.length + " viewed.</p></article>" +
+    "<p>" + ETIQUETTE_FOOTER + "</p>" +
+    "<div class='actions'>" +
+    (etiquetteAt > 0 ? "<button data-act='etiq-prev'>Back</button>" : "") +
+    (last ? "<button class='cta' data-act='etiquette-done'>Got it</button>" : "<button class='cta' data-act='etiq-next'>Next</button>") +
+    "</div>" +
+    "<button class='ghost' data-act='view' data-view='settings'>Back</button>";
 }
 
 function fairHTML() {
@@ -2969,7 +3303,7 @@ function fairHTML() {
     "<div class='filters'>" + [["session", "This session"], ["last", "Last 100"], ["all", "All time"]].map(([id, label]) => "<button class='" + (fairScope === id ? "on" : "") + "' data-act='fair-scope' data-scope='" + id + "'>" + label + "</button>").join("") + "</div>" +
     "<article class='card'><h3>Totals vs expected</h3><div class='vchart'>" + cols.join("") + "</div><p class='muted'>Dashed marks are the fair share. 7 is 6/36.</p></article>" +
     "<article class='card seven-card'><h3>Sevens</h3><p class='bigpct'>" + (rolls.length ? (sevenPct * 100).toFixed(1) : "0.0") + "%</p><p>vs 16.67% (1 in 6). Normal band " + (band.low * 100).toFixed(1) + "%–" + (band.high * 100).toFixed(1) + "%.</p></article>" +
-    "<article class='card'><h3>Fairness test</h3>" + (fairLine ? "<p>" + fairLine + "</p>" : "") + "<p class='verdict'>" + verdict + "</p></article>" +
+    "<article class='card' id='fairness-card'><h3>Fairness test</h3>" + (fairLine ? "<p>" + fairLine + "</p>" : "") + "<p class='verdict'>" + verdict + "</p></article>" +
     "<article class='card'><h3>Each die</h3><p>Die 1 faces: " + faces.counts.join(" · ") + "</p><p>Die 1 χ² " + faces.chi2.toFixed(2) + " · df 5 · p " + faces.p.toFixed(3) + "</p><p>Die 2 faces: " + faces2.counts.join(" · ") + "</p><p>Die 2 χ² " + faces2.chi2.toFixed(2) + " · df 5 · p " + faces2.p.toFixed(3) + "</p><p class='muted'>Each face should be near 16.67%.</p></article>" +
     "<article class='card'><h3>Hard vs easy</h3><p>Doubles " + doubles + " of " + rolls.length + " (fair 16.67%).</p><p>Hard 4/6/8/10 vs 1/36 each. " + hardLine + "</p></article>" +
     "<article class='card'><h3>Above and below expected</h3><p>" + (rolls.length ? hi.t + ": " + (hi.d >= 0 ? "+" : "") + hi.d.toFixed(1) + " vs expected · " + lo.t + ": " + lo.d.toFixed(1) : "Roll to fill this in.") + "</p></article>" +
@@ -2977,8 +3311,8 @@ function fairHTML() {
       const st = F.streakStats(rolls);
       return "<article class='card'><h3>Streaks</h3><p>Longest run without a 7: " + st.longestDry + ". Current run without a 7: " + st.currentDry + ".</p><p>In these rolls, longest hand: " + E.countPhrase(st.longestHand, "roll") + ". This hand: " + (game.hand.rolls || 0) + ". Longest hand all time: " + longestPosted() + ".</p><p>" + repeat + "</p><p class='muted'>A long gap is not a sign the next roll is different. A 7 is still 1 in 6.</p></article>";
     })() +
-    "<p>Every roll uses your device's secure random generator. Each die is a fair 1 to 6, and the two dice are independent. Nothing on this screen, not your bets, your streak, or the Blazing meter, can change the next roll.</p>" +
-    "<p class='muted'>RNG: " + (E.getRngSource() === "fallback" ? "basic (fallback)" : "secure") + ".</p>" +
+    "<p>" + RULE0_LINE + "</p>" +
+    "<p class='muted'>RNG: secure.</p>" +
     "<article class='card'><h3>Last 20</h3><div class='rollstrip fairstrip'>" + rollTiles(lastFair, { newestFirst: false, markLatest: true }) + "</div></article>" +
     fairHistoryList(rolls) +
     "<p class='billytip'><img src='assets/mascots/dealer-billy/small/billy-A-avatar-round.svg' alt='Dealer Billy'><span>Every roll is random, from a secure generator. A seven is always 1 in 6.</span></p>" +
@@ -2987,6 +3321,7 @@ function fairHTML() {
 }
 
 load();
+settings.tipCursor = ((settings.tipCursor || 0) + 1) % ETIQUETTE.length;
 boardData = L.readStore(boardStore);
 if (!settings.lossLimit) settings.lossLimit = { kind: "off", amount: 2500, pct: 25 };
 if (!settings.winGoal) settings.winGoal = { kind: "off", amount: 2500, pct: 25 };
@@ -2994,14 +3329,22 @@ if (boardData.session) boardData.session = absorbIdle(boardData.session, Date.no
 game.placeWorkingOnComeOut = !!settings.workingComeOut;
 A.setMuted(!settings.sound);
 mount();
+if (!localStorage.getItem("bb-bubble-session-tip")) {
+  localStorage.setItem("bb-bubble-session-tip", "1");
+  const tip = nudgeFor("session_start", "bubble");
+  if (tip) toast(tip.billy);
+}
 if (boardData.pending && !(boardData.initials && boardData.initials.asked)) {
   pendingRecord = boardData.pending;
   const preview = L.previewRoll(boardData, pendingRecord);
   if (preview.madeWeek || preview.madeAll) showRecordCard(preview);
 }
 if (view === "play") startTimer();
-if (testRngAllowed()) {
+/*TEST_HOOK_START*/
+if (TEST_BUILD) {
   window.__bbShowMarquee = (id) => {
+    clearTimeout(badgeTimer);
+    badgeTimer = 0;
     const def = B.badgeById(id || "spin_the_block");
     if (def) showBadgeToast(def);
   };
@@ -3012,3 +3355,4 @@ if (testRngAllowed()) {
     if (!badgeTimer) pumpBadges();
   };
 }
+/*TEST_HOOK_END*/

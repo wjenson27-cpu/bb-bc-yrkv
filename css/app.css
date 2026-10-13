@@ -1121,7 +1121,7 @@ img { max-width: 100%; display: block; }
   justify-self: center;
   display: grid;
   place-items: center;
-  background: radial-gradient(120% 90% at 50% 15%, #ff6b72, #d62637 40%, #8e0f1c);
+  background: radial-gradient(120% 90% at 50% 15%, #b31222, #8e0f1c 46%, #5a0810);
   color: #fff8ee;
   box-shadow:
     0 0 0 3px #2a0a0e,
@@ -1375,9 +1375,7 @@ img { max-width: 100%; display: block; }
   pointer-events: none;
   overflow: hidden;
 }
-.winlayer .actions { pointer-events: auto; display: flex; gap: 8px; }
-.winlayer .actions button { min-height: 44px; min-width: 120px; border-radius: 12px; }
-.winlayer .actions .go { background: linear-gradient(180deg, #ffe7a0, #d8ae52); color: #2a1c04; }
+.winlayer .actions { display: none; }
 .winstamp b {
   display: block;
   font-family: var(--deco);
@@ -1573,4 +1571,15 @@ img { max-width: 100%; display: block; }
 @media (prefers-reduced-motion: reduce) {
   .pager { transition: opacity .16s linear; }
   .winstamp b { animation: none; }
+}
+@media (min-width: 1400px) {
+  body {
+    background:
+      radial-gradient(70% 50% at 18% 40%, #0b5a2b, transparent 55%),
+      radial-gradient(70% 50% at 82% 40%, #0b5a2b, transparent 55%),
+      #04110c;
+  }
+  .app { max-width: 480px; margin-inline: auto; overflow: hidden; box-shadow: 0 0 0 10px #c9a961, 0 24px 70px rgba(0,0,0,.45); }
+  #hud { width: 100%; max-width: 100%; }
+  #hud .hud-row2 { min-width: 0; max-width: 100%; }
 }
