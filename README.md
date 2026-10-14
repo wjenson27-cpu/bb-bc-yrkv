@@ -56,7 +56,7 @@ That runs `node --test tests/*.test.mjs`. The suite covers Bubble Craps, Table C
 - 30 badges, with the handoff art, a gallery on the Rolls screen, a detail sheet, and an unlock toast above the dock. Storage key `bb-bubble-badges-v1`. Reset badges and records is the only wipe. Reset bankroll keeps the boards and badges.
 - Three-screen swipe, including a sideways drag that starts on a bet button. The dots follow the page. Pinned HUD and dock. Mini roll toast off the dice screen.
 - WebAudio after a gesture, haptics where the device allows, reduced motion. Cinzel, Cinzel Decorative, Archivo, Fredoka, Orbitron, and VT323 are self-hosted.
-- Premium is a locked preview: Regular and Crapless, presets (Standard, MGM, Caesars, Custom, Downtown 10x), B-1 through B-30, and an Edge Preview. Nothing on that screen changes the live table. No payments.
+- Premium is a locked preview: Regular and Crapless, presets (Standard, Strip Classic, Strip Deluxe, Custom, Downtown 10x), B-1 through B-30, and an Edge Preview. Nothing on that screen changes the live table. No payments.
 
 ### Simplified
 

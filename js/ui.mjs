@@ -3189,11 +3189,11 @@ function learnHTML() {
 }
 
 function premiumHTML() {
-  const presets = ["Standard", "MGM", "Caesars", "Custom", "Downtown 10x"];
+  const presets = ["Standard", "Strip Classic", "Strip Deluxe", "Custom", "Downtown 10x"];
   const preview = {
     Standard: "Field 5.56% · Pass + max odds 0.37% Regular · 1.26% Crapless",
-    MGM: "Field 5.56% · Odds 3-4-5x · Pass+Odds 0.37%",
-    Caesars: "Field 5.56% → 2.78% · Crapless odds 1-2-3-4-5x",
+    "Strip Classic": "Field 5.56% · Odds 3-4-5x · Pass+Odds 0.37%",
+    "Strip Deluxe": "Field 5.56% → 2.78% · Crapless odds 1-2-3-4-5x",
     Custom: "Saved table. Locked on this build. Field 5.56% → 2.78%",
     "Downtown 10x": "Pass+Odds 0.37% → 0.18% · Odds 10x",
   };

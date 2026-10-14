@@ -78,6 +78,21 @@ test("Bubble Field 12 payout follows the setting", () => {
   assert.equal(field.profit, 3000);
 });
 
+test("premium presets use Strip Classic and Strip Deluxe", () => {
+  const ui = readFileSync("js/ui.mjs", "utf8");
+  assert.match(ui, /const presets = \["Standard", "Strip Classic", "Strip Deluxe", "Custom", "Downtown 10x"\]/);
+  assert.match(ui, /"Strip Classic": "Field 5\.56% · Odds 3-4-5x · Pass\+Odds 0\.37%"/);
+  assert.match(ui, /"Strip Deluxe": "Field 5\.56% → 2\.78% · Crapless odds 1-2-3-4-5x"/);
+  assert.doesNotMatch(ui, /"MGM"|"Caesars"/);
+  const pso = readFileSync("js/pso.mjs", "utf8");
+  assert.match(pso, /clipPath/);
+  assert.match(pso, /pso-clear/);
+  const lingo = readFileSync("js/lingo-view.mjs", "utf8");
+  assert.match(lingo, /const title = linked \? linked\.term/);
+  assert.match(ui, /const hero = rows\.length \? .*billie-C-cheer/);
+  assert.match(ui, /boardempty.*billie-C-hello/);
+});
+
 test("Inside lingo is Buy 5/9 and Place 6/8", () => {
   const term = termById("inside", "bubble");
   assert.match(term.meaning, /Buy 5 and 9/);
