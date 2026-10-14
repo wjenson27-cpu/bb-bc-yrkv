@@ -19,6 +19,22 @@ const SIDE = {
   hardAllDay: 0,
 };
 
+/** iPad columns. Phone test sizes (844×390, 932×430) stay on the phone layout. */
+export function ipadLayout(w, h) {
+  const width = Number(w) || 0;
+  const height = Number(h) || 0;
+  return width >= 1024 || (width >= 768 && height >= 900);
+}
+
+/** SHOOT throws when the felt and the key share the screen. Side bets never throw. */
+export function shootAct(opts) {
+  const o = opts || {};
+  if (o.yourDice) return "throw";
+  if (o.screen !== "play" || o.menu) return "go-shooter";
+  if (o.page === 2 || (o.ipad && o.page !== 0)) return "throw";
+  return "go-shooter";
+}
+
 export function pageForLink(link, app) {
   if (!link || link === "ui:rail") return null;
   const kind = String(link).split(":")[0];

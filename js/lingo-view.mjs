@@ -72,7 +72,11 @@ export function lingoScreenHTML(app, opts) {
     body = grouped(app, cat).map((g) => "<h3 class='lingo-grp'>" + esc(g.label) + "</h3>" + g.terms.map((t) => rowHTML(t, asset, o.seen)).join("")).join("");
   }
   const recent = (o.recent || []).slice(0, 5);
-  const strip = recent.length ? "<div class='lingo-rc'><h3>Recent calls</h3><div class='strip'>" + recent.map((id) => "<button type='button' data-act='lingo-open' data-id='" + esc(id) + "'>" + esc(String(id).replace(/_/g, " ")) + "</button>").join("") + "</div></div>" : "";
+  const strip = recent.length ? "<div class='lingo-rc'><h3>Recent calls</h3><div class='strip'>" + recent.map((id) => {
+    const linked = termById(id, app);
+    const title = linked ? linked.term : String(id).replace(/_/g, " ");
+    return "<button type='button' data-act='lingo-open' data-id='" + esc(id) + "'>" + esc(title) + "</button>";
+  }).join("") + "</div></div>" : "";
   return "<div class='lingo-screen' id='lingo'><button type='button' class='lingo-x' data-act='lingo-close' aria-label='Close'>×</button>" +
     "<h1>Craps Lingo</h1><p class='sub'>Dealer Billy's table talk. Free in both apps.</p>" +
     "<label class='lingo-search'><input type='search' data-act='lingo-q' value='" + esc(o.query || "") + "' placeholder=\"Search: field, yo, 8…\" aria-label='Search lingo' autocomplete='off'></label>" +

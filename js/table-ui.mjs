@@ -22,7 +22,7 @@ import { callButton, learnRowHTML } from "./lingo-view.mjs";
 import { rotateGateHTML } from "./rotate.mjs";
 import * as R5 from "./r5-ui.mjs";
 import * as RS from "./roll-speed.mjs";
-import { pageForLink } from "./board-page.mjs";
+import { pageForLink, ipadLayout, shootAct } from "./board-page.mjs";
 import * as Tiers from "./tiers.mjs";
 
 const A = "../assets/";
@@ -403,9 +403,9 @@ function menuHTML() {
   const deck = Et.deckFor("table").all;
   const tip = deck[Math.min(etiquetteAt, deck.length - 1)];
   const last = etiquetteAt >= deck.length - 1;
-  return "<div class='tc-sheet'><h1>Table</h1><button data-act='leave' style='height:44px'>Leave table</button>" +
-    "<a href='../' style='display:flex;align-items:center;height:44px'>Bubble Craps</a>" +
-    "<button data-act='lingo' style='height:44px'>Craps Lingo</button>" + R5.menuButtons() +
+  return "<div class='tc-sheet tc-menu'><h1>Table</h1><button class='r5-row' data-act='leave'>Leave table</button>" +
+    "<a class='r5-row' href='../'>Bubble Craps</a>" +
+    "<button class='r5-row' data-act='lingo'>Craps Lingo</button>" + R5.menuButtons() +
     "<label>Lingo links on roll calls <button data-act='lingo-links' style='height:44px'>" + (settings.lingoLinks !== false ? "On" : "Off") + "</button></label>" +
     "<label>Color up <select data-act='color-setting'><option value='offer'" + (settings.colorUp === "offer" ? " selected" : "") + ">Offer</option><option value='auto'" + (settings.colorUp === "auto" ? " selected" : "") + ">Auto</option><option value='off'" + (settings.colorUp === "off" ? " selected" : "") + ">Off</option></select></label>" +
     "<label>Theme <select data-act='theme'><option value='billy'>Billy navy</option><option value='midnight'" + (settings.theme === "midnight" ? " selected" : "") + ">Midnight</option><option value='classic'" + (settings.theme === "classic" ? " selected" : "") + ">Classic</option><option value='highlimit'" + (settings.theme === "highlimit" ? " selected" : "") + ">High limit</option></select></label>" +
@@ -443,9 +443,17 @@ function stageHTML() {
   if (screen === "paywall") return paywallHTML();
   if (screen === "fair") return fairHTML();
   if (menu) return menuHTML();
-  if (page === 0) return hintSpots(sideHTML());
-  if (page === 2) return shooterHTML();
-  return hintSpots(feltHTML());
+  if (page === 0) {
+    const back = ipadLayout(innerWidth, innerHeight)
+      ? "<button class='tc-edge' data-act='page' data-page='1'>BOARD</button>"
+      : "";
+    return back + hintSpots(sideHTML());
+  }
+  if (page === 2 && !ipadLayout(innerWidth, innerHeight)) return shooterHTML();
+  const edge = ipadLayout(innerWidth, innerHeight)
+    ? "<button class='tc-edge' data-act='page' data-page='0'>SIDE BETS</button>"
+    : "";
+  return edge + hintSpots(feltHTML());
 }
 function kindName(kind) {
   if (kind === "place") return "Place";
@@ -472,12 +480,15 @@ function render() {
   const names = ["SIDE BETS", "BOARD", "SHOOTER"];
   const left = page > 0 ? "<button class='pill' data-act='page' data-page='" + (page - 1) + "'><span class='cap'>‹ " + names[page - 1] + "</span></button>" : "<span class='pill' hidden></span>";
   const right = page < 2 ? "<button class='pill' data-act='page' data-page='" + (page + 1) + "'><span class='cap'>" + names[page + 1] + " ›</span></button>" : "<span class='pill' hidden></span>";
-  const onThrow = page === 2 && screen === "play" && !menu;
-  const shoot = R5.active()
-    ? "<button class='tc-shoot' data-act='throw'><small>YOUR DICE</small><b>SETTLE</b></button>"
-    : onThrow
-    ? "<button class='tc-shoot' data-act='throw'><small>YOUR THROW</small><b>SHOOT</b></button>"
+  const ipad = ipadLayout(innerWidth, innerHeight);
+  app.classList.toggle("ipad-land", ipad && innerWidth > innerHeight);
+  app.classList.toggle("ipad-port", ipad && innerHeight >= innerWidth);
+  app.dataset.ipad = ipad ? "1" : "";
+  const actShoot = shootAct({ yourDice: R5.active(), screen, menu, page, ipad });
+  const shoot = actShoot === "throw"
+    ? "<button class='tc-shoot" + (R5.active() ? " yd" : "") + "' data-act='throw'><small>" + (R5.active() ? "YOUR DICE" : "YOUR THROW") + "</small><b>" + (R5.active() ? "SETTLE" : "SHOOT") + "</b></button>"
     : "<button class='tc-shoot' data-act='go-shooter'><small>GO TO</small><b>SHOOTER</b></button>";
+  const aside = ipad && screen === "play" && !menu ? "<aside class='tc-ipad-shooter'>" + shooterHTML() + "</aside>" : "";
   const hudPips = lastFaces ? pips(lastFaces.d1, lastFaces.d2, 16) : "";
   app.innerHTML = "<header class='tc-hud'><button class='avbtn' data-act='menu' aria-label='Dealer Billy, menu'><img class='av' alt='' src='" + A + "mascots/dealer-billy/hud/hud-billy-A-36@2x.png'></button>" +
     "<div class='money'><div><small>Practice chips</small><b>" + money(game.bankroll) + "</b></div><div><small>On table</small><b>" + money(E.tableTotal(game)) + "</b></div></div>" +
@@ -487,7 +498,7 @@ function render() {
     "<main class='tc-stage' id='stage'>" + stageHTML() + conv + tutorCard + sessionCard +
     (toastText && screen === "play" && !menu ? "<div class='tc-toast' role='status'><b>" + toastText + "</b>" + (changeNote ? "<small>" + changeNote + "</small>" : "") + "</div>" : "") +
     (screen === "play" && !menu ? LC.peekBlock("table", lingo, A, "regular") + LC.sheetBlock("table", lingo, game, { asset: A, rolling, money, tutorOn: settings.tutor, mode: "regular" }) : "") +
-    "</main>" +
+    "</main>" + aside +
     "<div class='tc-dots'>" + left +
     "<span class='dots'>" + [0, 1, 2].map((i) => "<button data-act='page' data-page='" + i + "' aria-label='" + ["Side bets", "Board", "Dice"][i] + "'><i class='" + (page === i ? "on" : "") + "'></i></button>").join("") + "</span>" +
     right + "</div>" +
@@ -802,9 +813,12 @@ function doRoll() {
   if (!sevenOut && settled.net > 0) flyChip(feltFrom, document.querySelector(".stack.sel") || document.querySelector(".tc-rail"), 2500, 320);
   if (sevenOut) {
     const length = handBefore.rolls + 1;
-    const prev = Number(localStorage.getItem("bb-table-longest") || 0);
-    const record = prev > 0 && length > prev;
-    localStorage.setItem("bb-table-longest", String(Math.max(prev, length)));
+    let record = false;
+    if (!entered) {
+      const prev = Number(localStorage.getItem("bb-table-longest") || 0);
+      record = prev > 0 && length > prev;
+      localStorage.setItem("bb-table-longest", String(Math.max(prev, length)));
+    }
     const fireDec = (settled.decisions || []).find((d) => d.bet === "Fire Bet" && d.result === "win" && (d.level === 4 || d.level === 5));
     const shown = showPSO({
       app: "tc",
@@ -890,6 +904,7 @@ function doRoll() {
 }
 
 function leave() {
+  R5.closeSession("leave");
   rail = Rail.leaveTable(rail).rail;
   const total = Rail.railTotal(rail);
   maybeNudge("leave_table");
@@ -957,6 +972,7 @@ function onClick(e) {
   const t = e.target.closest("[data-act]");
   if (!t) return;
   const act = t.dataset.act;
+  if (act === "r5-your-dice") { menu = false; screen = "play"; }
   if (R5.handle(act, t)) return;
   if (act === "tutor-dismiss") { tutorLine = null; render(); return; }
   if ((act === "seed" || act === "color-setting" || act === "theme" || act === "csv-file" || act === "lingo-q") && e.type === "click") return;
@@ -1354,7 +1370,11 @@ app.addEventListener("pointerup", (e) => {
 });
 app.addEventListener("click", onClick);
 app.addEventListener("change", onClick);
-addEventListener("resize", fitTable);
+addEventListener("resize", () => {
+  const next = ipadLayout(innerWidth, innerHeight) ? "1" : "";
+  if (app.dataset.ipad !== next) render();
+  else fitTable();
+});
 
 load();
 const q = new URLSearchParams(location.search);
@@ -1393,7 +1413,15 @@ R5.attach({
   settings,
   save,
   sync: () => { sync(); },
+  noteBadge: (action) => {
+    let store = { badges: {}, progress: {} };
+    try { store = JSON.parse(localStorage.getItem("bb-table-badges-v1") || "") || store; } catch { /* fresh */ }
+    store = Badges.noteAction(store, action).store;
+    localStorage.setItem("bb-table-badges-v1", JSON.stringify(store));
+  },
+  onEnter: () => { menu = false; screen = "play"; },
   resetTo: (cents) => {
+    R5.beforeReset(E.netWorth(game));
     game = E.createGame({ profile: "table", bankroll: cents, rules: game.rules });
     rail = Rail.railBreakdown(cents);
     toastText = "Practice chips reset to " + money(cents) + ".";

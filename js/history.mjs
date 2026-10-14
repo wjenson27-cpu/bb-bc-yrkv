@@ -8,6 +8,7 @@ export const FREE_LIST = 20;
 export const SERIES_CAP = 200;
 export const SESSION_CAP = 5000;
 export const FOOTER = "Practice chips. Past sessions don't predict future rolls.";
+export const IDLE_MS = 30 * 60 * 1000;
 
 export function emptyBook() {
   return { sessions: [], yourDice: [], live: null, yourLive: null };
@@ -58,6 +59,7 @@ export function openLive(book, info) {
     ended: false,
     endReason: "",
     counts: true,
+    touchedAt: info.startedAt || Date.now(),
   };
   return next;
 }
@@ -69,10 +71,11 @@ export function noteRoll(book, total, meta) {
   if (!live || live.ended) return next;
   live.points = pointCap(live.points.concat([Math.round(total)]));
   live.rolls += 1;
+  live.touchedAt = Date.now();
   if (meta && meta.sevenOut) {
     live.sevens = (live.sevens || []).concat([live.rolls]);
     live.hands += 1;
-    if (meta.length && meta.length > (live.longest || 0)) live.longest = meta.length;
+    if (!yours && meta.length && meta.length > (live.longest || 0)) live.longest = meta.length;
   }
   return next;
 }
@@ -91,8 +94,9 @@ export function closeLive(book, reason, yourDice) {
   live.endReason = reason || "end";
   live.endChips = end;
   live.net = end - live.startChips;
-  live.counts = reason !== "reset";
-  if (reason === "reset") live.netCounts = false;
+  live.counts = true;
+  live.netCounts = true;
+  if (reason === "reset") live.refillExcluded = true;
   const stats = summarize(live.points, live.startChips);
   Object.assign(live, stats);
   next[list] = [live].concat(next[list] || []);
@@ -127,9 +131,31 @@ export function summarize(points, start) {
   };
 }
 
-/** Reset sessions stay in the list. Their top-up is not a gain in the totals. */
+/** A reset stays in the totals. The net is the play result; the refill is not a point. */
 export function countable(sessions) {
-  return (sessions || []).filter((s) => s && s.counts !== false && s.endReason !== "reset");
+  return (sessions || []).filter((s) => s && s.counts !== false);
+}
+
+export function touch(book, now) {
+  const next = book || emptyBook();
+  const stamp = now || Date.now();
+  ["live", "yourLive"].forEach((key) => {
+    if (next[key] && !next[key].ended) next[key].touchedAt = stamp;
+  });
+  return next;
+}
+
+/** Close a live session that has been quiet for 30 minutes. */
+export function closeIdle(book, now) {
+  let next = book || emptyBook();
+  const stamp = now || Date.now();
+  ["live", "yourLive"].forEach((key) => {
+    const live = next[key];
+    if (!live || live.ended) return;
+    const at = live.touchedAt || live.startedAt || 0;
+    if (at && stamp - at >= IDLE_MS) next = closeLive(next, "idle", key === "yourLive");
+  });
+  return next;
 }
 
 export function totals(sessions) {

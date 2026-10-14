@@ -30,10 +30,38 @@ let yd = null;
 let rngSnap = null;
 let drill = null;
 let histTab = "session";
+let chartTable = false;
+let activityBound = false;
+
+function betUnit(g) {
+  if (!g) return api.app === "table" ? 1000 : 500;
+  if (api.app === "bubble") {
+    if (g.bubbleMin) return g.bubbleMin;
+    return Tiers.tierById("bubble", api.settings.tier || "standard").min;
+  }
+  return (g.rules && g.rules.tableMin) || 1000;
+}
+
+function markActivity(save) {
+  const had = !!(book.live || book.yourLive);
+  book = H.closeIdle(book, Date.now());
+  book = H.touch(book, Date.now());
+  const has = !!(book.live || book.yourLive);
+  if (save || (had && !has)) persist();
+}
+
+function bindActivity() {
+  if (activityBound || typeof addEventListener !== "function") return;
+  activityBound = true;
+  addEventListener("pointerdown", () => markActivity(false), { passive: true });
+  document.addEventListener("visibilitychange", () => markActivity(true));
+}
 
 export function attach(next) {
   api = Object.assign(api, next || {});
   book = H.loadBook(localStorage, api.app);
+  book = H.closeIdle(book, Date.now());
+  bindActivity();
   if (!api.settings.rollSpeed) api.settings.rollSpeed = "normal";
   if (!api.settings.tier) api.settings.tier = "standard";
   if (api.settings.includePoint == null) api.settings.includePoint = false;
@@ -69,57 +97,84 @@ export function quickHTML() {
   if (!g) return "";
   const names = QB.keysFor(api.app);
   const chip = api.settings.chip || (api.app === "table" ? 1000 : 500);
-  const min = (g.rules && g.rules.tableMin) || (api.app === "table" ? 1000 : 500);
-  const have = haveMap(g);
-  return "<div class='r5-qstrip'>" + names.map((name) => {
-    const p = QB.plan(name, { chip, tableMin: min, point: g.point, includePoint: !!api.settings.includePoint, have });
+  const min = betUnit(g);
+  const stake = stakeMap(g);
+  const buttons = names.map((name) => {
+    const p = QB.plan(name, { chip, tableMin: min, point: g.point, includePoint: !!api.settings.includePoint, have: stake.have, amounts: stake.amounts });
     const label = name.toUpperCase();
-    return "<button type='button' data-act='r5-quick' data-quick='" + name + "' aria-label='" + label + " " + api.money(p.total) + "'><b>" + label + "</b><span>" + api.money(p.total) + "</span></button>";
-  }).join("") + "</div>";
+    const show = p.spots.reduce((a, s) => a + (s.target || (s.skip ? 0 : s.amount)), 0);
+    return "<button type='button' data-act='r5-quick' data-quick='" + name + "' aria-label='" + label + " " + api.money(show) + "'><b>" + label + "</b><span>" + api.money(show) + "</span></button>";
+  }).join("");
+  const preview = names.map((name) => {
+    const p = QB.plan(name, { chip, tableMin: min, point: g.point, includePoint: !!api.settings.includePoint, have: stake.have, amounts: stake.amounts });
+    const bits = p.spots.map((s) => (s.skip && s.reason !== "full") ? (s.n + " skip") : (s.n + " " + api.money(s.target || s.amount)));
+    return "<p class='r5-preview'><b>" + name.toUpperCase() + "</b> " + bits.join(" · ") + "</p>";
+  }).join("");
+  return "<div class='r5-qstrip'>" + buttons + "</div><div class='r5-previews'>" + preview + "</div>";
 }
 
-function haveMap(g) {
+function stakeMap(g) {
   const have = {};
+  const amounts = {};
   [4, 5, 6, 8, 9, 10].forEach((n) => {
-    if (g.bets.lay && g.bets.lay[n]) have[n] = "lay";
-    else if (g.bets.place && g.bets.place[n]) have[n] = "place";
-    else if (g.bets.buy && g.bets.buy[n]) have[n] = "buy";
+    if (g.bets.lay && g.bets.lay[n]) { have[n] = "lay"; amounts[n] = g.bets.lay[n]; }
+    else if (g.bets.place && g.bets.place[n]) { have[n] = "place"; amounts[n] = g.bets.place[n]; }
+    else if (g.bets.buy && g.bets.buy[n]) { have[n] = "buy"; amounts[n] = g.bets.buy[n]; }
   });
-  return have;
+  return { have, amounts };
 }
 
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-function chart(points, label) {
-  const pts = points && points.length ? points : [0];
-  const lo = Math.min.apply(null, pts);
-  const hi = Math.max.apply(null, pts);
+function chartSVG(series, label) {
+  const all = series.reduce((acc, s) => acc.concat(s.pts && s.pts.length ? s.pts : [0]), []);
+  const lo = Math.min.apply(null, all);
+  const hi = Math.max.apply(null, all);
   const span = Math.max(1, hi - lo);
   const W = 600;
   const H = 180;
-  const X = (i) => 36 + (pts.length === 1 ? 0 : (i / (pts.length - 1)) * (W - 48));
   const Y = (v) => 16 + (1 - (v - lo) / span) * (H - 36);
-  const poly = pts.map((v, i) => X(i).toFixed(1) + "," + Y(v).toFixed(1)).join(" ");
-  return "<figure class='r5-chart'><svg viewBox='0 0 " + W + " " + H + "' role='img' aria-label='" + esc(label) + "'><polyline fill='none' stroke='#6FE3D0' stroke-width='2.4' points='" + poly + "'/></svg></figure>";
+  const lines = series.map((s) => {
+    const pts = s.pts && s.pts.length ? s.pts : [0];
+    const X = (i) => 36 + (pts.length === 1 ? 0 : (i / (pts.length - 1)) * (W - 48));
+    const poly = pts.map((v, i) => X(i).toFixed(1) + "," + Y(v).toFixed(1)).join(" ");
+    const dash = s.dashed ? " stroke-dasharray='8 5'" : "";
+    return "<polyline fill='none' stroke='" + s.color + "' stroke-width='2.4'" + dash + " points='" + poly + "'/>";
+  }).join("");
+  return "<figure class='r5-chart'><svg viewBox='0 0 " + W + " " + H + "' role='img' aria-label='" + esc(label) + "'>" + lines + "</svg></figure>";
+}
+
+function chartBlock(series, label, points) {
+  const legend = "<ul class='r5-legend'><li><i class='solid'></i><span>This session</span></li><li><i class='dash'></i><span>All sessions</span></li></ul>";
+  const toggle = "<button type='button' class='r5-btn' data-act='r5-chart-table'>" + (chartTable ? "Show as chart" : "Show as table") + "</button>";
+  if (chartTable) {
+    const rows = (points || [0]).map((v, i) => "<tr><th scope='row'>" + i + "</th><td>" + api.money(v) + "</td></tr>").join("");
+    return toggle + "<table class='r5-table'><caption>" + esc(label) + "</caption><thead><tr><th>Roll</th><th>Chips</th></tr></thead><tbody>" + rows + "</tbody></table>" + legend;
+  }
+  return toggle + chartSVG(series, label) + legend;
 }
 
 export function markup() {
   const parts = [];
-  if (active()) {
-    parts.push("<div class='r5-banner' role='note'>" + YD.BANNER + "</div>");
-    parts.push(dicePanel());
-  }
+  if (active()) parts.push(dicePanel());
   if (sheet) parts.push(sheetHTML());
   return "<div class='r5-host'>" + parts.join("") + "</div>";
+}
+
+function faceRow(which, label) {
+  const on = (yd.draft && yd.draft[which]) || 0;
+  const faces = [1, 2, 3, 4, 5, 6].map((n) => "<button type='button' class='yd-face" + (on === n ? " on" : "") + "' data-act='r5-face' data-die='" + which + "' data-n='" + n + "' aria-label='" + label + " " + n + "'>" + n + "</button>").join("");
+  return "<p class='r5-note'>" + label + "</p><div class='r5-faces'>" + faces + "</div>";
 }
 
 function dicePanel() {
   const p = yd.pending || { d1: 0, d2: 0 };
   const pairs = YD.PAIR_PAD.map(([a, b]) => "<button type='button' class='yd-face' data-act='r5-pair' data-d1='" + a + "' data-d2='" + b + "' aria-label='" + a + " and " + b + "'>" + a + "·" + b + "</button>").join("");
-  return "<section class='r5-sheet' style='position:relative;margin:8px' aria-label='Your Dice: enter a roll'><p class='r5-note'>" + YD.ONBOARD + "</p>" +
+  return "<section class='r5-yd' aria-label='Your Dice: enter a roll'><div class='r5-banner' role='note'>" + YD.BANNER + "</div><p class='r5-note'>" + YD.ONBOARD + "</p>" +
     "<div class='r5-pairs' role='radiogroup' aria-label='Pick the pair'>" + pairs + "</div>" +
+    "<div class='r5-diepad'>" + faceRow("d1", "Die 1") + faceRow("d2", "Die 2") + "</div>" +
     "<p class='r5-note'>Selected " + (p.d1 ? p.d1 + " and " + p.d2 : "none") + (p.d1 ? " <span class='r5-yours'>YOURS</span>" : "") + "</p>" +
     "<div class='r5-seg'><button type='button' data-act='r5-undo'>Undo last roll</button><button type='button' data-act='r5-paste'>Paste</button><button type='button' data-act='r5-leave'>Leave Your Dice</button></div></section>";
 }
@@ -148,13 +203,16 @@ function historyHTML() {
     ? "Session started " + api.money(cur.startChips) + ", ended " + api.money(sum.end) + "; low " + api.money(sum.lo) + "; high " + api.money(sum.hi)
     : "No session yet";
   const tabs = "<div class='r5-seg' role='tablist'><button type='button' data-act='r5-htab' data-tab='session' class='" + (histTab === "session" ? "on" : "") + "'>This session</button><button type='button' data-act='r5-htab' data-tab='all' class='" + (histTab === "all" ? "on" : "") + "'>All sessions" + (premium ? "" : " 🔒") + "</button><button type='button' data-act='r5-htab' data-tab='yours' class='" + (histTab === "yours" ? "on" : "") + "'>Your Dice</button></div>";
-  const chartBlock = (!premium && histTab === "all")
+  const sessionSeries = { pts, color: "#7EB6FF", dashed: false, name: "This session" };
+  const allSeries = { pts: H.allTimeSeries(list).cum, color: "#E2BC62", dashed: true, name: "All sessions" };
+  const drawn = histTab === "all" && premium ? [sessionSeries, allSeries] : [sessionSeries];
+  const chartView = (!premium && histTab === "all")
     ? "<p class='r5-note'><b>PREMIUM</b> The all-time chart, the full list and filters are Premium. Free keeps this session's chart, your last 20 sessions and the totals.</p>"
-    : chart(histTab === "all" && premium ? H.allTimeSeries(list).cum : pts, label);
+    : chartBlock(drawn, label, histTab === "all" && premium ? allSeries.pts : pts);
   const stats = "<div class='r5-sum'><div><small>SESSIONS</small><b>" + all.sessions + "</b></div><div><small>ROLLS</small><b>" + all.rolls + "</b></div><div><small>HIGHEST SESSION</small><b>" + api.money(all.highest) + "</b></div><div><small>LOWEST SESSION</small><b>" + api.money(all.lowest) + "</b></div></div>";
   const rows = shown.map((s) => "<button type='button' class='r5-row' data-act='r5-session' data-id='" + s.id + "'><span>" + esc(s.mode) + " · " + s.rolls + " rolls</span><b>" + api.money(s.net || 0) + "</b></button>").join("");
   const csv = premium ? "<button type='button' class='r5-btn' data-act='r5-csv'>Sessions CSV</button>" : "<button type='button' class='r5-btn r5-lock' disabled>Sessions CSV PREMIUM</button>";
-  return "<div class='r5-head'><small>MENU · SESSIONS</small><h1>Sessions</h1></div>" + tabs + chartBlock + stats +
+  return "<div class='r5-head'><small>MENU · SESSIONS</small><h1>Sessions</h1></div>" + tabs + chartView + stats +
     "<p class='r5-note'>A Reset bankroll ends a session and never counts as a gain.</p>" +
     "<div class='r5-k'>SESSIONS · LAST 20 FREE</div>" + rows + csv +
     "<p class='r5-note r5-chartfoot'>" + H.FOOTER + "</p>";
@@ -181,7 +239,7 @@ function rulesHTML() {
     "<p class='r5-note'>Field 12 pays</p><div class='r5-seg'>" + field + "</div>" +
     "<p class='r5-note'>Odds multiple</p><div class='r5-seg'>" + odds + "</div>" +
     "<p class='r5-note'>PREMIUM keeps Field 12 3:1, odds other than 3-4-5x, custom limits and custom bankroll. Side-bet limits stay the same in every tier.</p>" +
-    "<label class='r5-note'><input type='checkbox' data-act='r5-point' " + (api.settings.includePoint ? "checked" : "") + "> Include my point</label>";
+    "<label class='r5-check'><input type='checkbox' data-act='r5-point' " + (api.settings.includePoint ? "checked" : "") + "> <span>Include my point</span></label>";
 }
 
 function speedHTML() {
@@ -196,7 +254,7 @@ function drillsHTML() {
     const level = api.premium() ? "dealer" : "rookie";
     return "<div class='r5-head'><small>LEARN · PAYOUT DRILLS</small><h1>Billy's Payout Drills</h1></div>" +
       "<p class='r5-note'>Dealer Billy asks what a bet pays. This never touches your chips.</p>" +
-      "<div class='r5-seg'><button type='button' data-act='r5-drill-go' data-level='rookie'>Rookie</button><button type='button' data-act='r5-drill-go' data-level='dealer'>Dealer</button>" +
+      "<div class='r5-seg'><button type='button' data-act='r5-drill-go' data-level='rookie'>Rookie</button><button type='button' data-act='r5-drill-go' data-level='dealer'>Dealer</button><button type='button' data-act='r5-drill-go' data-level='dealer' data-drill='D7'>Pay the roll</button>" +
       (api.premium() ? "<button type='button' data-act='r5-drill-go' data-level='boxman'>Boxman</button>" : "<button type='button' class='r5-lock' disabled>Boxman 🔒</button>") +
       "</div><p class='r5-note'>" + Dr.FOOTER + "</p>";
   }
@@ -224,10 +282,10 @@ function seatsHTML() {
 
 function persist() {
   H.saveBook(localStorage, api.app, book);
-  api.save();
 }
 
 export function afterRoll(info) {
+  book = H.closeIdle(book, Date.now());
   const yours = !!(info && info.yourDice);
   const total = info.total;
   if (!(yours ? book.yourLive : book.live)) {
@@ -261,10 +319,15 @@ export function applyPending(game) {
   return game;
 }
 
-export function beforeReset(worth) {
+export function beforeReset() {
   const yours = active();
-  if (yours ? book.yourLive : book.live) book = H.noteRoll(book, worth, { yourDice: yours });
   book = H.closeLive(book, "reset", yours);
+  persist();
+}
+
+export function closeSession(reason) {
+  if (book.live) book = H.closeLive(book, reason || "leave", false);
+  if (book.yourLive) book = H.closeLive(book, reason || "leave", true);
   persist();
 }
 
@@ -285,6 +348,7 @@ export function handle(act, el) {
   }
   if (act === "r5-drills") { sheet = "drills"; api.repaint(); return true; }
   if (act === "r5-seats") { sheet = "seats"; api.repaint(); return true; }
+  if (act === "r5-chart-table") { chartTable = !chartTable; api.repaint(); return true; }
   if (act === "r5-htab") {
     histTab = el.dataset.tab || "session";
     if (histTab === "all" && !api.premium()) histTab = "all";
@@ -358,6 +422,16 @@ export function handle(act, el) {
   if (act === "r5-point") {
     api.settings.includePoint = !!el.checked;
     api.save();
+    api.repaint();
+    return true;
+  }
+  if (act === "r5-face") {
+    if (!yd) return true;
+    if (!yd.draft) yd.draft = { d1: 0, d2: 0 };
+    const which = el.dataset.die === "d2" ? "d2" : "d1";
+    yd.draft[which] = Number(el.dataset.n);
+    if (yd.draft.d1 && yd.draft.d2) yd.pending = YD.pairFromFaces(yd.draft.d1, yd.draft.d2);
+    api.repaint();
     return true;
   }
   if (act === "r5-your-dice") {
@@ -375,6 +449,7 @@ export function handle(act, el) {
     if (api.setRail) api.setRail(null);
     yd = YD.freshMode(E.STARTING_BANKROLL);
     sheet = "";
+    if (api.onEnter) api.onEnter();
     api.toast(YD.ONBOARD);
     api.repaint();
     return true;
@@ -419,8 +494,9 @@ export function handle(act, el) {
   if (act === "r5-quick") {
     const name = el.dataset.quick;
     const chip = api.settings.chip || (api.app === "table" ? 1000 : 500);
-    const min = (g.rules && g.rules.tableMin) || (api.app === "table" ? 1000 : 500);
-    const res = QB.post(g, name, { chip, tableMin: min, point: g.point, includePoint: !!api.settings.includePoint, have: haveMap(g) });
+    const min = betUnit(g);
+    const stake = stakeMap(g);
+    const res = QB.post(g, name, { chip, tableMin: min, point: g.point, includePoint: !!api.settings.includePoint, have: stake.have, amounts: stake.amounts });
     if (!res.ok) api.toast(res.error);
     else {
       api.setGame(res.state);
@@ -433,7 +509,8 @@ export function handle(act, el) {
   if (act === "r5-drill-go") {
     const level = el.dataset.level || "rookie";
     if (level === "boxman" && !api.premium()) return true;
-    drill = { level, items: Dr.roundOf(api.app, level, 7), i: 0, correct: 0, typed: "", why: "" };
+    const items = el.dataset.drill === "D7" ? Dr.payTheRoll(api.app) : Dr.roundOf(api.app, level, 7);
+    drill = { level, items, i: 0, correct: 0, typed: "", why: "", drill: el.dataset.drill || "" };
     api.repaint();
     return true;
   }
@@ -453,6 +530,10 @@ export function handle(act, el) {
       const gscore = Dr.grade(drill.level, drill.correct);
       store.best = Math.max(store.best || 0, gscore.score);
       localStorage.setItem(key, JSON.stringify(store));
+      const onlyD7 = drill.items.every((item) => item.drill === "D7");
+      if (gscore.perfect && onlyD7 && api.noteBadge) {
+        api.noteBadge({ type: "drill", drill: "D7", perfect: true, level: drill.level, correct: drill.correct });
+      }
     }
     api.repaint();
     return true;
@@ -496,10 +577,11 @@ export function noteEntered(state) {
 }
 
 export function menuButtons() {
-  return "<button type='button' data-act='r5-history' style='height:44px'>Sessions</button>" +
-    "<button type='button' data-act='r5-rules' style='height:44px'>Table rules</button>" +
-    "<button type='button' data-act='r5-speed' style='height:44px'>Roll speed</button>" +
-    "<button type='button' data-act='r5-drills' style='height:44px'>Payout drills</button>" +
-    "<button type='button' data-act='r5-your-dice' style='height:44px'>Enter your own dice</button>" +
-    (api.app === "table" ? "<button type='button' data-act='r5-seats' style='height:44px'>Pass and play</button>" : "");
+  const row = (act, label) => "<button type='button' class='r5-row' data-act='" + act + "'>" + label + "</button>";
+  return row("r5-history", "Sessions") +
+    row("r5-rules", "Table rules") +
+    row("r5-speed", "Roll speed") +
+    row("r5-drills", "Payout drills") +
+    row("r5-your-dice", "Enter your own dice") +
+    (api.app === "table" ? row("r5-seats", "Pass and play") : "");
 }

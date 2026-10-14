@@ -5,7 +5,7 @@
 
 export const BANKROLL_MIN = 10000;
 export const BANKROLL_MAX = 10000000;
-export const BANKROLL_PRESETS = [50000, 100000, 250000, 500000, 1000000];
+export const BANKROLL_PRESETS = [50000, 100000, 250000, 500000, 1000000, 2500000, 10000000];
 
 export const TABLE_TIERS = [
   { id: "standard", name: "Standard", min: 1000, max: 50000, bankroll: 100000 },

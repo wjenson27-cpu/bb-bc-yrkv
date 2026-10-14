@@ -13,11 +13,13 @@ function roll(store, extra) {
   }, extra));
 }
 
-test("the catalog is 32 badges with the marquee ids", () => {
-  assert.equal(B.BADGES.length, 32);
+test("the catalog is 33 badges with the marquee ids", () => {
+  assert.equal(B.BADGES.length, 33);
   assert.equal(B.BADGES.filter((b) => b.tier === "bronze").length, 8);
-  assert.equal(B.BADGES.filter((b) => b.tier === "silver").length, 10);
+  assert.equal(B.BADGES.filter((b) => b.tier === "silver").length, 11);
   assert.equal(B.badgeById("talk_the_talk").n, 32);
+  assert.equal(B.badgeById("dealers_apprentice").n, 33);
+  assert.equal(B.badgeById("dealers_apprentice").tier, "silver");
   assert.equal(B.badgeById("table_manners").n, 31);
   assert.equal(B.BADGES.filter((b) => b.tier === "gold").length, 9);
   assert.equal(B.BADGES.filter((b) => b.tier === "legendary").length, 5);
@@ -299,4 +301,34 @@ test("a Field bet keeps that hand out of the Under 2% Club", () => {
   store = roll(res.store, { hadBet: true, maxEdge: 0.37 }).store;
   res = roll(store, { sevenOut: true, hadBet: true, maxEdge: 0.37 });
   assert.ok(res.unlocked.includes("low_edge_three_hands"));
+});
+
+test("Slow Double scales with the run's starting bankroll", () => {
+  const small = roll({ badges: {}, progress: { steady: { start: 100000, broken: false, gain: 0 } } }, {
+    totalBefore: 100000,
+    totalAfter: 200000,
+    inAction: 1000,
+  });
+  assert.ok(small.unlocked.includes("steady_up_1000"));
+  const big = roll({ badges: {}, progress: { steady: { start: 2000000, broken: false, gain: 0 } } }, {
+    totalBefore: 2000000,
+    totalAfter: 2100000,
+    inAction: 1000,
+  });
+  assert.ok(!big.unlocked.includes("steady_up_1000"));
+  const doubled = roll(big.store, {
+    totalBefore: 2100000,
+    totalAfter: 4000000,
+    inAction: 1000,
+  });
+  assert.ok(doubled.unlocked.includes("steady_up_1000"));
+});
+
+test("Dealer's Apprentice is a perfect D7 round, never a bet", () => {
+  const missed = B.noteAction({ badges: {}, progress: {} }, { type: "drill", drill: "D7", level: "dealer", perfect: false, correct: 9 });
+  assert.ok(!missed.unlocked.includes("dealers_apprentice"));
+  const rolled = roll({ badges: {}, progress: {} }, { hadBet: true, handRolls: 10 });
+  assert.ok(!rolled.unlocked.includes("dealers_apprentice"));
+  const earned = B.noteAction({ badges: {}, progress: {} }, { type: "drill", drill: "D7", level: "dealer", perfect: true, correct: 10 });
+  assert.ok(earned.unlocked.includes("dealers_apprentice"));
 });

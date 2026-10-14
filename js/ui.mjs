@@ -1298,7 +1298,7 @@ async function doRoll(source) {
     celebrate(settled, handBefore, { point: pointBefore, pass: passBefore });
     if (!entered) maybeRecord(handBefore, settled, dice, hadBetNow, false);
   }
-  if (settled.result === "seven-out" && boardData.session && !boardData.session.ended) {
+  if (!entered && settled.result === "seven-out" && boardData.session && !boardData.session.ended) {
     const length = handBefore.rolls + 1;
     if (!boardData.session.longest || length > boardData.session.longest) boardData.session.longest = length;
   }
@@ -1821,7 +1821,7 @@ function cubeMarkup(which) {
 function animateDice(dice) {
   const reduce = motionOff();
   const cubes = [...document.querySelectorAll("#dice-row .cube")];
-  if (!cubes.length) return wait(reduce ? 180 : 1400);
+  if (!cubes.length) return wait(RS.diceMs(settings.rollSpeed, reduce));
   const faces = [dice.d1, dice.d2];
   cubes.forEach((c, i) => {
     c.dataset.face = String(faces[i]);
@@ -2195,6 +2195,7 @@ function leaderHTML() {
   const emptyCopy = scope === "week"
     ? "No finished hands yet this week. Every hand ends on a seven-out."
     : "No finished hands yet. Every hand ends on a seven-out.";
+  const hero = rows.length ? "<img src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>" : "";
   const list = rows.length ? "<ol class='boardlist'>" + rows.map((e, i) => {
     const mine = (e.initials || "") === you;
     const pts = E.countPhrase(e.points, "pt", "pts");
@@ -2216,7 +2217,7 @@ function leaderHTML() {
   const prevLine = prev ? "<p class='weeknote'>Last week's best: " + E.countPhrase(prev.throws, "roll") + ".</p>" : "";
   const weekNote = scope === "week" ? "<p class='weeknote'>Resets Monday at 12:00 AM, on this device.</p>" : "";
   return "<section class='boardpage'><header class='boardhead'>" +
-    "<img src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>" +
+    hero +
     "<div><p class='kicker'>ON THIS DEVICE</p><h2 class='led'>HIGH HAND · " + (scope === "week" ? "THIS WEEK" : "ALL TIME") + "</h2>" +
     "<p class='muted'>Rolls in one hand, come-out to seven-out.</p></div></header>" +
     "<div class='seg boardseg'>" +
@@ -2261,7 +2262,8 @@ function badgeGallery() {
     return true;
   };
   const tiers = ["bronze", "silver", "gold", "legendary"];
-  const tierCounts = { bronze: 8, silver: 10, gold: 9, legendary: 5 };
+  const tierCounts = {};
+  tiers.forEach((tier) => { tierCounts[tier] = B.BADGES.filter((b) => b.tier === tier).length; });
   const bars = "<div class='tierbars'>" + tiers.map((tier) => {
     const have = B.BADGES.filter((b) => b.tier === tier && boardData.badges && boardData.badges[b.id]).length;
     const need = tierCounts[tier];
@@ -3111,7 +3113,7 @@ function dockHTML() {
   return "<div class='dockgrid'><div class='dockleft'><div class='rack'><div class='trough'>" + chips + "</div></div>" +
     "<div class='presspair'><div class='presswrap'><button class='press-btn" + (st.pressOk && !rolling ? " live" : "") + "' data-act='press'" + (rolling || !st.pressOk ? " disabled" : "") + "><span class='pl1'>" + pressLine + "</span><small>" + pressSub + "</small></button>" + undo + clear + "</div>" +
     "<button class='press-btn power" + (st.powerOk && !rolling ? " live" : "") + "' data-act='power'" + (rolling || !st.powerOk ? " disabled" : "") + "><span class='pl1'>" + powerLine + "</span><small>" + powerSub + "</small></button></div></div>" +
-    "<button class='roll-btn' data-act='roll' aria-label='" + (R5.active() ? "Settle the entered roll" : "Roll the dice") + "'><span class='kicker'>" + (R5.active() ? "YOUR DICE" : secs) + "</span><span class='roll-face'>" + (R5.active() ? "SETTLE" : "ROLL") + "</span><span class='ring'></span></button></div>" +
+    "<button class='roll-btn" + (R5.active() ? " yd" : "") + "' data-act='roll' aria-label='" + (R5.active() ? "Settle the entered roll" : "Roll the dice") + "'><span class='kicker'>" + (R5.active() ? "YOUR DICE" : secs) + "</span><span class='roll-face'>" + (R5.active() ? "SETTLE" : "ROLL") + "</span><span class='ring'></span></button></div>" +
     context + stop + resume;
 }
 
@@ -3400,10 +3402,17 @@ R5.attach({
   repaint: () => paint(),
   settings,
   save,
+  noteBadge: (action) => {
+    const ev = B.noteAction(boardData, action);
+    boardData.badges = ev.store.badges;
+    boardData.progress = ev.store.progress;
+    saveBoard();
+  },
   resetTo: (cents) => {
     settings.bankPreset = cents;
     resetTable();
   },
+  onEnter: () => { view = "play"; page = 1; },
 });
 mount();
 if (!localStorage.getItem("bb-bubble-session-tip")) {

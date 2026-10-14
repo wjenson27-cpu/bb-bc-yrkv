@@ -118,6 +118,14 @@ export function catalog(app) {
   return list;
 }
 
+/** Ten D7 Pay the roll questions. A perfect Dealer round earns Dealer's Apprentice. */
+export function payTheRoll(app) {
+  const item = catalog(app).find((q) => q.drill === "D7");
+  const out = [];
+  for (let i = 0; i < 10; i++) out.push(Object.assign({}, item, { n: i + 1, level: "dealer" }));
+  return out;
+}
+
 export function roundOf(app, level, seed) {
   const all = catalog(app).filter((item) => {
     if (level === "boxman") return true;

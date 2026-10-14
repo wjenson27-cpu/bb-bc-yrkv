@@ -8,8 +8,8 @@ import { cssMatrix } from "./tc-dice.mjs";
 const A = "../assets/";
 const VIEW = "rotateX(-56deg) rotateY(-18deg)";
 export const TIMING = {
-  normal: { dur: 1400, hold: 450, tuck: 260 },
-  fast: { dur: 500, hold: 250, tuck: 200 },
+  normal: { dur: 1180, hold: 450, tuck: 260 },
+  fast: { dur: 420, hold: 250, tuck: 200 },
   instant: { dur: 150, hold: 200, tuck: 160 },
   reduced: { dur: 180, hold: 300, tuck: 120 },
 };

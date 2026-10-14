@@ -13,7 +13,7 @@ import * as QB from "../js/quick-bets.mjs";
 import * as Dr from "../js/drills.mjs";
 import * as RS from "../js/roll-speed.mjs";
 import * as PT from "../js/point-tier.mjs";
-import { pageForLink } from "../js/board-page.mjs";
+import { pageForLink, ipadLayout, shootAct } from "../js/board-page.mjs";
 import { dieSize, TIMING } from "../js/throw.mjs";
 import { termById } from "../js/lingo.mjs";
 import * as R5 from "../js/r5-ui.mjs";
@@ -96,10 +96,21 @@ test("session history chart, reset, and caps", () => {
   book = H.openLive(book, { startChips: 110000 });
   book = H.noteRoll(book, 90000, {});
   book = H.closeLive(book, "reset");
-  assert.equal(book.sessions[0].counts, false);
+  assert.equal(book.sessions[0].counts, true);
+  assert.equal(book.sessions[0].refillExcluded, true);
+  assert.equal(book.sessions[0].rolls, 1);
+  assert.equal(book.sessions[0].net, -20000);
   const tot = H.totals(book.sessions);
-  assert.equal(tot.net, 10000);
+  assert.equal(tot.net, -10000);
   assert.equal(tot.highest, 10000);
+  assert.equal(tot.sessions, 2);
+  let idle = H.openLive(H.emptyBook(), { startChips: 50000, startedAt: 1 });
+  idle = H.noteRoll(idle, 48000, {});
+  idle.live.touchedAt = 1;
+  idle = H.closeIdle(idle, H.IDLE_MS + 5);
+  assert.equal(idle.live, null);
+  assert.equal(idle.sessions[0].endReason, "idle");
+  assert.equal(idle.sessions[0].rolls, 1);
   assert.match(H.FOOTER, /Past sessions don't predict future rolls/);
   const many = [];
   for (let i = 0; i < 220; i++) many.push({ net: i, counts: true, rolls: 1, endReason: "end" });
@@ -109,7 +120,8 @@ test("session history chart, reset, and caps", () => {
   assert.equal(H.visibleSessions(book.sessions, false).length <= 20, true);
   let yours = H.emptyBook();
   yours = H.openLive(yours, { yourDice: true, startChips: 100000, label: "Your Dice" });
-  yours = H.noteRoll(yours, 101000, { yourDice: true });
+  yours = H.noteRoll(yours, 101000, { yourDice: true, sevenOut: true, length: 12 });
+  assert.equal(yours.yourLive.longest, 0);
   yours = H.closeLive(yours, "end", true);
   assert.equal(yours.yourDice.length, 1);
   assert.equal(yours.sessions.length, 0);
@@ -153,8 +165,21 @@ test("quick bets match the $10 and $5 fixtures", () => {
   assert.equal(posted.ok, true);
   assert.equal(posted.state.bets.place[6], 1200);
   assert.equal(posted.state.bets.buy[5], 1000);
-  const again = QB.post(posted.state, "inside", { chip: 500, tableMin: 1000, point: null, have: { 5: "buy", 6: "place", 8: "place", 9: "buy" } });
-  assert.equal(again.state.bets.place[6], 2400);
+  const again = QB.post(posted.state, "inside", {
+    chip: 500,
+    tableMin: 1000,
+    point: null,
+    have: { 5: "buy", 6: "place", 8: "place", 9: "buy" },
+    amounts: { 5: 1000, 6: 1200, 8: 1200, 9: 1000 },
+  });
+  assert.equal(again.ok, true);
+  assert.equal(again.topped, true);
+  assert.equal(again.state.bets.place[6], 1200);
+  assert.equal(again.state.bets.buy[5], 1000);
+  const high = QB.plan("inside", { chip: 500, tableMin: 2500, point: null, have: {} });
+  assert.equal(high.total, 11000);
+  assert.equal(Tiers.BANKROLL_PRESETS.includes(10000000), true);
+  assert.equal(Tiers.BANKROLL_PRESETS.includes(2500000), true);
   const short = E.createGame({ profile: "table", bankroll: 100 });
   assert.equal(QB.post(short, "across", { chip: 1000, tableMin: 1000, have: {} }).ok, false);
 });
@@ -178,8 +203,8 @@ test("payout drills agree with the engine", () => {
 });
 
 test("roll speed and PM-10 durations", () => {
-  assert.equal(RS.diceMs("normal"), 1400);
-  assert.equal(RS.diceMs("fast"), 500);
+  assert.equal(RS.diceMs("normal"), 1180);
+  assert.equal(RS.diceMs("fast"), 420);
   assert.equal(RS.diceMs("instant"), 150);
   assert.equal(RS.diceMs("normal", true), 180);
   assert.equal(RS.capSpeed("instant", true), "fast");
@@ -188,14 +213,26 @@ test("roll speed and PM-10 durations", () => {
   assert.equal(PT.tierDuration("huge"), 2500);
   assert.equal(RS.celebrateMs("base", "normal"), 1200);
   assert.equal(RS.psoMs(false, "instant"), 600);
-  assert.deepEqual(TIMING.fast.dur, 500);
+  assert.equal(TIMING.normal.dur, 1180);
+  assert.equal(TIMING.fast.dur, 420);
+  assert.equal(ipadLayout(844, 390), false);
+  assert.equal(ipadLayout(932, 430), false);
+  assert.equal(ipadLayout(1180, 820), true);
+  assert.equal(ipadLayout(820, 1180), true);
+  assert.equal(ipadLayout(1366, 1024), true);
+  assert.equal(shootAct({ page: 1, screen: "play", ipad: false }), "go-shooter");
+  assert.equal(shootAct({ page: 1, screen: "play", ipad: true }), "throw");
+  assert.equal(shootAct({ page: 0, screen: "play", ipad: true }), "go-shooter");
+  assert.equal(shootAct({ page: 2, screen: "play", ipad: false }), "throw");
+  assert.equal(Dr.payTheRoll("bubble").length, 10);
+  assert.equal(Dr.payTheRoll("bubble").every((item) => item.drill === "D7"), true);
   assert.equal(dieSize({ width: 400, height: 700 }, "felt") >= 26, true);
   assert.equal(pageForLink("hop:1-1", "bubble"), 0);
   assert.equal(pageForLink("place:6", "table"), 1);
 });
 
 test("badge art exists for Table Manners and Talk the Talk", () => {
-  ["table_manners", "talk_the_talk"].forEach((id) => {
+  ["table_manners", "talk_the_talk", "dealers_apprentice"].forEach((id) => {
     ["", "-locked", "-locked-small", "-small"].forEach((suf) => {
       assert.equal(existsSync("assets/badges/" + id + suf + ".svg"), true, id + suf);
     });
@@ -205,4 +242,19 @@ test("badge art exists for Table Manners and Talk the Talk", () => {
   assert.match(ui, />= 10\)/);
   assert.match(table, />= 10\)/);
   assert.doesNotMatch(readFileSync("js/ui.mjs", "utf8"), /finish\(\); \}, 1600\)/);
+  assert.doesNotMatch(readFileSync("js/ui.mjs", "utf8"), /wait\(reduce \? 180 : 1400\)/);
+  assert.match(table, /if \(!entered\)/);
+  assert.match(table, /closeSession\("leave"\)/);
+  const r5 = readFileSync("js/r5-ui.mjs", "utf8");
+  assert.match(r5, /Show as table/);
+  assert.match(r5, /r5-preview/);
+  assert.match(r5, /bubbleMin/);
+  assert.match(r5, /stroke-dasharray/);
+  assert.doesNotMatch(r5, /noteRoll\(book, worth/);
+  const css = readFileSync("css/round5b.css", "utf8");
+  assert.match(css, /\.app\.play \.pager/);
+  assert.doesNotMatch(css, /\.app\.play \.felt \{\s*display: grid/);
+  assert.match(css, /62% 38%/);
+  assert.match(css, /ipadshoot/);
+  assert.match(readFileSync("css/rotate.css", "utf8"), /z-index: 66/);
 });

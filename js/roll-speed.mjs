@@ -24,9 +24,9 @@ function pick(speed, reduced, table) {
   return chosen;
 }
 
-/** Dice tumble / throw. Normal 1.4 s, Fast 0.5 s, Instant ≤ 150 ms. */
+/** Dice tumble / throw. Normal is the 1,180 ms tumble (CSS pair is 1,100 / 1,180). Fast is about 420. */
 export function diceMs(speed, reduced) {
-  return pick(speed, reduced, { normal: 1400, fast: 500, instant: 150, reduced: 180 });
+  return pick(speed, reduced, { normal: 1180, fast: 420, instant: 150, reduced: 180 });
 }
 
 /** Point-made Base / Big / Huge. PM-10 is Base 1.2 / Big 2.0 / Huge 2.5 (rev 15c). */
