@@ -118,12 +118,80 @@ export function catalog(app) {
   return list;
 }
 
-/** Ten D7 Pay the roll questions. A perfect Dealer round earns Dealer's Apprentice. */
+/** Ten distinct D7 Pay the roll questions. A perfect Dealer round earns Dealer's Apprentice. */
 export function payTheRoll(app) {
-  const item = catalog(app).find((q) => q.drill === "D7");
-  const out = [];
-  for (let i = 0; i < 10; i++) out.push(Object.assign({}, item, { n: i + 1, level: "dealer" }));
-  return out;
+  const rules = TR.defaultRules();
+  const specs = [
+    {
+      prompt: "Place 6 $18 and Field $5 (12 pays 2 to 1). The roll is 6-6. Total pay?",
+      answer: E.placeProfit(1800, 6) + E.fieldProfit(500, 12, rules),
+      why: "Place 6 pays $21. Field 12 at 2 to 1 pays $10. Together $31.",
+      text: "Place 6 $18; Field $5; roll six and six",
+    },
+    {
+      prompt: "Place 8, $12. The 8 rolls. Pay?",
+      answer: E.placeProfit(1200, 8),
+      why: "Place 8 pays 7 to 6: $12 ÷ 6 = 2 units × $7 = $14.",
+      text: "Place 8, $12",
+    },
+    {
+      prompt: "Place 4, $10. The 4 rolls. Pay?",
+      answer: E.placeProfit(1000, 4),
+      why: "Place 4 pays 9 to 5: $10 ÷ 5 = 2 units × $9 = $18.",
+      text: "Place 4, $10",
+    },
+    {
+      prompt: "Place 9, $20. The 9 rolls. Pay?",
+      answer: E.placeProfit(2000, 9),
+      why: "Place 9 pays 7 to 5: $20 ÷ 5 = 4 units × $7 = $28.",
+      text: "Place 9, $20",
+    },
+    {
+      prompt: "Hard 6, $1. Hard six. Pay?",
+      answer: E.hardwayProfit(100, 6),
+      why: "Hard 6 pays 9 to 1: $1 × 9 = $9.",
+      text: "Hard 6, $1",
+    },
+    {
+      prompt: "Hard 10, $5. Hard ten. Pay?",
+      answer: E.hardwayProfit(500, 10),
+      why: "Hard 10 pays 7 to 1: $5 × 7 = $35.",
+      text: "Hard 10, $5",
+    },
+    {
+      prompt: "Pass Line $20. Come-out 7. Pay the line?",
+      answer: 2000,
+      why: "Pass Line pays even money. $20 wins $20.",
+      text: "Pass Line $20, come-out 7",
+    },
+    {
+      prompt: "$30 odds on 5. The point is made. Pay the odds?",
+      answer: E.passOddsProfit(3000, 5),
+      why: "Odds on 5 pay 3 to 2: $30 ÷ 2 = 15 units × $3 = $45.",
+      text: "Pass odds $30 on 5",
+    },
+    {
+      prompt: "Buy 10, $25. It hits. Net pay?",
+      answer: E.buyProfit(2500, 10, rules),
+      why: "Buy 10 pays 2 to 1, then 5% commission on the $25 stake: $50 − $1.25 = $48.75.",
+      text: "Buy 10, $25",
+    },
+    {
+      prompt: "Place 8 $6 and Field $5 (12 pays 2 to 1). The roll is 6-6. Total pay?",
+      answer: E.placeProfit(600, 8) + E.fieldProfit(500, 12, rules),
+      why: "Place 8 pays $7. Field 12 at 2 to 1 pays $10. Together $17.",
+      text: "Place 8 $6; Field $5; roll six and six",
+    },
+  ];
+  return specs.map((spec, i) => q({
+    drill: "D7",
+    level: "dealer",
+    n: i + 1,
+    prompt: spec.prompt,
+    answer: spec.answer,
+    why: spec.why,
+    text: spec.text,
+  }));
 }
 
 export function roundOf(app, level, seed) {

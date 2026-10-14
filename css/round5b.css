@@ -32,7 +32,9 @@
 .roll-btn.yd,.tc-shoot.yd{background:radial-gradient(90% 70% at 50% 30%,#1AA896,#0E6E62 55%,#064840);color:#E9FFF8;box-shadow:inset 0 0 0 2px #6FE3D0,0 8px 18px rgba(0,0,0,.55)}
 .tc-shoot.pso-clear,.roll-btn.pso-clear{position:relative;z-index:72}
 .tc-menu{overflow:auto}
-.tc-menu>button,.tc-menu>a,.tc-menu .r5-row{min-height:44px;flex:0 0 auto;display:flex;align-items:center;width:100%;text-align:left;margin:4px 0;padding:8px 12px;background:#101820;color:#fff;border-radius:12px;border:1px solid rgba(255,255,255,.08);font:800 13px/1.2 Archivo,sans-serif;text-decoration:none}
+.tc-menu>button,.tc-menu>a,.tc-menu .r5-row,.tc-menu>label.tc-toggle{min-height:44px;flex:0 0 auto;display:flex;align-items:center;width:100%;text-align:left;margin:4px 0;padding:8px 12px;background:#101820;color:#fff;border-radius:12px;border:1px solid rgba(255,255,255,.08);font:800 13px/1.2 Archivo,sans-serif;text-decoration:none;box-sizing:border-box}
+.tc-menu>label.tc-toggle{justify-content:space-between;gap:8px}
+.tc-menu>label.tc-toggle button{min-height:44px;min-width:44px;height:44px;flex:0 0 auto}
 .tc-edge{position:absolute;left:0;top:40%;z-index:5;min-height:44px;min-width:44px;padding:8px 6px;border-radius:0 12px 12px 0;border:1px solid rgba(255,211,106,.5);border-left:0;background:#141A22;color:#FFD36A;font:800 11px/1.1 Archivo,sans-serif;letter-spacing:.08em}
 .tc-ipad-shooter{display:none;min-height:0;overflow:auto}
 .r5-row{display:flex;width:100%;text-align:left;gap:8px;align-items:center;margin:4px 0;background:#101820;color:#fff;border-radius:12px;border:1px solid rgba(255,255,255,.08);padding:8px}
@@ -137,6 +139,7 @@
   .app.play .felt.bfx.mode-crapless .numbox { grid-template-rows: minmax(calc(44px / var(--felt-k, 1)), auto) minmax(18px, 1fr) minmax(calc(44px / var(--felt-k, 1)), auto); }
   .app.play .felt.bfx .numbox .half.place,
   .app.play .felt.bfx .numbox .half.buy { min-height: calc(44px / var(--felt-k, 1)); height: auto; }
+  .app.play .felt.bfx .prop [data-kind="hop"] { min-height: calc(44px / var(--felt-k, 1)); height: auto; }
 }
 @media (min-width: 1366px) {
   .app.play .pager { grid-template-columns: 1fr 1fr 1fr; }
@@ -180,4 +183,7 @@
     min-height: calc(44px * 352px / 100vw);
     min-width: calc(44px * 352px / 100vw);
   }
+  .app.play .r5-qstrip button { min-height: calc(44px * 352px / 100vw); }
 }
+/* Table Your Dice lives in the shooter column, not over the board felt. */
+.tc-shooter .r5-yd{position:relative;left:auto;right:auto;bottom:auto;top:auto;z-index:2;max-height:240px;margin-top:8px}

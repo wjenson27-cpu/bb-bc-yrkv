@@ -26,10 +26,10 @@ export function ipadLayout(w, h) {
   return width >= 1024 || (width >= 768 && height >= 900);
 }
 
-/** SHOOT throws when the felt and the key share the screen. Side bets never throw. */
+/** SHOOT throws when the felt and the key share the screen. Side bets never throw.
+ *  Your Dice settles on the shooter page, where the pad is mounted. */
 export function shootAct(opts) {
   const o = opts || {};
-  if (o.yourDice) return "throw";
   if (o.screen !== "play" || o.menu) return "go-shooter";
   if (o.page === 2 || (o.ipad && o.page !== 0)) return "throw";
   return "go-shooter";

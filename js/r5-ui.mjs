@@ -156,11 +156,15 @@ function chartBlock(series, label, points) {
   return toggle + chartSVG(series, label) + legend;
 }
 
-export function markup() {
+export function markup(opts) {
   const parts = [];
-  if (active()) parts.push(dicePanel());
+  if (active() && !(opts && opts.dice === false)) parts.push(dicePanel());
   if (sheet) parts.push(sheetHTML());
   return "<div class='r5-host'>" + parts.join("") + "</div>";
+}
+
+export function yourDicePanel() {
+  return active() ? dicePanel() : "";
 }
 
 function faceRow(which, label) {
@@ -450,7 +454,6 @@ export function handle(act, el) {
     yd = YD.freshMode(E.STARTING_BANKROLL);
     sheet = "";
     if (api.onEnter) api.onEnter();
-    api.toast(YD.ONBOARD);
     api.repaint();
     return true;
   }

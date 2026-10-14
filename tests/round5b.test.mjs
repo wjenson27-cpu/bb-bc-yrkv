@@ -239,8 +239,14 @@ test("roll speed and PM-10 durations", () => {
   assert.equal(shootAct({ page: 1, screen: "play", ipad: true }), "throw");
   assert.equal(shootAct({ page: 0, screen: "play", ipad: true }), "go-shooter");
   assert.equal(shootAct({ page: 2, screen: "play", ipad: false }), "throw");
-  assert.equal(Dr.payTheRoll("bubble").length, 10);
-  assert.equal(Dr.payTheRoll("bubble").every((item) => item.drill === "D7"), true);
+  const pay = Dr.payTheRoll("bubble");
+  assert.equal(pay.length, 10);
+  assert.equal(pay.every((item) => item.drill === "D7"), true);
+  assert.equal(new Set(pay.map((item) => item.prompt)).size, 10);
+  assert.equal(new Set(pay.map((item) => item.answer)).size, 10);
+  assert.equal(pay.filter((item) => item.answer === 3100).length, 1);
+  assert.equal(shootAct({ page: 1, screen: "play", ipad: false, yourDice: true }), "go-shooter");
+  assert.equal(shootAct({ page: 2, screen: "play", ipad: false, yourDice: true }), "throw");
   assert.equal(dieSize({ width: 400, height: 700 }, "felt") >= 26, true);
   assert.equal(pageForLink("hop:1-1", "bubble"), 0);
   assert.equal(pageForLink("place:6", "table"), 1);

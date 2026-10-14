@@ -295,7 +295,8 @@ function shooterHTML() {
     "<div class='readout'><small>YOUR SET · " + set.name + "</small><b>Top " + pips(setFaces[0].top, setFaces[1].top, 18) + "</b><span>On axis: " + axes + "</span></div></div>" +
     last +
     "<div class='meter'><small>THROW POWER</small><div class='bar'><i style='left:" + throwPower + "%'></i></div><small class='r'>" + (throwPower < 18 ? "SOFT · NO ROLL" : throwPower < 45 ? "EASY" : throwPower < 75 ? "MEDIUM" : "HARD") + "</small></div>" +
-    "<p class='note'>Set dice are practice only. The throw does not change the roll. A soft toss is a no-roll and draws nothing.</p></div>";
+    "<p class='note'>Set dice are practice only. The throw does not change the roll. A soft toss is a no-roll and draws nothing.</p>" +
+    R5.yourDicePanel() + "</div>";
 }
 
 function pickerHTML() {
@@ -406,7 +407,7 @@ function menuHTML() {
   return "<div class='tc-sheet tc-menu'><h1>Table</h1><button class='r5-row' data-act='leave'>Leave table</button>" +
     "<a class='r5-row' href='../'>Bubble Craps</a>" +
     "<button class='r5-row' data-act='lingo'>Craps Lingo</button>" + R5.menuButtons() +
-    "<label>Lingo links on roll calls <button data-act='lingo-links' style='height:44px'>" + (settings.lingoLinks !== false ? "On" : "Off") + "</button></label>" +
+    "<label class='tc-toggle'>Lingo links on roll calls <button data-act='lingo-links'>" + (settings.lingoLinks !== false ? "On" : "Off") + "</button></label>" +
     "<label>Color up <select data-act='color-setting'><option value='offer'" + (settings.colorUp === "offer" ? " selected" : "") + ">Offer</option><option value='auto'" + (settings.colorUp === "auto" ? " selected" : "") + ">Auto</option><option value='off'" + (settings.colorUp === "off" ? " selected" : "") + ">Off</option></select></label>" +
     "<label>Theme <select data-act='theme'><option value='billy'>Billy navy</option><option value='midnight'" + (settings.theme === "midnight" ? " selected" : "") + ">Midnight</option><option value='classic'" + (settings.theme === "classic" ? " selected" : "") + ">Classic</option><option value='highlimit'" + (settings.theme === "highlimit" ? " selected" : "") + ">High limit</option></select></label>" +
     "<p>" + TR.RULE0_LINE + "</p><h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip</p>" +
@@ -504,7 +505,7 @@ function render() {
     right + "</div>" +
     "<footer class='tc-dock'>" + offerHTML + railHTML() + shoot + "</footer>" +
     "<nav class='tc-keys'><button data-act='screen' data-screen='play'" + (screen === "play" && !menu ? " class='on'" : "") + ">BETS</button><button data-act='screen' data-screen='picker'>STRATEGIES</button><button data-act='tutor'>TUTOR</button><button data-act='menu'>STATS</button></nav>" +
-    R5.markup() +
+    R5.markup({ dice: false }) +
     "<div class='tc-notice'><span>18+</span> PRACTICE ONLY · NO REAL MONEY</div>" +
     rotateGateHTML();
   LC.markSpots(app);
@@ -972,7 +973,7 @@ function onClick(e) {
   const t = e.target.closest("[data-act]");
   if (!t) return;
   const act = t.dataset.act;
-  if (act === "r5-your-dice") { menu = false; screen = "play"; }
+  if (act === "r5-your-dice") { menu = false; screen = "play"; page = 2; }
   if (R5.handle(act, t)) return;
   if (act === "tutor-dismiss") { tutorLine = null; render(); return; }
   if ((act === "seed" || act === "color-setting" || act === "theme" || act === "csv-file" || act === "lingo-q") && e.type === "click") return;
@@ -1419,7 +1420,7 @@ R5.attach({
     store = Badges.noteAction(store, action).store;
     localStorage.setItem("bb-table-badges-v1", JSON.stringify(store));
   },
-  onEnter: () => { menu = false; screen = "play"; },
+  onEnter: () => { menu = false; screen = "play"; page = 2; },
   resetTo: (cents) => {
     R5.beforeReset(E.netWorth(game));
     game = E.createGame({ profile: "table", bankroll: cents, rules: game.rules });

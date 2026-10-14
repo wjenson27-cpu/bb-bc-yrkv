@@ -25,6 +25,8 @@
     position: relative;
     z-index: 70;
   }
+  .app.play .modeseg,
+  .app.play .modeseg button { pointer-events: none; }
 }
 .rotate-card {
   width: min(340px, 100%);
