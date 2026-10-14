@@ -211,7 +211,10 @@ export function tableMinFor(kind, spot, rules) {
   const n = spot && spot.number;
   if (kind === "passOdds" || kind === "dontPassOdds" || kind === "comeOdds" || kind === "dontComeOdds") return 1;
   if (kind === "fire") return r.fireMin || 100;
-  if (kind === "place" && (n === 6 || n === 8)) return 1200;
+  if (kind === "place" && (n === 6 || n === 8)) {
+    const min = r.tableMin || TABLE_MIN_CENTS;
+    return Math.ceil(min / 600) * 600;
+  }
   if (kind === "horn") return 400;
   if (kind === "ce") return 200;
   if (kind === "field" || kind === "any7" || kind === "pass" || kind === "dontPass" || kind === "come" || kind === "dontCome" || kind === "place" || kind === "buy" || kind === "lay") {
@@ -228,7 +231,7 @@ export function tableMaxFor(kind, spot, rules) {
   if (kind === "repeater") return 2500;
   if (kind === "hop") return 10000;
   if (kind === "fire") return r.fireMax || 1000;
-  if (kind === "place" && (n === 6 || n === 8)) return Math.min(PLACE68_MAX, r.tableMax || TABLE_MAX_CENTS);
+  if (kind === "place" && (n === 6 || n === 8)) return Math.floor((r.tableMax || TABLE_MAX_CENTS) / 600) * 600;
   return r.tableMax || TABLE_MAX_CENTS;
 }
 

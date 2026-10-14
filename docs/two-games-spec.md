@@ -615,7 +615,7 @@ Bill: *"I want to have 3 screens to swipe through: far right dice/hood, middle b
 | `is_double` | `true` | die1 = die2 |
 | `hard_easy` | `hard` / `easy` / `n/a` | Hard/easy only for 4, 6, 8, 10; `n/a` otherwise |
 | `mode` | `regular` / `crapless` | App 2 is always `regular` |
-| `rule_preset` | `standard` / `mgm` / `custom:Strat 10x` | Active rules |
+| `rule_preset` | `standard` / `strip-classic` / `custom:Strat 10x` | Active rules |
 | `phase_before` | `come-out` / `point` | Game state before the roll |
 | `point_before` | `6` or blank | — |
 | `roll_result` | `natural` / `craps` / `point-set` / `point-made` / `seven-out` / `no-decision` | Line outcome. Crapless has no `craps` |
@@ -710,7 +710,7 @@ Bill: *"I want to have 3 screens to swipe through: far right dice/hood, middle b
 1. **Rules core:** one bet catalog and settlement engine (profiles: `bubble-regular`, `bubble-crapless`, `table-regular`). It includes the bonus bets (ATS, Hard Way All Day, Repeaters) with stay-up/come-down options.
 2. **Fair Dice:** `rng` (secure roll, fallback reporting), the **roll log** (per app, cap 100,000), the **stats** (counts, χ², per-die, streaks, RSR), the **CSV writer** (S5.4), and the tab UI.
 3. **Edges:** house-edge calculators (per bet, per roll, blended, combined line+odds) and the **Edge Preview** component (S3). Today the edge math is split between `table-engine.js` and the strategy cards.
-4. **Settings store:** one rules schema with **per-app setting lists** (A1.6, A2.3), the Standard defaults, presets (MGM, Caesars, Strat 10x, Downtown 10x), Premium gating, and a migration from the two current storage keys (`craps-practice-v5`, `billy-bubs-table`).
+4. **Settings store:** one rules schema with **per-app setting lists** (A1.6, A2.3), the Standard defaults, presets (Strip Classic, Strip Deluxe, Strat 10x, Downtown 10x), Premium gating, and a migration from the two current storage keys (`craps-practice-v5`, `billy-bubs-table`).
 5. **Tutor framework:** game-state machine, prompt tables by app/track/state, edge badges, the mute list, the banned-words lint (S6), and the multiplayer per-seat routing (App 2).
 6. **Strategy library and simulator:** from `strategies.js`.
 7. **UI kit and design system:** chips, dice, felt components, HUD, tab bar, Billy mascot, coach card.
@@ -978,7 +978,7 @@ After the point is made, the next roll is a come-out, and number bets are off by
 - **App defaults:** starting practice bankroll $1,000 and chips **$1 / $5 / $25 / $100 / $500** (Bill, Oct 10; the code has no $500 yet, `js/engine.js:15`); table min $5, max $500.
 
 ## A1.6 Premium Custom Rules: App 1 (Regular rule set / Crapless rule set)
-Mockups 10 and 11: Standard users can see every setting, locked; Premium users can change them. Presets: Standard, MGM, Caesars, Custom (saved), Downtown 10x. Every setting is stored **per rule set** (Regular and Crapless are separate) unless marked. Changes apply at the next come-out.
+Mockups 10 and 11: Standard users can see every setting, locked; Premium users can change them. Presets: Standard, Strip Classic, Strip Deluxe, Custom (saved), Downtown 10x. Every setting is stored **per rule set** (Regular and Crapless are separate) unless marked. Changes apply at the next come-out.
 
 | ID | Setting | Options | Standard default | Premium range / notes |
 |---|---|---|---|---|
@@ -1258,7 +1258,7 @@ The full definition is in **A1.4**. Summary:
 **Edge Preview (T-27):** "Fire Bet 20.76% → 8.16% (Generous). Win chance 1 in 94 (4+ points)."
 
 ## A2.3 Premium Custom Rules: App 2
-Mockups 07 and 08. Presets: Standard, MGM, Caesars, Strat 10x, Downtown 10x, Custom. Changes apply at the next come-out.
+Mockups 07 and 08. Presets: Standard, Strip Classic, Strip Deluxe, Strat 10x, Downtown 10x, Custom. Changes apply at the next come-out.
 
 | ID | Setting | Options | Standard default | Premium range / notes |
 |---|---|---|---|---|

@@ -25,7 +25,7 @@ function copyRail(rail) {
   return r;
 }
 
-/** Reserve 5×$1 then 4×$5, then greedy $500 down to $1. Cup is the leftover cents. */
+/** Reserve 5×$1 then 4×$5, then greedy $500 down to $1. No $25 hold-back. Cup is the leftover cents. */
 export function railBreakdown(cents) {
   const rail = emptyRail();
   let n = Math.max(0, Math.round(Number(cents) || 0));
@@ -37,9 +37,6 @@ export function railBreakdown(cents) {
   const fives = Math.min(4, Math.floor(left / 500));
   rail[500] = fives;
   left -= fives * 500;
-  const quarters = Math.min(4, Math.floor(left / 2500));
-  rail[2500] = quarters;
-  left -= quarters * 2500;
   for (const d of DENOMS) {
     const k = Math.floor(left / d);
     rail[d] += k;

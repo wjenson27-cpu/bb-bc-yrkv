@@ -22,11 +22,13 @@ export function onScreen(el) {
 const firstOnScreen = (list) => (list || []).flat().filter(Boolean).find(onScreen) || null;
 
 /** Pick the version (S4.4). net is the whole-roll result in cents, after Fire/Repeater/HWAD. */
-export function psoVariant({ hadBets, net, hand, record, fire }) {
+export function psoVariant({ hadBets, net, hand, record, fire, speed }) {
   const long = !!record || (hand && ((hand.points || 0) >= 3 || (hand.rolls || 0) >= 20));
   const side = !hadBets ? "nobets" : net > 0 ? "dark" : "light";
   const big = !!(fire && fire.pay > 0);                       // Fire 4/5 payout plays inside the PSO at the Big tier
-  const dur = big || long ? 2000 : 1200;                       // Base 1.2 s · Big 2.0 s (S4.3); PSO never uses Huge
+  let dur = big || long ? 2000 : 1200;                        // Base 1.2 s · Big 2.0 s (PM-10); PSO never uses Huge
+  if (speed === "fast") dur = big || long ? 1200 : 800;
+  if (speed === "instant") dur = big || long ? 800 : 600;
   return { side, long, record: !!record, big, dur };
 }
 
@@ -42,6 +44,7 @@ export function cancelPSO() {
   const { layer, timers, off } = live; live = null;
   timers.forEach(clearTimeout); off();
   layer.classList.add("out");
+  document.querySelectorAll(".pso-clear").forEach((el) => el.classList.remove("pso-clear"));
   setTimeout(() => { layer.remove(); if (!live) document.body.classList.remove("pso-on"); }, 130);
 }
 /** Call at the start of every roll (and on any bet): clears PSO and point-hit alike. */
@@ -52,6 +55,20 @@ export function cancelMoments() { cancelPSO(); cancelCelebration(); }
  *   puck:[els], dice:[els], sweepFrom:[els], railTo:el, avoid:[els], billie:{light, long}, faces:"assets/dice/faces/",
  *   puckOn:"assets/icons/puck-on.svg", chip:"assets/chips/chip-25-value.svg", reduced, hold, sfx, haptic })
  */
+function clearActionKey(layer) {
+  const key = document.querySelector(".tc-shoot, .roll-btn");
+  const dip = layer.querySelector(".pso-dip");
+  if (!key || !dip) return;
+  const r = key.getBoundingClientRect();
+  if (r.width < 2 || r.height < 2) return;
+  const x = Math.max(0, Math.round(r.left - 6));
+  const y = Math.max(0, Math.round(r.top - 6));
+  const rw = Math.round(r.width + 12);
+  const rh = Math.round(r.height + 12);
+  dip.style.clipPath = "path(evenodd, 'M0 0 H" + innerWidth + " V" + innerHeight + " H0 Z M" + x + " " + y + " h" + rw + " v" + rh + " h-" + rw + " Z')";
+  key.classList.add("pso-clear");
+}
+
 export function showPSO(o) {
   cancelMoments();
   const v = psoVariant(o);
@@ -101,6 +118,7 @@ export function showPSO(o) {
     `<span class="tx">${tag || fire ? `<span class="tagrow">${tag}${fire}</span>` : ""}<span class="readcall">SEVEN OUT · POINT WAS ${o.point}</span><span class="call">${call}</span>${net}</span></div>`;
   L.innerHTML = h;
   document.body.appendChild(L);
+  clearActionKey(L);
   document.body.classList.add("pso-on");
   L.setAttribute("aria-hidden", "false");
   // place the plate under the HUD on the current page; never over ROLL/SHOOT/dock

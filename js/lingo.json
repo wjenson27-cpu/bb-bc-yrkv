@@ -2605,7 +2605,7 @@
    "category": "actions",
    "alsoIn": [],
    "dice": null,
-   "meaning": "Place bets on 5, 6, 8 and 9, like \"$44 inside\": $10 on 5 and 9, $12 on 6 and 8.",
+   "meaning": "Buy 5 and 9 and Place 6 and 8, like \"$44 inside\" at a $10 table: Buy $10 on 5 and 9, Place $12 on 6 and 8.",
    "call": "Forty-four inside.",
    "say": null,
    "srLabel": "Inside",

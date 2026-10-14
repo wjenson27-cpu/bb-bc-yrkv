@@ -1,5 +1,5 @@
 /**
- * 32 practice badges. Reads a settled roll and never changes odds,
+ * 33 practice badges. Reads a settled roll and never changes odds,
  * payouts, the timer, or the dice. Storage lives in the leaderboard
  * store under `badges` and `progress` (key bb-bubble-badges-v1).
  */
@@ -27,7 +27,7 @@ export const BADGES = [
   { id: "press_undo", n: 20, name: "Second Thoughts", desc: "Pressed, then changed your mind. That's control.", tier: "bronze", hidden: true, mode: "both", section: "Press", rule: "Tap PRESS or POWER PRESS, then UNDO or CLEAR before the next roll.", odds: "" },
   { id: "press_then_collect", n: 21, name: "Press Once, Then Collect", desc: "Press a winner once, then take the next win as chips.", tier: "silver", hidden: false, mode: "both", section: "Press", rule: "After a manual press, the next win on that number is collected, not pressed.", odds: "" },
   { id: "low_edge_three_hands", n: 22, name: "Under 2% Club", desc: "Three hands in a row on bets with a house edge of 2% or less.", tier: "silver", hidden: false, mode: "both", section: "Skill", rule: "Three finished hands in a row where every working bet is 2% or less, with a bet working on each seven-out.", odds: "" },
-  { id: "steady_up_1000", n: 23, name: "Slow Double", desc: "Up $1,000 in one steady run, 10% or less in action every roll.", tier: "gold", hidden: false, mode: "both", section: "Skill", rule: "One steady run gains $1,000. A roll with more than 10% of the stack in action breaks it.", odds: "" },
+  { id: "steady_up_1000", n: 23, name: "Slow Double", desc: "Up $1,000, or double the run's start, whichever is larger. 10% or less in action every roll.", tier: "gold", hidden: false, mode: "both", section: "Skill", rule: "One steady run gains $1,000 or 100% of the run's start, whichever is larger. A roll with more than 10% of the stack in action breaks it.", odds: "" },
   { id: "tutor_tour_complete", n: 24, name: "Dealer Billy's Tour", desc: "Finished the Billy Tips tour.", tier: "bronze", hidden: false, mode: "both", section: "Practice", rule: "Finish the last step of the guided tour.", odds: "" },
   { id: "fair_dice_explorer", n: 25, name: "Fair Dice Detective", desc: "Checked the dice three ways.", tier: "bronze", hidden: false, mode: "both", section: "Practice", rule: "Open This session, Last 100, and All time, and reach the fairness card.", odds: "" },
   { id: "daily_practice_3", n: 26, name: "Three-Day Practice", desc: "Practiced three days running.", tier: "bronze", hidden: false, mode: "both", section: "Practice", rule: "Three local days in a row with a finished hand or a finished lesson.", odds: "" },
@@ -37,6 +37,7 @@ export const BADGES = [
   { id: "five_sessions_within_limits", n: 30, name: "Five Within Limits", desc: "Five sessions that stayed inside your limits.", tier: "gold", hidden: false, mode: "both", section: "Limits", rule: "Five qualifying sessions with a loss limit and no roll after that limit.", odds: "" },
   { id: "table_manners", n: 31, name: "Table Manners", desc: "Read every Dealer Billy manners card.", tier: "bronze", hidden: false, mode: "both", section: "Practice", rule: "View every etiquette card and tap Got it on the last one. A bet never unlocks it.", odds: "" },
   { id: "talk_the_talk", n: 32, name: "Talk the Talk", desc: "Learned 25 craps terms from Dealer Billy.", tier: "silver", hidden: false, mode: "both", section: "Practice", rule: "Knowing the lingo makes a real table friendlier. It doesn't change the dice.", odds: "" },
+  { id: "dealers_apprentice", n: 33, name: "Dealer's Apprentice", desc: "A perfect Pay the roll round at Dealer level.", tier: "silver", hidden: false, mode: "both", section: "Practice", rule: "10 of 10 on D7 Pay the roll, at Dealer or Boxman. A bet or a roll never unlocks it.", odds: "" },
 ];
 
 const BY_ID = Object.create(null);
@@ -232,7 +233,8 @@ export function evaluateRoll(store, ctx) {
       const gain = (c.totalAfter || c.totalBefore) - p.steady.start;
       p.steady.gain = gain;
       p.steady.broken = false;
-      if (gain >= 100000) unlock(next, p, "steady_up_1000", c);
+      const need = Math.max(100000, p.steady.start || 0);
+      if (gain >= need) unlock(next, p, "steady_up_1000", c);
     }
   }
 
@@ -291,6 +293,12 @@ export function noteAction(store, action) {
   } else if (type === "lingo") {
     if (action.id) p.lingoSeen = addSet(p.lingoSeen, action.id);
     if ((p.lingoSeen || []).length >= 25) unlock(next, p, "talk_the_talk", c);
+  } else if (type === "drill") {
+    const level = action.level;
+    const dealerPlus = level === "dealer" || level === "boxman";
+    if (dealerPlus && action.perfect && action.drill === "D7" && action.correct === 10) {
+      unlock(next, p, "dealers_apprentice", c);
+    }
   } else if (type === "reset-bankroll") {
     p.steady = { start: action.total || 0, broken: false, gain: 0 };
     p.lowEdgeHands = 0;
@@ -358,7 +366,9 @@ export function progressOf(progress, id) {
   if (id === "low_edge_three_hands") return { have: p.lowEdgeHands || 0, need: 3, text: (p.lowEdgeHands || 0) + " / 3" };
   if (id === "steady_up_1000") {
     const gain = Math.max(0, (p.steady && p.steady.gain) || 0);
-    return { have: Math.min(100000, gain), need: 100000, text: "$" + Math.floor(gain / 100) + " / $1,000" };
+    const start = (p.steady && p.steady.start) || 0;
+    const need = Math.max(100000, start);
+    return { have: Math.min(need, gain), need, text: "$" + Math.floor(gain / 100) + " / $" + Math.floor(need / 100).toLocaleString("en-US") };
   }
   if (id === "fair_dice_explorer") return { have: (p.fairScopes || []).length, need: 3, text: (p.fairScopes || []).length + " / 3" };
   if (id === "five_sessions_within_limits") return { have: 0, need: 5, text: "" };

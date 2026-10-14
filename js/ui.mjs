@@ -15,6 +15,9 @@ import * as Lg from "bb-lingo";
 import * as LC from "./lingo-ctrl.mjs";
 import { callButton, learnRowHTML } from "./lingo-view.mjs";
 import { rotateGateHTML } from "./rotate.mjs";
+import * as R5 from "./r5-ui.mjs";
+import * as RS from "./roll-speed.mjs";
+import { pageForLink } from "./board-page.mjs";
 import { RULE0_LINE, NO_ROLL } from "./table-rules.mjs";
 import { deckFor, nudgeFor, nextSessionTip, ETIQUETTE, ETIQUETTE_FOOTER } from "./etiquette.mjs";
 
@@ -50,6 +53,11 @@ const settings = {
   autoPressMax: 3,
   seenBlaze: {},
   lingoLinks: true,
+  rollSpeed: "normal",
+  tier: "standard",
+  includePoint: false,
+  field12: 2,
+  field2: 2,
 };
 let game = E.createGame();
 let view = "home";
@@ -401,7 +409,7 @@ function mount() {
         openLingoFrom(hold);
       }, 500);
       const move = (ev) => {
-        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 12) { moved = true; clearTimeout(timer); }
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 10) { moved = true; clearTimeout(timer); }
       };
       const stop = () => { clearTimeout(timer); hold.removeEventListener("pointermove", move); };
       hold.addEventListener("pointermove", move);
@@ -518,7 +526,10 @@ function showOnBoard(id) {
   view = "play";
   if (!target.ok) { toast(target.reason); paint(); return; }
   const sel = LC.spotSelector(target.link, "bubble");
-  if (target.link !== "ui:rail") page = 1;
+  const dest = pageForLink(target.link, "bubble");
+  if (dest != null) page = dest;
+  else if (target.link !== "ui:rail") page = 1;
+  lingoTutor = term;
   paint();
   snap();
   const el = document.querySelector(sel);
@@ -526,6 +537,7 @@ function showOnBoard(id) {
     el.classList.add("lingo-hl");
     if (motionOff()) setTimeout(() => el.classList.remove("lingo-hl"), 1500);
   } else toast(target.reason || "That spot isn't on this board.");
+  openTutor(0, "show");
 }
 function mountLingo() {
   if (view !== "play") return;
@@ -555,6 +567,7 @@ function onClick(e) {
   A.unlock();
   A.setMuted(!settings.sound);
   const act = t.dataset.act;
+  if (R5.handle(act, t)) return;
   if (act === "hops") return;
   if (act === "lingo" || act === "lingo-open" || act === "lingo-row") {
     if (t.dataset.id) lingo.cardId = t.dataset.id;
@@ -1146,9 +1159,11 @@ async function doRoll(source) {
   const pointBefore = game.point;
   A.setMuted(!settings.sound);
   syncAutoPress();
-  const acted = B.noteAction(boardData, { type: "roll-started" });
-  boardData.badges = acted.store.badges;
-  boardData.progress = acted.store.progress;
+  if (!R5.active()) {
+    const acted = B.noteAction(boardData, { type: "roll-started" });
+    boardData.badges = acted.store.badges;
+    boardData.progress = acted.store.progress;
+  }
   if (game.strategy && game.strategy.id) {
     const maintained = S.autoBet(game, game.strategy.id, settings.chip);
     game = maintained.state;
@@ -1163,12 +1178,29 @@ async function doRoll(source) {
   const passBefore = game.bets.pass;
   const phaseBefore = game.phase;
   ensureHand(handBefore.rolls);
-  let custom = null;
-  /*TEST_HOOK_START*/
-  if (TEST_BUILD && typeof window.__bbRng === "function") custom = window.__bbRng;
-  delete window.__bbRng;
-  /*TEST_HOOK_END*/
-  const dice = custom ? E.rollDice(custom) : E.rollDice();
+  R5.applyPending(game);
+  game.fieldPays = { field2: settings.field2 === 3 ? 3 : 2, field12: settings.field12 === 3 ? 3 : 2 };
+  let dice = null;
+  const entered = R5.active();
+  if (entered) {
+    const pair = R5.pending();
+    if (!pair) {
+      rolling = false;
+      toast("Enter both dice, then tap SETTLE.");
+      paint();
+      return;
+    }
+    R5.noteEntered(structuredClone(game));
+    R5.consume();
+    dice = pair;
+  } else {
+    let custom = null;
+    /*TEST_HOOK_START*/
+    if (TEST_BUILD && typeof window.__bbRng === "function") custom = window.__bbRng;
+    delete window.__bbRng;
+    /*TEST_HOOK_END*/
+    dice = custom ? E.rollDice(custom) : E.rollDice();
+  }
   if (!dice || !dice.d1) {
     rolling = false;
     toast((dice && dice.error) || NO_ROLL);
@@ -1182,9 +1214,11 @@ async function doRoll(source) {
   A.pop();
   A.rattle();
   haptic(18);
-  await animateDice(dice);
-  const settled = E.settle(game, dice.d1, dice.d2);
+  if (entered) await wait(RS.diceMs("instant", motionOff()));
+  else await animateDice(dice);
+  const settled = E.settle(game, dice.d1, dice.d2, entered ? { diceSource: "entered" } : undefined);
   game = settled.state;
+  if (game.phase === "come-out") R5.applyPending(game);
   lastNet = settled.net;
   syncAutoPress();
   let pressNote = "";
@@ -1197,7 +1231,7 @@ async function doRoll(source) {
       autoPressed = true;
     }
   }
-  rememberRoll(settled, source === "auto" ? "auto" : "manual", phaseBefore);
+  if (!entered) rememberRoll(settled, source === "auto" ? "auto" : "manual", phaseBefore);
   const cap = settled.dice || {};
   lastRoll = { d1: cap.d1, d2: cap.d2, total: cap.total, hard: !!cap.hard, phaseBefore, result: settled.result };
   const callId = Lg.callTermId(lastRoll);
@@ -1218,9 +1252,18 @@ async function doRoll(source) {
   else if (pressNote && !sevenOut) queueToast(pressNote, "", 1200);
   noteBlaze(handBefore, settled);
   maybeTutor(settled);
-  noteHandRoll(handBefore, settled, dice, hadBetNow, pointBefore, source === "auto" ? "auto" : "manual", totalBefore, edgeCap, onTable, autoPressed);
+  if (!entered) noteHandRoll(handBefore, settled, dice, hadBetNow, pointBefore, source === "auto" ? "auto" : "manual", totalBefore, edgeCap, onTable, autoPressed);
+  R5.afterRoll({
+    total: E.netWorth(game),
+    start: totalBefore,
+    yourDice: entered,
+    sevenOut: settled.result === "seven-out" && phaseBefore === "point",
+    length: handBefore.rolls + 1,
+    mode: game.mode,
+    strategy: game.strategy && game.strategy.id,
+  });
   if (sevenOut) {
-    const record = !!maybeRecord(handBefore, settled, dice, hadBetNow, true);
+    const record = entered ? false : !!maybeRecord(handBefore, settled, dice, hadBetNow, true);
     const fireDec = (settled.decisions || []).find((d) => d.bet === "Fire Bet" && d.result === "win" && (d.level === 4 || d.level === 5));
     const length = handBefore.rolls + 1;
     showPSO({
@@ -1253,9 +1296,9 @@ async function doRoll(source) {
     });
   } else {
     celebrate(settled, handBefore, { point: pointBefore, pass: passBefore });
-    maybeRecord(handBefore, settled, dice, hadBetNow, false);
+    if (!entered) maybeRecord(handBefore, settled, dice, hadBetNow, false);
   }
-  if (settled.result === "seven-out" && boardData.session && !boardData.session.ended) {
+  if (!entered && settled.result === "seven-out" && boardData.session && !boardData.session.ended) {
     const length = handBefore.rolls + 1;
     if (!boardData.session.longest || length > boardData.session.longest) boardData.session.longest = length;
   }
@@ -1599,19 +1642,24 @@ function finishSession(reason) {
   paint();
 }
 function resetTable() {
-  const ev = B.noteAction(boardData, { type: "reset-bankroll", total: E.STARTING_BANKROLL });
+  R5.beforeReset(E.netWorth(game));
+  const ev = B.noteAction(boardData, { type: "reset-bankroll", total: settings.bankPreset || E.STARTING_BANKROLL });
   boardData.badges = ev.store.badges;
   boardData.progress = ev.store.progress;
   if (boardData.session && !boardData.session.ended) {
     boardData.session = Sess.endSession(boardData.session, "reset", Date.now());
   }
   game = E.resetBankroll(game);
+  if (settings.bankPreset) {
+    game.bankroll = settings.bankPreset;
+    game.startingBankroll = settings.bankPreset;
+  }
   sessionRolls = [];
   autoPause = "end";
   emptyFelt = 0;
   limitHold = false;
   handMeta = freshMeta();
-  toast("Practice chips reset to $1,000.");
+  toast("Practice chips reset to " + money(game.bankroll) + ".");
   save();
   saveBoard();
   paint();
@@ -1773,7 +1821,7 @@ function cubeMarkup(which) {
 function animateDice(dice) {
   const reduce = motionOff();
   const cubes = [...document.querySelectorAll("#dice-row .cube")];
-  if (!cubes.length) return wait(reduce ? 180 : 1400);
+  if (!cubes.length) return wait(RS.diceMs(settings.rollSpeed, reduce));
   const faces = [dice.d1, dice.d2];
   cubes.forEach((c, i) => {
     c.dataset.face = String(faces[i]);
@@ -1802,7 +1850,7 @@ function animateDice(dice) {
       c.addEventListener("animationend", onEnd);
     });
     requestAnimationFrame(() => cubes.forEach((c) => c.classList.add("tumbling")));
-    setTimeout(() => { left = 0; finish(); }, 1600);
+    setTimeout(() => { left = 0; finish(); }, RS.diceMs(settings.rollSpeed, false));
   });
 }
 function syncDice() {
@@ -2147,6 +2195,7 @@ function leaderHTML() {
   const emptyCopy = scope === "week"
     ? "No finished hands yet this week. Every hand ends on a seven-out."
     : "No finished hands yet. Every hand ends on a seven-out.";
+  const hero = rows.length ? "<img src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>" : "";
   const list = rows.length ? "<ol class='boardlist'>" + rows.map((e, i) => {
     const mine = (e.initials || "") === you;
     const pts = E.countPhrase(e.points, "pt", "pts");
@@ -2168,7 +2217,7 @@ function leaderHTML() {
   const prevLine = prev ? "<p class='weeknote'>Last week's best: " + E.countPhrase(prev.throws, "roll") + ".</p>" : "";
   const weekNote = scope === "week" ? "<p class='weeknote'>Resets Monday at 12:00 AM, on this device.</p>" : "";
   return "<section class='boardpage'><header class='boardhead'>" +
-    "<img src='assets/mascots/billie/billie-C-cheer.svg' alt='Bubbles Billie'>" +
+    hero +
     "<div><p class='kicker'>ON THIS DEVICE</p><h2 class='led'>HIGH HAND · " + (scope === "week" ? "THIS WEEK" : "ALL TIME") + "</h2>" +
     "<p class='muted'>Rolls in one hand, come-out to seven-out.</p></div></header>" +
     "<div class='seg boardseg'>" +
@@ -2213,7 +2262,8 @@ function badgeGallery() {
     return true;
   };
   const tiers = ["bronze", "silver", "gold", "legendary"];
-  const tierCounts = { bronze: 8, silver: 10, gold: 9, legendary: 5 };
+  const tierCounts = {};
+  tiers.forEach((tier) => { tierCounts[tier] = B.BADGES.filter((b) => b.tier === tier).length; });
   const bars = "<div class='tierbars'>" + tiers.map((tier) => {
     const have = B.BADGES.filter((b) => b.tier === tier && boardData.badges && boardData.badges[b.id]).length;
     const need = tierCounts[tier];
@@ -2395,9 +2445,12 @@ function refreshCoachKicker() {
   if (!kick) return;
   kick.textContent = "TUTOR · " + (game.phase === "point" ? "POINT IS ON" : "COME-OUT");
 }
+let lingoTutor = null;
 function openTutor(step, force) {
   if (typeof step === "number") tutorStep = step;
-  const tip = force === "billy"
+  const tip = force === "show" && lingoTutor
+    ? { id: "show", title: lingoTutor.term, body: lingoTutor.meaning, edge: null }
+    : force === "billy"
     ? { id: "billy", title: "Billy's Way", body: settings.tutorTrack === "experienced" ? "1.71% blended in Regular, 1.43% in Crapless. Each spot is the cheaper way to bet that number. A 7 takes them all. Seven-out exposure is 6.4 units in Regular and 10.4 in Crapless per press." : "Billy's Way buys the outside numbers and places 6 and 8. A 7 takes them all down.", edge: 1.71 }
     : force === "press"
       ? { id: "press", title: "Press", body: "That extra unit came from your chips. Bigger bet, same odds. The house edge does not change. What is at risk, and the swings, go up.", edge: 1.52 }
@@ -2628,6 +2681,13 @@ function paint() {
     document.getElementById("panel").innerHTML = panelHTML();
     requestAnimationFrame(() => measureChrome());
   }
+  let r5 = document.getElementById("r5-root");
+  if (!r5) {
+    r5 = document.createElement("div");
+    r5.id = "r5-root";
+    app.appendChild(r5);
+  }
+  r5.innerHTML = R5.markup();
   LC.markSpots(app);
 }
 
@@ -2836,6 +2896,7 @@ function betPanelHTML() {
     "<div class='sheetbar'><i class='sheethandle' data-act='bets'></i><button class='sheetx' data-act='bets' aria-label='Close bets'>×</button></div>" +
     "<div class='led ledglass'><div><span>POINT</span><b>" + (game.point || "OFF") + "</b></div><div><span>LAST ROLL</span>" + ledLast + "</div><div><span>BALANCE</span><b>" + money(game.bankroll) + "</b></div></div>" +
     "<div class='btabs'>" + tabs.map((id) => "<button class='btab" + (betTab === id ? " on" : "") + "' data-act='tab' data-tab='" + id + "'>" + tabLabel(id) + "</button>").join("") + "</div>" +
+    (betTab === "place" || betTab === "buy" ? R5.quickHTML() : "") +
     "<div class='betlist'>" + rows + layoutExtras() + "</div></section>";
 }
 
@@ -3052,7 +3113,7 @@ function dockHTML() {
   return "<div class='dockgrid'><div class='dockleft'><div class='rack'><div class='trough'>" + chips + "</div></div>" +
     "<div class='presspair'><div class='presswrap'><button class='press-btn" + (st.pressOk && !rolling ? " live" : "") + "' data-act='press'" + (rolling || !st.pressOk ? " disabled" : "") + "><span class='pl1'>" + pressLine + "</span><small>" + pressSub + "</small></button>" + undo + clear + "</div>" +
     "<button class='press-btn power" + (st.powerOk && !rolling ? " live" : "") + "' data-act='power'" + (rolling || !st.powerOk ? " disabled" : "") + "><span class='pl1'>" + powerLine + "</span><small>" + powerSub + "</small></button></div></div>" +
-    "<button class='roll-btn' data-act='roll' aria-label='Roll the dice'><span class='kicker'>" + secs + "</span><span class='roll-face'>ROLL</span><span class='ring'></span></button></div>" +
+    "<button class='roll-btn" + (R5.active() ? " yd" : "") + "' data-act='roll' aria-label='" + (R5.active() ? "Settle the entered roll" : "Roll the dice") + "'><span class='kicker'>" + (R5.active() ? "YOUR DICE" : secs) + "</span><span class='roll-face'>" + (R5.active() ? "SETTLE" : "ROLL") + "</span><span class='ring'></span></button></div>" +
     context + stop + resume;
 }
 
@@ -3128,11 +3189,11 @@ function learnHTML() {
 }
 
 function premiumHTML() {
-  const presets = ["Standard", "MGM", "Caesars", "Custom", "Downtown 10x"];
+  const presets = ["Standard", "Strip Classic", "Strip Deluxe", "Custom", "Downtown 10x"];
   const preview = {
     Standard: "Field 5.56% · Pass + max odds 0.37% Regular · 1.26% Crapless",
-    MGM: "Field 5.56% · Odds 3-4-5x · Pass+Odds 0.37%",
-    Caesars: "Field 5.56% → 2.78% · Crapless odds 1-2-3-4-5x",
+    "Strip Classic": "Field 5.56% · Odds 3-4-5x · Pass+Odds 0.37%",
+    "Strip Deluxe": "Field 5.56% → 2.78% · Crapless odds 1-2-3-4-5x",
     Custom: "Saved table. Locked on this build. Field 5.56% → 2.78%",
     "Downtown 10x": "Pass+Odds 0.37% → 0.18% · Odds 10x",
   };
@@ -3233,6 +3294,7 @@ function settingsHTML() {
     "<button class='ghost' data-act='end-session' data-reason='end'>End session</button>" +
     "<button class='ghost' data-act='reset-records'>Reset badges and records</button>" +
     "<button class='ghost' data-act='view' data-view='etiquette'>Dealer Billy's table tips</button>" +
+    R5.menuButtons() +
     "<p class='muted'>RNG: " + (E.getRngSource() === "unavailable" ? "unavailable" : "secure") + ". Dice use your device's secure random generator, with rejection sampling so every face is equal.</p>";
 }
 
@@ -3328,6 +3390,30 @@ if (!settings.winGoal) settings.winGoal = { kind: "off", amount: 2500, pct: 25 }
 if (boardData.session) boardData.session = absorbIdle(boardData.session, Date.now());
 game.placeWorkingOnComeOut = !!settings.workingComeOut;
 A.setMuted(!settings.sound);
+R5.attach({
+  app: "bubble",
+  premium: () => !!(boardData && boardData.premium) || localStorage.getItem("bb-bubble-entitlement") === "1",
+  money,
+  getGame: () => game,
+  setGame: (g) => { game = g; },
+  getRail: () => null,
+  setRail: () => {},
+  toast: (s) => toast(s),
+  repaint: () => paint(),
+  settings,
+  save,
+  noteBadge: (action) => {
+    const ev = B.noteAction(boardData, action);
+    boardData.badges = ev.store.badges;
+    boardData.progress = ev.store.progress;
+    saveBoard();
+  },
+  resetTo: (cents) => {
+    settings.bankPreset = cents;
+    resetTable();
+  },
+  onEnter: () => { view = "play"; page = 1; },
+});
 mount();
 if (!localStorage.getItem("bb-bubble-session-tip")) {
   localStorage.setItem("bb-bubble-session-tip", "1");

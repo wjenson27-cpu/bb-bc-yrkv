@@ -20,6 +20,10 @@ import * as Lg from "bb-lingo";
 import * as LC from "./lingo-ctrl.mjs";
 import { callButton, learnRowHTML } from "./lingo-view.mjs";
 import { rotateGateHTML } from "./rotate.mjs";
+import * as R5 from "./r5-ui.mjs";
+import * as RS from "./roll-speed.mjs";
+import { pageForLink, ipadLayout, shootAct } from "./board-page.mjs";
+import * as Tiers from "./tiers.mjs";
 
 const A = "../assets/";
 const STORE = "bb-table-craps-v1";
@@ -38,6 +42,11 @@ const settings = {
   premium: false,
   set: "3V",
   lingoLinks: true,
+  rollSpeed: "normal",
+  tier: "standard",
+  includePoint: false,
+  field12: 2,
+  field2: 2,
 };
 
 let game = E.createGame({ profile: "table" });
@@ -86,6 +95,10 @@ function betSpot(node) {
 function psoHaptic(name) {
   if (settings.haptics === false || !navigator.vibrate) return;
   navigator.vibrate(name === "success" ? [12, 40, 12] : 10);
+}
+function throwHaptic(name) {
+  if (name !== "light" || settings.haptics === false || !navigator.vibrate) return;
+  navigator.vibrate(10);
 }
 function openLingoFrom(el) {
   lingoOrigin = LC.originSelector(el);
@@ -182,7 +195,7 @@ function feltHTML() {
   };
   const hop = (a, b, id, pay, amt) => "<button class='spot' data-act='spot' data-kind='" + id + "'><span class='pd'><img src='" + A + "dice/faces/face-" + a + ".svg' alt=''><img src='" + A + "dice/faces/face-" + b + ".svg' alt=''></span><span class='sub'>" + pay + "</span>" + betHTML(amt) + "</button>";
   const lamps = (ns, on) => "<span class='lamps'>" + ns.map((n) => "<i class='" + (on[n] ? "on" : "") + "'></i>").join("") + "</span>";
-  return "<div class='tc-felt' id='felt'>" +
+  return "<div class='tc-felt' id='felt'>" + R5.quickHTML() +
     "<div class='ats'>" +
     "<button class='spot' data-act='spot' data-kind='small'><span class='lb'>SMALL</span>" + betHTML(b.small) + lamps([2, 3, 4, 5, 6], game.progress.small || {}) + "<span class='sub'>31 FOR 1</span></button>" +
     "<button class='spot' data-act='spot' data-kind='all'><span class='lb'>ALL</span>" + betHTML(b.all) + lamps([2, 3, 4, 5, 6, 8, 9, 10, 11, 12], game.progress.all || {}) + "<span class='sub'>156 FOR 1</span></button>" +
@@ -282,7 +295,8 @@ function shooterHTML() {
     "<div class='readout'><small>YOUR SET · " + set.name + "</small><b>Top " + pips(setFaces[0].top, setFaces[1].top, 18) + "</b><span>On axis: " + axes + "</span></div></div>" +
     last +
     "<div class='meter'><small>THROW POWER</small><div class='bar'><i style='left:" + throwPower + "%'></i></div><small class='r'>" + (throwPower < 18 ? "SOFT · NO ROLL" : throwPower < 45 ? "EASY" : throwPower < 75 ? "MEDIUM" : "HARD") + "</small></div>" +
-    "<p class='note'>Set dice are practice only. The throw does not change the roll. A soft toss is a no-roll and draws nothing.</p></div>";
+    "<p class='note'>Set dice are practice only. The throw does not change the roll. A soft toss is a no-roll and draws nothing.</p>" +
+    R5.yourDicePanel() + "</div>";
 }
 
 function pickerHTML() {
@@ -390,10 +404,10 @@ function menuHTML() {
   const deck = Et.deckFor("table").all;
   const tip = deck[Math.min(etiquetteAt, deck.length - 1)];
   const last = etiquetteAt >= deck.length - 1;
-  return "<div class='tc-sheet'><h1>Table</h1><button data-act='leave' style='height:44px'>Leave table</button>" +
-    "<a href='../' style='display:flex;align-items:center;height:44px'>Bubble Craps</a>" +
-    "<button data-act='lingo' style='height:44px'>Craps Lingo</button>" +
-    "<label>Lingo links on roll calls <button data-act='lingo-links' style='height:44px'>" + (settings.lingoLinks !== false ? "On" : "Off") + "</button></label>" +
+  return "<div class='tc-sheet tc-menu'><h1>Table</h1><button class='r5-row' data-act='leave'>Leave table</button>" +
+    "<a class='r5-row' href='../'>Bubble Craps</a>" +
+    "<button class='r5-row' data-act='lingo'>Craps Lingo</button>" + R5.menuButtons() +
+    "<label class='tc-toggle'>Lingo links on roll calls <button data-act='lingo-links'>" + (settings.lingoLinks !== false ? "On" : "Off") + "</button></label>" +
     "<label>Color up <select data-act='color-setting'><option value='offer'" + (settings.colorUp === "offer" ? " selected" : "") + ">Offer</option><option value='auto'" + (settings.colorUp === "auto" ? " selected" : "") + ">Auto</option><option value='off'" + (settings.colorUp === "off" ? " selected" : "") + ">Off</option></select></label>" +
     "<label>Theme <select data-act='theme'><option value='billy'>Billy navy</option><option value='midnight'" + (settings.theme === "midnight" ? " selected" : "") + ">Midnight</option><option value='classic'" + (settings.theme === "classic" ? " selected" : "") + ">Classic</option><option value='highlimit'" + (settings.theme === "highlimit" ? " selected" : "") + ">High limit</option></select></label>" +
     "<p>" + TR.RULE0_LINE + "</p><h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip</p>" +
@@ -430,9 +444,17 @@ function stageHTML() {
   if (screen === "paywall") return paywallHTML();
   if (screen === "fair") return fairHTML();
   if (menu) return menuHTML();
-  if (page === 0) return hintSpots(sideHTML());
-  if (page === 2) return shooterHTML();
-  return hintSpots(feltHTML());
+  if (page === 0) {
+    const back = ipadLayout(innerWidth, innerHeight)
+      ? "<button class='tc-edge' data-act='page' data-page='1'>BOARD</button>"
+      : "";
+    return back + hintSpots(sideHTML());
+  }
+  if (page === 2 && !ipadLayout(innerWidth, innerHeight)) return shooterHTML();
+  const edge = ipadLayout(innerWidth, innerHeight)
+    ? "<button class='tc-edge' data-act='page' data-page='0'>SIDE BETS</button>"
+    : "";
+  return edge + hintSpots(feltHTML());
 }
 function kindName(kind) {
   if (kind === "place") return "Place";
@@ -454,29 +476,36 @@ function render() {
   const point = game.point;
   const offerHTML = offer ? "<div class='tc-offer' role='status'><div class='t'><b>" + offer + "</b></div><button class='go' data-act='color-up'>COLOR UP</button><button class='x' data-act='color-dismiss' aria-label='Not now'>×</button></div>" : "";
   const conv = convert ? "<div class='tc-coach convert' data-mascot='billy'><img src='" + A + "mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'><div class='kick'>One bet per number · " + convert.number + "</div><div class='body'>" + convertCopy(convert) + "</div><div class='acts'><button class='go' data-act='convert'>CONVERT TO " + kindName(convert.to).toUpperCase() + "</button><button data-act='keep'>KEEP " + kindName(convert.from).toUpperCase() + "</button></div></div>" : "";
+  const tutorCard = tutorLine ? "<div class='tc-coach convert' data-mascot='billy' id='tutor-line'><img src='" + A + "mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'><div class='kick'>TUTOR · " + tutorLine.title + "</div><div class='body'>" + tutorLine.body + "</div><div class='acts'><button class='go' data-act='tutor-dismiss'>Got it</button></div></div>" : "";
   const sessionCard = sessionPrompt ? "<div class='tc-coach convert' data-mascot='billy'><img src='" + A + "mascots/dealer-billy/billy-A-tip.svg' alt='Dealer Billy'><div class='kick'>" + sessionPrompt + "</div><div class='body'>40% stop-loss and +30% win goal, measured from the bankroll you started with.</div><div class='acts'><button data-act='sess-stop'>STOP HERE</button><button class='go' data-act='sess-keep'>KEEP PLAYING</button><button data-act='sess-new'>NEW SESSION</button></div></div>" : "";
   const names = ["SIDE BETS", "BOARD", "SHOOTER"];
   const left = page > 0 ? "<button class='pill' data-act='page' data-page='" + (page - 1) + "'><span class='cap'>‹ " + names[page - 1] + "</span></button>" : "<span class='pill' hidden></span>";
   const right = page < 2 ? "<button class='pill' data-act='page' data-page='" + (page + 1) + "'><span class='cap'>" + names[page + 1] + " ›</span></button>" : "<span class='pill' hidden></span>";
-  const onThrow = page === 2 && screen === "play" && !menu;
-  const shoot = onThrow
-    ? "<button class='tc-shoot' data-act='throw'><small>YOUR THROW</small><b>SHOOT</b></button>"
+  const ipad = ipadLayout(innerWidth, innerHeight);
+  app.classList.toggle("ipad-land", ipad && innerWidth > innerHeight);
+  app.classList.toggle("ipad-port", ipad && innerHeight >= innerWidth);
+  app.dataset.ipad = ipad ? "1" : "";
+  const actShoot = shootAct({ yourDice: R5.active(), screen, menu, page, ipad });
+  const shoot = actShoot === "throw"
+    ? "<button class='tc-shoot" + (R5.active() ? " yd" : "") + "' data-act='throw'><small>" + (R5.active() ? "YOUR DICE" : "YOUR THROW") + "</small><b>" + (R5.active() ? "SETTLE" : "SHOOT") + "</b></button>"
     : "<button class='tc-shoot' data-act='go-shooter'><small>GO TO</small><b>SHOOTER</b></button>";
+  const aside = ipad && screen === "play" && !menu ? "<aside class='tc-ipad-shooter'>" + shooterHTML() + "</aside>" : "";
   const hudPips = lastFaces ? pips(lastFaces.d1, lastFaces.d2, 16) : "";
   app.innerHTML = "<header class='tc-hud'><button class='avbtn' data-act='menu' aria-label='Dealer Billy, menu'><img class='av' alt='' src='" + A + "mascots/dealer-billy/hud/hud-billy-A-36@2x.png'></button>" +
     "<div class='money'><div><small>Practice chips</small><b>" + money(game.bankroll) + "</b></div><div><small>On table</small><b>" + money(E.tableTotal(game)) + "</b></div></div>" +
     hudPips +
     "<img class='puck' data-puck alt='" + (point ? "Point " + point : "Puck off") + "' src='" + A + "icons/puck-" + (point ? "on" : "off") + ".svg'>" +
     "<button class='fair' data-act='fair'>FAIR</button></header>" +
-    "<main class='tc-stage' id='stage'>" + stageHTML() + conv + sessionCard +
+    "<main class='tc-stage' id='stage'>" + stageHTML() + conv + tutorCard + sessionCard +
     (toastText && screen === "play" && !menu ? "<div class='tc-toast' role='status'><b>" + toastText + "</b>" + (changeNote ? "<small>" + changeNote + "</small>" : "") + "</div>" : "") +
     (screen === "play" && !menu ? LC.peekBlock("table", lingo, A, "regular") + LC.sheetBlock("table", lingo, game, { asset: A, rolling, money, tutorOn: settings.tutor, mode: "regular" }) : "") +
-    "</main>" +
+    "</main>" + aside +
     "<div class='tc-dots'>" + left +
     "<span class='dots'>" + [0, 1, 2].map((i) => "<button data-act='page' data-page='" + i + "' aria-label='" + ["Side bets", "Board", "Dice"][i] + "'><i class='" + (page === i ? "on" : "") + "'></i></button>").join("") + "</span>" +
     right + "</div>" +
     "<footer class='tc-dock'>" + offerHTML + railHTML() + shoot + "</footer>" +
     "<nav class='tc-keys'><button data-act='screen' data-screen='play'" + (screen === "play" && !menu ? " class='on'" : "") + ">BETS</button><button data-act='screen' data-screen='picker'>STRATEGIES</button><button data-act='tutor'>TUTOR</button><button data-act='menu'>STATS</button></nav>" +
+    R5.markup({ dice: false }) +
     "<div class='tc-notice'><span>18+</span> PRACTICE ONLY · NO REAL MONEY</div>" +
     rotateGateHTML();
   LC.markSpots(app);
@@ -626,14 +655,17 @@ function placeSpot(kind, number) {
   const spot = { kind, number };
   if (kind === "place" && (number === 6 || number === 8)) {
     const raw = amount;
-    amount = raw < 1200 ? 1200 : Math.floor(raw / 600) * 600;
+    const rules = game.rules || {};
+    amount = Tiers.place68Add(game.bets.place[number] || 0, raw, rules.tableMin || 1000, rules.tableMax || 50000);
+    if (!amount) { toastText = "6 and 8 are at the table max."; render(); return; }
     if (amount !== raw) toastText = "Place " + number + " posted at " + money(amount) + " ($6 steps).";
   } else if (kind === "hop") {
     amount = Math.min(10000, Math.max(100, amount));
   } else if (kind === "repeater") {
     amount = Math.min(2500, Math.max(100, amount));
   } else if (kind === "pass" || kind === "dontPass" || kind === "come" || kind === "dontCome" || kind === "any7" || kind === "place" || kind === "buy" || kind === "lay") {
-    if (amount < 1000) amount = 1000;
+    const min = (game.rules && game.rules.tableMin) || 1000;
+    if (amount < min) amount = min;
   }
   const from = document.querySelector(".stack.sel") || document.querySelector(".stack");
   const res = E.placeBet(game, spot, amount);
@@ -700,9 +732,19 @@ function doRoll() {
     if (term) LC.rememberCall(lingo, term.id);
     maybeNudge("no_roll");
     render();
+    const practiceSpeed = RS.capSpeed(settings.rollSpeed || "normal", true);
+    const set = SETS[settings.set];
+    import("./throw.mjs").then((T) => T.throwDice({
+      noRoll: true,
+      set: set && set.dice,
+      speed: practiceSpeed,
+      reduced: reducedMQ.matches,
+      haptic: throwHaptic,
+    }));
     return;
   }
   rolling = true;
+  if (game.phase === "come-out") R5.applyPending(game);
   cancelMoments();
   offer = null;
   changeNote = "";
@@ -717,21 +759,38 @@ function doRoll() {
   const betsBefore = E.tableTotal(game);
   const fireBefore = (game.firePoints || []).length;
   const fireBetBefore = game.bets.fire || 0;
-  let custom = null;
-  /*TEST_HOOK_START*/
-  if (TEST_BUILD && typeof window.__tcRng === "function") custom = window.__tcRng;
-  delete window.__tcRng;
-  /*TEST_HOOK_END*/
-  const dice = custom ? E.rollDice(custom) : E.rollDice();
+  let dice = null;
+  if (R5.active()) {
+    const pair = R5.pending();
+    if (!pair) {
+      rolling = false;
+      toastText = "Enter both dice, then tap SETTLE.";
+      render();
+      return;
+    }
+    R5.noteEntered(structuredClone(game));
+    R5.consume();
+    dice = pair;
+  } else {
+    let custom = null;
+    /*TEST_HOOK_START*/
+    if (TEST_BUILD && typeof window.__tcRng === "function") custom = window.__tcRng;
+    delete window.__tcRng;
+    /*TEST_HOOK_END*/
+    dice = custom ? E.rollDice(custom) : E.rollDice();
+  }
   if (!dice || !dice.d1) {
     rolling = false;
     toastText = (dice && dice.error) || TR.NO_ROLL;
     render();
     return;
   }
+  const entered = dice.source === "entered";
+  const applyRoll = () => {
   showRolled(dice.d1, dice.d2);
-  const settled = E.settle(game, dice.d1, dice.d2);
+  const settled = E.settle(game, dice.d1, dice.d2, entered ? { diceSource: "entered" } : undefined);
   game = settled.state;
+  if (game.phase === "come-out") R5.applyPending(game);
   if (strategyId && !sessionPrompt) game = TS.afterRoll(game, strategyId, settled, { unit: 1000 });
   sync();
   rolling = false;
@@ -755,9 +814,12 @@ function doRoll() {
   if (!sevenOut && settled.net > 0) flyChip(feltFrom, document.querySelector(".stack.sel") || document.querySelector(".tc-rail"), 2500, 320);
   if (sevenOut) {
     const length = handBefore.rolls + 1;
-    const prev = Number(localStorage.getItem("bb-table-longest") || 0);
-    const record = prev > 0 && length > prev;
-    localStorage.setItem("bb-table-longest", String(Math.max(prev, length)));
+    let record = false;
+    if (!entered) {
+      const prev = Number(localStorage.getItem("bb-table-longest") || 0);
+      record = prev > 0 && length > prev;
+      localStorage.setItem("bb-table-longest", String(Math.max(prev, length)));
+    }
     const fireDec = (settled.decisions || []).find((d) => d.bet === "Fire Bet" && d.result === "win" && (d.level === 4 || d.level === 5));
     const shown = showPSO({
       app: "tc",
@@ -779,11 +841,20 @@ function doRoll() {
       puckOn: A + "icons/puck-on.svg",
       chip: A + "chips/chip-25-value.svg",
       reduced: reducedMQ.matches,
+      speed: settings.rollSpeed,
       sfx: () => {},
       haptic: psoHaptic,
     });
     const dur = shown && shown.variant ? shown.variant.dur : 1200;
     setTimeout(() => { checkSession(); if (sessionPrompt) render(); }, dur);
+    R5.afterRoll({
+      total: E.netWorth(game),
+      start: sessionBase || game.startingBankroll || E.STARTING_BANKROLL,
+      yourDice: entered,
+      sevenOut: true,
+      length: handBefore.rolls + 1,
+      mode: "regular",
+    });
     return;
   }
   if (settled.result === "point-made") {
@@ -802,7 +873,7 @@ function doRoll() {
       net: quiet ? 0 : settled.net,
       big,
       tier,
-      duration: copy.duration,
+      duration: RS.celebrateMs(tier, settings.rollSpeed, reducedMQ.matches),
       line: copy.call,
       cheer: copy.cheer,
       stinger: copy.stinger,
@@ -812,9 +883,29 @@ function doRoll() {
       reduced: reducedMQ.matches,
     });
   }
+  R5.afterRoll({
+    total: E.netWorth(game),
+    start: sessionBase || game.startingBankroll || E.STARTING_BANKROLL,
+    yourDice: entered,
+    sevenOut,
+    length: handBefore.rolls + 1,
+    mode: "regular",
+  });
+  };
+  if (entered || page === 0) { applyRoll(); return; }
+  const speed = (TEST_BUILD && window.__tcRollSpeed) || settings.rollSpeed || "normal";
+  import("./throw.mjs").then((T) => T.throwDice({
+    d1: dice.d1,
+    d2: dice.d2,
+    speed: RS.capSpeed(speed, page === 2),
+    reduced: reducedMQ.matches,
+    haptic: throwHaptic,
+    onSettle: applyRoll,
+  })).catch(() => applyRoll());
 }
 
 function leave() {
+  R5.closeSession("leave");
   rail = Rail.leaveTable(rail).rail;
   const total = Rail.railTotal(rail);
   maybeNudge("leave_table");
@@ -848,6 +939,7 @@ function finishEtiquette() {
   render();
 }
 
+let tutorLine = null;
 function showOnBoard(id) {
   const term = Lg.termById(id, "table");
   const target = LC.boardTarget(term, "table");
@@ -858,7 +950,9 @@ function showOnBoard(id) {
   menu = false;
   if (!target.ok) { toastText = target.reason; render(); return; }
   const sel = LC.spotSelector(target.link, "table");
-  if (target.link !== "ui:rail" && page !== 1) page = 1;
+  const dest = pageForLink(target.link, "table");
+  if (dest != null) page = dest;
+  tutorLine = term ? { title: term.term, body: term.meaning } : null;
   render();
   const el = document.querySelector(sel);
   document.querySelectorAll(".lingo-hl").forEach((n) => n.classList.remove("lingo-hl"));
@@ -879,6 +973,9 @@ function onClick(e) {
   const t = e.target.closest("[data-act]");
   if (!t) return;
   const act = t.dataset.act;
+  if (act === "r5-your-dice") { menu = false; screen = "play"; page = 2; }
+  if (R5.handle(act, t)) return;
+  if (act === "tutor-dismiss") { tutorLine = null; render(); return; }
   if ((act === "seed" || act === "color-setting" || act === "theme" || act === "csv-file" || act === "lingo-q") && e.type === "click") return;
   if (act === "hops") {
     const hops = document.getElementById("hops");
@@ -1195,7 +1292,7 @@ app.addEventListener("pointerdown", (e) => {
       openLingoFrom(hold);
     }, 500);
     const move = (ev) => {
-      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 12) { moved = true; clearTimeout(timer); }
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) >= 10) { moved = true; clearTimeout(timer); }
     };
     const stop = () => { clearTimeout(timer); hold.removeEventListener("pointermove", move); };
     hold.addEventListener("pointermove", move);
@@ -1274,7 +1371,11 @@ app.addEventListener("pointerup", (e) => {
 });
 app.addEventListener("click", onClick);
 app.addEventListener("change", onClick);
-addEventListener("resize", fitTable);
+addEventListener("resize", () => {
+  const next = ipadLayout(innerWidth, innerHeight) ? "1" : "";
+  if (app.dataset.ipad !== next) render();
+  else fitTable();
+});
 
 load();
 const q = new URLSearchParams(location.search);
@@ -1300,6 +1401,35 @@ if (shot === "compare") {
   const seq = R.rollSequenceFromSeed(482113907, 80);
   compareRun = R.compare(seq.dice, ["T1", "T5", "T6"], {});
 }
+R5.attach({
+  app: "table",
+  premium: premiumOn,
+  money,
+  getGame: () => game,
+  setGame: (g) => { game = g; },
+  getRail: () => rail,
+  setRail: (r) => { rail = r || Rail.railBreakdown(game.bankroll); },
+  toast: (s) => { toastText = s; },
+  repaint: () => render(),
+  settings,
+  save,
+  sync: () => { sync(); },
+  noteBadge: (action) => {
+    let store = { badges: {}, progress: {} };
+    try { store = JSON.parse(localStorage.getItem("bb-table-badges-v1") || "") || store; } catch { /* fresh */ }
+    store = Badges.noteAction(store, action).store;
+    localStorage.setItem("bb-table-badges-v1", JSON.stringify(store));
+  },
+  onEnter: () => { menu = false; screen = "play"; page = 2; },
+  resetTo: (cents) => {
+    R5.beforeReset(E.netWorth(game));
+    game = E.createGame({ profile: "table", bankroll: cents, rules: game.rules });
+    rail = Rail.railBreakdown(cents);
+    toastText = "Practice chips reset to " + money(cents) + ".";
+    save();
+    render();
+  },
+});
 render();
 if (shot === "celebrate" || shot === "base" || shot === "big" || shot === "huge" || shot === "fire") {
   const tier = shot === "celebrate" ? "base" : shot;
