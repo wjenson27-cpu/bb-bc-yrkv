@@ -93,6 +93,73 @@ test("premium presets use Strip Classic and Strip Deluxe", () => {
   assert.match(ui, /boardempty.*billie-C-hello/);
 });
 
+function engineRollPay(app, scene, d1, d2, field12) {
+  const table = app === "table";
+  let g = E.createGame({
+    profile: table ? "table" : "bubble",
+    bankroll: 5000000,
+    rules: TR.defaultRules({ field2: 2, field12 }),
+  });
+  g.fieldPays = { field2: 2, field12 };
+  const bets = scene.bets || [];
+  const pass = bets.find((b) => b.kind === "pass");
+  const odds = bets.find((b) => b.kind === "passOdds");
+  const rest = bets.filter((b) => b.kind !== "pass" && b.kind !== "passOdds");
+  if (pass) {
+    g.phase = "come-out";
+    g.point = null;
+    const posted = E.placeBet(g, { kind: "pass" }, pass.amount, { bypassMin: true });
+    assert.equal(posted.ok, true, posted.error);
+    g = posted.state;
+  }
+  if (scene.phase === "point") {
+    g.phase = "point";
+    g.point = scene.point;
+  }
+  rest.forEach((bet) => {
+    const posted = E.placeBet(g, { kind: bet.kind, number: bet.number, pair: bet.pair }, bet.amount, { bypassMin: true });
+    assert.equal(posted.ok, true, (posted.error || "bet") + " " + bet.kind);
+    g = posted.state;
+  });
+  if (odds) {
+    const posted = E.placeBet(g, { kind: "passOdds" }, odds.amount, { bypassMin: true });
+    assert.equal(posted.ok, true, posted.error);
+    g = posted.state;
+  }
+  const settled = E.settle(g, d1, d2);
+  return settled.decisions.filter((d) => d.result === "win").reduce((sum, d) => sum + d.profit, 0);
+}
+
+test("Pay the roll matches the engine on every roll and both Field 12 pays", () => {
+  for (const app of ["bubble", "table"]) {
+    const items = Dr.payTheRoll(app);
+    assert.equal(items.length, 10);
+    items.forEach((item) => {
+      const scene = item.scene;
+      assert.equal(item.answer, Dr.payFor(scene, scene.d1, scene.d2, scene.field12));
+      for (const field12 of [2, 3]) {
+        for (let d1 = 1; d1 <= 6; d1 += 1) {
+          for (let d2 = 1; d2 <= 6; d2 += 1) {
+            assert.equal(
+              Dr.payFor(scene, d1, d2, field12),
+              engineRollPay(app, scene, d1, d2, field12),
+              app + " " + d1 + "-" + d2 + " field " + field12 + " " + item.prompt,
+            );
+          }
+        }
+      }
+    });
+    const twelve = items.find((item) => item.scene.d1 === 6 && item.scene.d2 === 6 && item.scene.field12 === 2);
+    const triple = items.find((item) => item.scene.d1 === 6 && item.scene.d2 === 6 && item.scene.field12 === 3);
+    assert.equal(twelve.answer, E.fieldProfit(500, 12, TR.defaultRules({ field12: 2 })));
+    assert.equal(triple.answer, E.fieldProfit(500, 12, TR.defaultRules({ field12: 3 })));
+    assert.equal(twelve.answer, 1000);
+    assert.equal(triple.answer, 1500);
+  }
+  const taught = Dr.catalog("bubble").find((item) => item.drill === "D7");
+  assert.equal(taught.answer, E.fieldProfit(500, 12, TR.defaultRules({ field12: 2 })));
+});
+
 test("Inside lingo is Buy 5/9 and Place 6/8", () => {
   const term = termById("inside", "bubble");
   assert.match(term.meaning, /Buy 5 and 9/);
@@ -244,7 +311,6 @@ test("roll speed and PM-10 durations", () => {
   assert.equal(pay.every((item) => item.drill === "D7"), true);
   assert.equal(new Set(pay.map((item) => item.prompt)).size, 10);
   assert.equal(new Set(pay.map((item) => item.answer)).size, 10);
-  assert.equal(pay.filter((item) => item.answer === 3100).length, 1);
   assert.equal(shootAct({ page: 1, screen: "play", ipad: false, yourDice: true }), "go-shooter");
   assert.equal(shootAct({ page: 2, screen: "play", ipad: false, yourDice: true }), "throw");
   assert.equal(dieSize({ width: 400, height: 700 }, "felt") >= 26, true);

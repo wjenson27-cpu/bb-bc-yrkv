@@ -99,14 +99,7 @@ export function catalog(app) {
     }));
   }
   const field3 = Object.assign({}, rules, { field12: 3 });
-  list.push(q({
-    drill: "D7",
-    level: "dealer",
-    prompt: "Place 6 $18 and Field $5 (12 pays 2 to 1). The roll is 6-6. Total pay?",
-    answer: E.placeProfit(1800, 6) + E.fieldProfit(500, 12, rules),
-    why: "Place 6 pays $21. Field 12 at 2 to 1 pays $10. Together $31.",
-    text: "Place 6 $18; Field $5; roll six and six",
-  }));
+  list.push(sceneQuestion(PAY_SCENES[0]));
   list.push(q({
     drill: "D5",
     level: "dealer",
@@ -118,80 +111,142 @@ export function catalog(app) {
   return list;
 }
 
-/** Ten distinct D7 Pay the roll questions. A perfect Dealer round earns Dealer's Apprentice. */
-export function payTheRoll(app) {
-  const rules = TR.defaultRules();
-  const specs = [
-    {
-      prompt: "Place 6 $18 and Field $5 (12 pays 2 to 1). The roll is 6-6. Total pay?",
-      answer: E.placeProfit(1800, 6) + E.fieldProfit(500, 12, rules),
-      why: "Place 6 pays $21. Field 12 at 2 to 1 pays $10. Together $31.",
-      text: "Place 6 $18; Field $5; roll six and six",
-    },
-    {
-      prompt: "Place 8, $12. The 8 rolls. Pay?",
-      answer: E.placeProfit(1200, 8),
-      why: "Place 8 pays 7 to 6: $12 ÷ 6 = 2 units × $7 = $14.",
-      text: "Place 8, $12",
-    },
-    {
-      prompt: "Place 4, $10. The 4 rolls. Pay?",
-      answer: E.placeProfit(1000, 4),
-      why: "Place 4 pays 9 to 5: $10 ÷ 5 = 2 units × $9 = $18.",
-      text: "Place 4, $10",
-    },
-    {
-      prompt: "Place 9, $20. The 9 rolls. Pay?",
-      answer: E.placeProfit(2000, 9),
-      why: "Place 9 pays 7 to 5: $20 ÷ 5 = 4 units × $7 = $28.",
-      text: "Place 9, $20",
-    },
-    {
-      prompt: "Hard 6, $1. Hard six. Pay?",
-      answer: E.hardwayProfit(100, 6),
-      why: "Hard 6 pays 9 to 1: $1 × 9 = $9.",
-      text: "Hard 6, $1",
-    },
-    {
-      prompt: "Hard 10, $5. Hard ten. Pay?",
-      answer: E.hardwayProfit(500, 10),
-      why: "Hard 10 pays 7 to 1: $5 × 7 = $35.",
-      text: "Hard 10, $5",
-    },
-    {
-      prompt: "Pass Line $20. Come-out 7. Pay the line?",
-      answer: 2000,
-      why: "Pass Line pays even money. $20 wins $20.",
-      text: "Pass Line $20, come-out 7",
-    },
-    {
-      prompt: "$30 odds on 5. The point is made. Pay the odds?",
-      answer: E.passOddsProfit(3000, 5),
-      why: "Odds on 5 pay 3 to 2: $30 ÷ 2 = 15 units × $3 = $45.",
-      text: "Pass odds $30 on 5",
-    },
-    {
-      prompt: "Buy 10, $25. It hits. Net pay?",
-      answer: E.buyProfit(2500, 10, rules),
-      why: "Buy 10 pays 2 to 1, then 5% commission on the $25 stake: $50 − $1.25 = $48.75.",
-      text: "Buy 10, $25",
-    },
-    {
-      prompt: "Place 8 $6 and Field $5 (12 pays 2 to 1). The roll is 6-6. Total pay?",
-      answer: E.placeProfit(600, 8) + E.fieldProfit(500, 12, rules),
-      why: "Place 8 pays $7. Field 12 at 2 to 1 pays $10. Together $17.",
-      text: "Place 8 $6; Field $5; roll six and six",
-    },
-  ];
-  return specs.map((spec, i) => q({
+/** What this roll pays, from the engine payout functions. A miss pays nothing. */
+export function payFor(scene, d1, d2, field12) {
+  const pay12 = field12 === 3 ? 3 : 2;
+  const rules = TR.defaultRules({ field2: 2, field12: pay12 });
+  const total = d1 + d2;
+  const hard = d1 === d2;
+  const comeOut = scene.phase !== "point";
+  let pay = 0;
+  (scene.bets || []).forEach((bet) => {
+    if (bet.kind === "place") {
+      if (!comeOut && total === bet.number) pay += E.placeProfit(bet.amount, bet.number);
+    } else if (bet.kind === "buy") {
+      if (!comeOut && total === bet.number) pay += E.buyProfit(bet.amount, bet.number, rules);
+    } else if (bet.kind === "field") {
+      pay += E.fieldProfit(bet.amount, total, rules);
+    } else if (bet.kind === "hardway") {
+      if (hard && total === bet.number) pay += E.hardwayProfit(bet.amount, bet.number, false);
+    } else if (bet.kind === "pass") {
+      if (comeOut && (total === 7 || total === 11)) pay += bet.amount;
+      else if (!comeOut && total === scene.point) pay += bet.amount;
+    } else if (bet.kind === "passOdds") {
+      if (!comeOut && total === scene.point) pay += E.passOddsProfit(bet.amount, scene.point);
+    }
+  });
+  return pay;
+}
+
+function dollars(cents) {
+  const n = Math.round(cents);
+  const d = Math.floor(Math.abs(n) / 100);
+  const c = Math.abs(n) % 100;
+  return (n < 0 ? "-" : "") + "$" + d + (c ? "." + String(c).padStart(2, "0") : "");
+}
+
+function whyLine(scene) {
+  const total = scene.d1 + scene.d2;
+  const field12 = scene.field12 === 3 ? 3 : 2;
+  const bits = (scene.bets || []).map((bet) => {
+    const part = payFor(Object.assign({}, scene, { bets: [bet] }), scene.d1, scene.d2, field12);
+    if (bet.kind === "place") {
+      return part ? "Place " + bet.number + " pays " + dollars(part) + "." : "Place " + bet.number + " does not win on " + total + ".";
+    }
+    if (bet.kind === "field") {
+      return part ? "Field pays " + dollars(part) + " on " + total + "." : "Field loses on " + total + ".";
+    }
+    if (bet.kind === "hardway") return part ? "Hard " + bet.number + " pays " + dollars(part) + "." : "Hard " + bet.number + " does not win.";
+    if (bet.kind === "buy") return part ? "Buy " + bet.number + " pays " + dollars(part) + " after commission." : "Buy " + bet.number + " does not win on " + total + ".";
+    if (bet.kind === "pass") return part ? "Pass Line pays " + dollars(part) + "." : "Pass Line does not win on " + total + ".";
+    if (bet.kind === "passOdds") return part ? "Odds pay " + dollars(part) + "." : "Odds do not win on " + total + ".";
+    return "";
+  }).filter(Boolean);
+  const totalPay = payFor(scene, scene.d1, scene.d2, field12);
+  if ((scene.bets || []).length > 1) bits.push("Total " + dollars(totalPay) + ".");
+  return bits.join(" ");
+}
+
+function sceneQuestion(scene, extra) {
+  const field12 = scene.field12 === 3 ? 3 : 2;
+  return q(Object.assign({
     drill: "D7",
     level: "dealer",
-    n: i + 1,
-    prompt: spec.prompt,
-    answer: spec.answer,
-    why: spec.why,
-    text: spec.text,
-  }));
+    prompt: scene.prompt,
+    answer: payFor(scene, scene.d1, scene.d2, field12),
+    why: whyLine(scene),
+    text: scene.text,
+    scene,
+  }, extra));
+}
+
+const PAY_SCENES = [
+  {
+    phase: "point", point: 4, field12: 2, d1: 6, d2: 6,
+    bets: [{ kind: "place", number: 6, amount: 1800 }, { kind: "field", amount: 500 }],
+    prompt: "Place 6 $18 and Field $5 (12 pays 2 to 1). The roll is 6-6. Total pay?",
+    text: "Place 6 $18; Field $5; roll six and six",
+  },
+  {
+    phase: "point", point: 4, field12: 3, d1: 6, d2: 6,
+    bets: [{ kind: "place", number: 8, amount: 600 }, { kind: "field", amount: 500 }],
+    prompt: "Place 8 $6 and Field $5 (12 pays 3 to 1). The roll is 6-6. Total pay?",
+    text: "Place 8 $6; Field $5; roll six and six",
+  },
+  {
+    phase: "point", point: 4, field12: 2, d1: 5, d2: 3,
+    bets: [{ kind: "place", number: 8, amount: 1200 }],
+    prompt: "Place 8, $12. The roll is 5-3. Total pay?",
+    text: "Place 8, $12; roll five and three",
+  },
+  {
+    phase: "point", point: 6, field12: 2, d1: 2, d2: 2,
+    bets: [{ kind: "place", number: 4, amount: 1000 }],
+    prompt: "Place 4, $10. The roll is 2-2. Total pay?",
+    text: "Place 4, $10; roll two and two",
+  },
+  {
+    phase: "point", point: 6, field12: 2, d1: 4, d2: 5,
+    bets: [{ kind: "place", number: 9, amount: 2000 }],
+    prompt: "Place 9, $20. The roll is 4-5. Total pay?",
+    text: "Place 9, $20; roll four and five",
+  },
+  {
+    phase: "point", point: 4, field12: 2, d1: 3, d2: 3,
+    bets: [{ kind: "hardway", number: 6, amount: 100 }],
+    prompt: "Hard 6, $1. The roll is 3-3. Total pay?",
+    text: "Hard 6, $1; roll three and three",
+  },
+  {
+    phase: "point", point: 4, field12: 2, d1: 5, d2: 5,
+    bets: [{ kind: "hardway", number: 10, amount: 500 }],
+    prompt: "Hard 10, $5. The roll is 5-5. Total pay?",
+    text: "Hard 10, $5; roll five and five",
+  },
+  {
+    phase: "come-out", point: null, field12: 2, d1: 3, d2: 4,
+    bets: [{ kind: "pass", amount: 2000 }],
+    prompt: "Pass Line $20. Come-out roll is 3-4. Total pay?",
+    text: "Pass Line $20; come-out three and four",
+  },
+  {
+    phase: "point", point: 5, field12: 2, d1: 2, d2: 3,
+    bets: [{ kind: "pass", amount: 1500 }, { kind: "passOdds", amount: 3000 }],
+    prompt: "Pass $15 and $30 odds, point 5. The roll is 2-3. Total pay?",
+    text: "Pass $15; odds $30 on 5; roll two and three",
+  },
+  {
+    phase: "point", point: 6, field12: 2, d1: 4, d2: 6,
+    bets: [{ kind: "buy", number: 10, amount: 2500 }],
+    prompt: "Buy 10, $25. The roll is 4-6. Total pay?",
+    text: "Buy 10, $25; roll four and six",
+  },
+];
+
+/** Ten distinct D7 Pay the roll questions. A perfect Dealer round earns Dealer's Apprentice. */
+export function payTheRoll(app) {
+  void app;
+  return PAY_SCENES.map((scene, i) => sceneQuestion(scene, { n: i + 1 }));
 }
 
 export function roundOf(app, level, seed) {
