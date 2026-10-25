@@ -5,6 +5,8 @@
 import * as E from "./engine.mjs";
 import * as Lg from "bb-lingo";
 import * as V from "./lingo-view.mjs";
+import { spotSelector } from "./board-page.mjs";
+export { spotSelector };
 
 export function freshLingo() {
   return {
@@ -60,12 +62,15 @@ export function takeModel(game, spot, opts) {
   return { amount: money(amount), label: o.confirm ? "Confirm take down" : "Take down", confirm: !!o.confirm };
 }
 
-export function boardTarget(term, app) {
+export function boardTarget(term, app, mode) {
   if (!term) return { ok: false, reason: "That term isn't on this board." };
   const link = term.link && term.link[app === "table" ? "table" : "bubble"];
   if (!link) {
     const note = term.notes && (term.notes[app] || term.notes.table || term.notes.bubble);
     return { ok: false, reason: note || "That term isn't on this board." };
+  }
+  if (mode === "crapless" && (link === "dontPass" || link === "dontCome" || link === "dontPassOdds" || link === "ui:layTab")) {
+    return { ok: false, reason: (term.notes && term.notes.crapless) || "Not in Crapless: there's no Don't side." };
   }
   if (app === "table" && (term.id === "big_6_8" || link === "big:6" || link === "big:8")) {
     return { ok: false, reason: (term.notes && term.notes.table) || "Off by default; turn it on with the board toggle." };
@@ -73,25 +78,6 @@ export function boardTarget(term, app) {
   return { ok: true, link };
 }
 
-export function spotSelector(link, app) {
-  if (!link) return null;
-  if (link === "ui:rail") return app === "table" ? ".tc-rail" : ".dock";
-  const cut = link.indexOf(":");
-  if (cut < 0) return "[data-kind='" + link + "']";
-  const kind = link.slice(0, cut);
-  const rest = link.slice(cut + 1);
-  if (app === "table") {
-    if (kind === "place" || kind === "buy" || kind === "lay") return "[data-act='num'][data-n='" + rest + "']";
-    if (kind === "hop") return "[data-kind='hop:" + rest + "']";
-    if (kind === "hardway") return "[data-kind='hardway:" + rest + "']";
-    return "[data-kind='" + link + "']";
-  }
-  if (kind === "hop") return "[data-kind='hop'][data-pair='" + rest + "']";
-  if (kind === "place" || kind === "buy" || kind === "lay" || kind === "hardway" || kind === "repeater") {
-    return "[data-kind='" + kind + "'][data-number='" + rest + "']";
-  }
-  return "[data-kind='" + kind + "']";
-}
 
 export function lingoKey(e) {
   if (!e || e.metaKey || e.ctrlKey || e.altKey) return false;
@@ -141,7 +127,7 @@ export function focusOrigin(sel) {
 
 export function screenHTML(app, session, asset, mode) {
   const term = session.cardId ? Lg.termById(session.cardId, app) : null;
-  const target = term ? boardTarget(term, app) : null;
+  const target = term ? boardTarget(term, app, mode) : null;
   const card = term ? V.termCardHTML(term, {
     app,
     asset,
@@ -174,7 +160,7 @@ export function sheetBlock(app, session, game, opts) {
   const term = Lg.termForSpot(spot, app);
   const o = opts || {};
   const mode = o.mode || "regular";
-  const target = boardTarget(term, app);
+  const target = boardTarget(term, app, mode);
   const edge = E.edgeFor(spot, mode === "crapless" ? "crapless" : undefined);
   const tutor = E.tutorEdgeNote(spot, mode, false, game && game.rules);
   const take = takeModel(game, spot, { rolling: o.rolling, confirm: session.confirm, money: o.money });

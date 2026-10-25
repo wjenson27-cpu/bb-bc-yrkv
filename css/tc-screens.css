@@ -81,7 +81,7 @@
 .tc-picker .strow{min-height:52px;display:grid;grid-template-columns:22px minmax(0,1fr) auto auto;gap:6px;align-items:center;padding:6px 8px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#fff;text-align:left}
 .tc-picker .strow.warn{border-color:rgba(255,141,141,.55);background:rgba(194,31,46,.12)}
 .tc-picker .rk{font:800 12px/1 var(--sans);color:#C8D3E2;text-align:center}
-.tc-picker .nm{display:flex;flex-direction:column;gap:2px;min-width:0}.tc-picker .nm b{font:800 13px/1.15 var(--sans);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tc-picker .nm small{font:700 10px/1 var(--sans);color:#C8D3E2}
+.tc-picker .nm{display:flex;flex-direction:column;gap:2px;min-width:0}.tc-picker .nm b{font:800 13px/1.15 var(--sans);overflow:visible;white-space:normal}.tc-picker .nm small{font:700 10px/1 var(--sans);color:#C8D3E2}
 .tc-picker .tier{font:800 9px/1 var(--sans);letter-spacing:.08em;padding:4px 6px;border-radius:6px;white-space:nowrap;display:inline-flex;gap:3px;align-items:center}
 .tc-picker .tier.free{background:#0E3B24;color:#7DFFB3}.tc-picker .tier.prem{background:#2A1F4A;color:#E6D6FF;border:1px solid #9B7BD8}.tc-picker .tier.warn{background:#3A1012;color:#FFB0B0}
 .tc-app.narrow .tc-picker .strow{grid-template-columns:18px minmax(0,1fr) auto;}.tc-app.narrow .tc-picker .strow .edge{display:none}

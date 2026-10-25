@@ -413,8 +413,8 @@ function menuHTML() {
     "<p>" + TR.RULE0_LINE + "</p><h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip</p>" +
     etiquetteCard() +
     "<div class='acts' style='display:flex;gap:8px'>" +
-    (etiquetteAt > 0 ? "<button data-act='etiq-prev' style='height:44px'>Back</button>" : "") +
-    (last ? "<button data-act='etiquette-done' style='height:44px'>Got it</button>" : "<button data-act='etiq-next' style='height:44px'>Next</button>") +
+    (etiquetteAt > 0 ? "<button data-act='etiq-prev' style='height:44px;min-width:44px;padding:0 12px'>Back</button>" : "") +
+    (last ? "<button data-act='etiquette-done' style='height:44px;min-width:44px;padding:0 12px'>Got it</button>" : "<button data-act='etiq-next' style='height:44px;min-width:44px;padding:0 12px'>Next</button>") +
     "</div><p>" + Et.ETIQUETTE_FOOTER + "</p></div>";
 }
 function fairHTML() {
@@ -510,6 +510,10 @@ function render() {
     rotateGateHTML();
   LC.markSpots(app);
   fitTable();
+  if (lingoHl && tutorLine && screen === "play" && !menu) {
+    const hlEl = document.querySelector(lingoHl);
+    if (hlEl) hlEl.classList.add("lingo-hl");
+  }
   armToastHide();
 }
 
@@ -612,7 +616,7 @@ function fitTable() {
   const numsH = rows[1] - 3.2;
   const faceH = Math.max(8, numsH - strip * 2 - lay);
   const floor = feltLand ? 16 : (w < 360 ? 22 : 28);
-  let digit = Math.min(34 * k, Math.max(floor, (faceH - 15) / 0.86));
+  let digit = Math.min((feltLand ? 30 : 34) * k, Math.max(floor, (faceH - (feltLand ? 17 : 15)) / 0.86));
   if (!feltLand && w >= 360 && w <= 430) {
     const want = w < 370 ? 33.7 : w < 385 ? 35.2 : w <= 400 ? 35.8 : w <= 420 ? 36.1 : 38.1;
     if (digit < want && (faceH - 15) / 0.86 >= want) digit = want;
@@ -940,29 +944,41 @@ function finishEtiquette() {
 }
 
 let tutorLine = null;
+let lingoHl = "";
 function showOnBoard(id) {
   const term = Lg.termById(id, "table");
-  const target = LC.boardTarget(term, "table");
+  const target = LC.boardTarget(term, "table", "regular");
   lingo.sheet = null;
   lingo.peekId = null;
   lingo.confirm = false;
   screen = "play";
   menu = false;
-  if (!target.ok) { toastText = target.reason; render(); return; }
+  if (!target.ok) { lingoHl = ""; toastText = target.reason; render(); return; }
   const sel = LC.spotSelector(target.link, "table");
   const dest = pageForLink(target.link, "table");
   if (dest != null) page = dest;
   tutorLine = term ? { title: term.term, body: term.meaning } : null;
+  lingoHl = sel || "";
+  toastText = "";
+  clearTimeout(toastTimer);
   render();
-  const el = document.querySelector(sel);
-  document.querySelectorAll(".lingo-hl").forEach((n) => n.classList.remove("lingo-hl"));
-  if (el) {
-    el.classList.add("lingo-hl");
-    if (reducedMQ.matches) setTimeout(() => el.classList.remove("lingo-hl"), 1500);
-  } else toastText = target.reason || "That spot isn't on this board.";
-  render();
-  const again = document.querySelector(sel);
-  if (again) again.classList.add("lingo-hl");
+  const again = lingoHl ? document.querySelector(lingoHl) : null;
+  if (again) {
+    const scroller = again.closest(".tc-side");
+    if (scroller) {
+      const sr = scroller.getBoundingClientRect();
+      const er = again.getBoundingClientRect();
+      if (er.top < sr.top + 8 || er.bottom > sr.bottom - 140) {
+        scroller.scrollTop = Math.max(0, scroller.scrollTop + (er.top - sr.top) - 16);
+      }
+    }
+    again.classList.add("lingo-hl");
+    if (reducedMQ.matches) setTimeout(() => { lingoHl = ""; again.classList.remove("lingo-hl"); }, 1500);
+  } else {
+    lingoHl = "";
+    toastText = target.reason || "That spot isn't on this board.";
+    render();
+  }
 }
 function onClick(e) {
   if (swallowLingo) {
@@ -975,7 +991,7 @@ function onClick(e) {
   const act = t.dataset.act;
   if (act === "r5-your-dice") { menu = false; screen = "play"; page = 2; }
   if (R5.handle(act, t)) return;
-  if (act === "tutor-dismiss") { tutorLine = null; render(); return; }
+  if (act === "tutor-dismiss") { tutorLine = null; lingoHl = ""; render(); return; }
   if ((act === "seed" || act === "color-setting" || act === "theme" || act === "csv-file" || act === "lingo-q") && e.type === "click") return;
   if (act === "hops") {
     const hops = document.getElementById("hops");

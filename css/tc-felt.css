@@ -86,7 +86,7 @@
 .tc-felt.land .come .lb{font-size:clamp(13px, 4.2vw, 18px);-webkit-text-stroke:0}
 .tc-felt.land .numbox{grid-template-rows:var(--strip-lay) var(--strip) minmax(0,1fr) var(--strip)}
 .tc-felt.land .numbox .half{font-size:8px;letter-spacing:0;overflow:hidden;min-height:16px}
-.tc-felt.land .numbox .half .amt{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:9px;line-height:14px;padding:0 2px}
+.tc-felt.land .numbox .half .amt,.tc-felt.land .numbox .face .amt{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:9px;line-height:11px;padding:0 2px}
 .tc-felt.land .comerow{grid-template-columns:minmax(44px,1fr) auto minmax(44px,1fr);grid-template-rows:minmax(44px,1fr)}
 .tc-felt.land .comerow .come,.tc-felt.land .comerow .dc{min-height:44px}
 .tc-felt.land .comerow .numbet{width:auto;align-self:stretch}

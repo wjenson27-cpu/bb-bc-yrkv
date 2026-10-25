@@ -13,7 +13,7 @@ import * as QB from "../js/quick-bets.mjs";
 import * as Dr from "../js/drills.mjs";
 import * as RS from "../js/roll-speed.mjs";
 import * as PT from "../js/point-tier.mjs";
-import { pageForLink, ipadLayout, shootAct } from "../js/board-page.mjs";
+import { pageForLink, ipadLayout, shootAct, spotSelector } from "../js/board-page.mjs";
 import { dieSize, TIMING } from "../js/throw.mjs";
 import { termById } from "../js/lingo.mjs";
 import * as R5 from "../js/r5-ui.mjs";
@@ -315,7 +315,25 @@ test("roll speed and PM-10 durations", () => {
   assert.equal(shootAct({ page: 2, screen: "play", ipad: false, yourDice: true }), "throw");
   assert.equal(dieSize({ width: 400, height: 700 }, "felt") >= 26, true);
   assert.equal(pageForLink("hop:1-1", "bubble"), 0);
+  assert.equal(pageForLink("hop:2-3", "table"), 0);
+  assert.equal(pageForLink("repeater:6", "bubble"), 0);
+  assert.equal(pageForLink("fire", "table"), 0);
+  assert.equal(pageForLink("hardway:8", "bubble"), 1);
+  assert.equal(pageForLink("hardway:8", "table"), 1);
+  assert.equal(pageForLink("any7", "bubble"), 1);
+  assert.equal(pageForLink("any7", "table"), 1);
+  assert.equal(pageForLink("small", "bubble"), 1);
+  assert.equal(pageForLink("hardAllDay", "table"), 1);
+  assert.equal(pageForLink("horn", "bubble"), 1);
+  assert.equal(pageForLink("ce", "bubble"), 1);
+  assert.equal(pageForLink("anyCraps", "bubble"), 1);
   assert.equal(pageForLink("place:6", "table"), 1);
+  assert.equal(spotSelector("fire", "table"), ".tc-firetile");
+  assert.equal(spotSelector("ui:puck", "bubble"), ".hud-puck");
+  assert.equal(spotSelector("ui:puck", "table"), "[data-puck]");
+  assert.equal(spotSelector("ui:pressKey", "bubble"), "[data-act='press']");
+  assert.equal(spotSelector("ui:betsOff", "bubble"), "[data-act='betsoff']");
+  assert.equal(spotSelector("ui:layTab", "bubble"), "[data-kind='dontPassOdds']");
 });
 
 test("badge art exists for Table Manners and Talk the Talk", () => {
