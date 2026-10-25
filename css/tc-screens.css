@@ -183,3 +183,41 @@
 .tc-compare .chart svg{max-height:34vh}
 .tc-compare .mt caption{display:none}
 .tc-app.short.narrow .tc-pay .mascot{display:none}
+
+/* --- Stickman hook sweep, 4-way drag-to-rotate die slots, and mini-felt --- */
+.tc-shooter .bowl{position:relative;overflow:hidden;align-items:center}
+.tc-shooter .pick{transition:transform 420ms cubic-bezier(.25,.8,.25,1),opacity 360ms ease,width 420ms ease,margin 420ms ease;flex:0 0 auto}
+.tc-shooter .pick.kept{box-shadow:0 0 0 2px #7DFFB3,0 0 12px rgba(125,255,179,.65);background:rgba(125,255,179,.08)}
+.tc-shooter .pick.swept{animation:tc-dice-swept 520ms cubic-bezier(.3,.1,.2,1) forwards;pointer-events:none}
+@keyframes tc-dice-swept{
+  0%{transform:translate(0,0) scale(1);opacity:1;width:48px}
+  35%{transform:translate(18px,-4px) scale(.92);opacity:.9;width:44px}
+  100%{transform:translate(110px,-10px) scale(.25);opacity:0;width:0;min-width:0;padding:0;margin:0;overflow:hidden}
+}
+.tc-stick-hook{position:absolute;right:-160px;top:50%;width:154px;height:42px;transform:translateY(-50%);pointer-events:none;opacity:0;z-index:3;transition:right 420ms cubic-bezier(.22,.8,.25,1),opacity 260ms ease}
+.tc-stick-hook svg{width:100%;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.75))}
+.tc-stick-hook.active{right:54px;opacity:.95;animation:tc-hook-sweep 560ms cubic-bezier(.22,.8,.25,1) both}
+@keyframes tc-hook-sweep{
+  0%{right:-140px;opacity:0;transform:translateY(-50%) rotate(6deg)}
+  40%{right:78px;opacity:1;transform:translateY(-50%) rotate(-3deg)}
+  100%{right:54px;opacity:.95;transform:translateY(-50%) rotate(0deg)}
+}
+.tc-shooter .call-dice{margin-left:auto;min-width:56px;min-height:44px;height:44px;padding:0 10px;border-radius:999px;border:1px solid #FFD36A;
+  background:linear-gradient(180deg,#1c2a3c,#0c141f);color:#FFE7A0;font:800 9.5px/1 var(--sans);letter-spacing:.08em;cursor:pointer;z-index:4;flex:0 0 auto}
+.tc-shooter .setview .pair{touch-action:none;user-select:none;align-items:center}
+.tc-shooter .die-slot{position:relative;display:grid;place-items:center;padding:8px;touch-action:none;user-select:none;cursor:grab;border-radius:14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,231,160,.18)}
+.tc-shooter .die-slot:active{cursor:grabbing;border-color:rgba(125,255,179,.55)}
+.tc-shooter .d-dir{position:absolute;font:800 9px/1 var(--sans);color:rgba(255,231,160,.75);pointer-events:auto;cursor:pointer;padding:2px}
+.tc-shooter .d-dir.up{top:0;left:50%;transform:translateX(-50%)}
+.tc-shooter .d-dir.down{bottom:0;left:50%;transform:translateX(-50%)}
+.tc-shooter .d-dir.left{left:1px;top:50%;transform:translateY(-50%)}
+.tc-shooter .d-dir.right{right:1px;top:50%;transform:translateY(-50%)}
+.tc-shooter .readout .front-faces{font:800 11.5px/1.1 var(--sans);color:#FFE7A0;white-space:nowrap}
+.tc-shooter .mini-felt{position:absolute;inset:18px 10px 16px;pointer-events:none;display:grid;grid-template-rows:1fr .65fr .75fr;gap:2px;opacity:.38}
+.tc-shooter .mini-felt .mf-nums{display:grid;grid-template-columns:repeat(6,1fr);gap:2px}
+.tc-shooter .mini-felt .mf-nums i,.tc-shooter .mini-felt .mf-band,.tc-shooter .mini-felt .mf-pass{border:1px solid var(--line);border-radius:3px}
+.tc-shooter .tc-table-dice{position:absolute;right:12px;top:36px;display:flex;gap:6px;pointer-events:none;z-index:2;filter:drop-shadow(0 3px 6px rgba(0,0,0,.65))}
+.tc-shooter .tc-table-dice .tc-cube.sm{--s:24px}
+@media (prefers-reduced-motion:reduce){
+  .tc-shooter .pick.swept,.tc-stick-hook.active{animation-duration:.01ms}
+}

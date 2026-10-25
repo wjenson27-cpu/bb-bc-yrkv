@@ -157,7 +157,10 @@ export function throwDice(o) {
     let cframes;
     if (o.noRoll) cframes = [{ offset: 0, transform: VIEW + " rotateX(" + (i ? -30 : 30) + "deg) rotateY(20deg)" }, { offset: 0.5, transform: VIEW + " rotateX(" + (i ? -120 : 120) + "deg) rotateY(60deg)" }, { offset: 0.9, transform: fin }, { offset: 1, transform: fin }];
     else {
-      const sp = mode === "fast" ? spin.slice(2) : spin;
+      const sp = (mode === "fast" ? spin.slice(2) : spin).slice();
+      if (mode !== "fast" && o.set && o.set[i] && o.set[i].top && o.set[i].front) {
+        sp[0] = VIEW + " " + cssMatrix(o.set[i].top, o.set[i].front);
+      }
       cframes = sp.map((t, j) => ({ offset: offs[j], transform: t })).concat([{ offset: offs[offs.length - 2], transform: fin + " rotateZ(" + (i ? -6 : 6) + "deg)" }, { offset: 1, transform: fin }]);
       cframes.sort((a, b) => a.offset - b.offset);
       cframes = cframes.filter((f, j, a) => j === 0 || f.offset > a[j - 1].offset);
@@ -168,7 +171,16 @@ export function throwDice(o) {
   const timers = [];
   if (!o.noRoll && (mode === "normal" || mode === "fast")) {
     const tw = mode === "fast" ? 0 : T.dur * K[2];
-    timers.push(setTimeout(() => { sfx("dice_wall"); hap("light"); }, tw));
+    timers.push(setTimeout(() => {
+      sfx("dice_wall");
+      hap("light");
+      if (typeof document !== "undefined") {
+        document.querySelectorAll(".tc-felt-wall, .tc-shooter .wall").forEach((w) => {
+          w.classList.add("hit");
+          setTimeout(() => w.classList.remove("hit"), 260);
+        });
+      }
+    }, tw));
     timers.push(setTimeout(() => sfx("dice_felt"), T.dur * (mode === "fast" ? 0.25 : K[3])));
   }
   const skip = (e) => {

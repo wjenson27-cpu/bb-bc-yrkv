@@ -14,6 +14,7 @@ import * as Dr from "../js/drills.mjs";
 import * as RS from "../js/roll-speed.mjs";
 import * as PT from "../js/point-tier.mjs";
 import { pageForLink, ipadLayout, shootAct, spotSelector } from "../js/board-page.mjs";
+import { orient, rotateDie, matchSetKey, SETS } from "../js/tc-dice.mjs";
 import { dieSize, TIMING } from "../js/throw.mjs";
 import { termById } from "../js/lingo.mjs";
 import * as R5 from "../js/r5-ui.mjs";
@@ -362,4 +363,34 @@ test("badge art exists for Table Manners and Talk the Talk", () => {
   assert.match(css, /62% 38%/);
   assert.match(css, /ipadshoot/);
   assert.match(readFileSync("css/rotate.css", "utf8"), /z-index: 66/);
+});
+
+test("rotateDie turns 4 ways (left, right, front, back) with opposite faces summing to 7", () => {
+  const start = orient(3, 5);
+  assert.equal(start.top + start.bottom, 7);
+  assert.equal(start.front + start.back, 7);
+  assert.equal(start.right + start.left, 7);
+
+  const left = rotateDie(start, "left");
+  assert.equal(left.top, start.top);
+  assert.equal(left.front, start.right);
+  assert.equal(left.top + left.bottom, 7);
+  assert.equal(left.front + left.back, 7);
+
+  const right = rotateDie(left, "right");
+  assert.deepEqual(right, start);
+
+  const front = rotateDie(start, "front");
+  assert.equal(front.top, start.front);
+  assert.equal(front.front, start.bottom);
+  assert.equal(front.top + front.bottom, 7);
+
+  const back = rotateDie(front, "back");
+  assert.deepEqual(back, start);
+
+  assert.equal(matchSetKey(SETS["3V"].dice), "3V");
+  assert.equal(matchSetKey(SETS["2V"].dice), "2V");
+  assert.equal(matchSetKey(SETS.STRAIGHT.dice), "STRAIGHT");
+  assert.equal(matchSetKey(SETS.SEVENS.dice), "SEVENS");
+  assert.equal(matchSetKey([orient(5, 1), orient(6, 4)]), "CUSTOM");
 });

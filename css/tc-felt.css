@@ -98,3 +98,14 @@
 .tc-felt .numbet button{width:44px;height:44px;min-width:44px;min-height:44px;border:0;background:none;color:var(--line);font:800 9px/1 var(--sans);letter-spacing:.06em;padding:0}
 .tc-felt .numbet button+button{border-left:1px solid rgba(233,214,166,.35)}
 .tc-felt .numbet button.on{background:linear-gradient(#FFE7A0,#E2BC62);color:#2A1A00}
+
+/* --- back wall diamond bumper & settled 3D dice on the felt --- */
+.tc-felt-wall{position:absolute;left:12px;right:12px;top:0;height:5px;pointer-events:none;z-index:2;border-radius:0 0 4px 4px;opacity:.72;
+  background:repeating-linear-gradient(90deg,#B8923E 0 7px,#4E3A14 7px 9px);transition:box-shadow 150ms,opacity 150ms}
+.tc-felt-wall.hit,.tc-shooter .wall.hit{opacity:1;box-shadow:0 2px 14px rgba(255,211,106,.95)}
+.tc-felt-dice{position:absolute;right:12px;top:43%;transform:translateY(-50%);pointer-events:none;z-index:4;display:flex;gap:6px;
+  padding:3px 5px;border-radius:10px;background:rgba(4,10,16,.42);border:1px solid rgba(255,211,106,.35);filter:drop-shadow(0 4px 8px rgba(0,0,0,.65));transition:opacity 180ms}
+.tc-felt-dice .tc-cube.sm{--s:26px}
+body:has(.tt-layer) .tc-felt-dice,body:has(.tt-layer) .tc-table-dice{opacity:0}
+.tc-app.shooter-page:not(.rolling-felt) #felt{display:none}
+.tc-app.shooter-page.rolling-felt .tc-shooter{position:absolute;inset:0;opacity:0;pointer-events:none;z-index:-1}
