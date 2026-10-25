@@ -135,6 +135,8 @@
   }
   .app.play .pager .page { width: auto; min-width: 0; height: 100%; }
   .app.play .pager .page.side { display: none; }
+  .app.play #stage[data-page="0"] .pager .page.side { display: block; }
+  .app.play #stage[data-page="0"] .pager .page:nth-child(2) { display: none; }
   .app.play .felt.bfx.mode-regular .numbox { grid-template-rows: 16px minmax(calc(44px / var(--felt-k, 1)), auto) minmax(18px, 1fr) minmax(calc(44px / var(--felt-k, 1)), auto); }
   .app.play .felt.bfx.mode-crapless .numbox { grid-template-rows: minmax(calc(44px / var(--felt-k, 1)), auto) minmax(18px, 1fr) minmax(calc(44px / var(--felt-k, 1)), auto); }
   .app.play .felt.bfx .numbox .half.place,
@@ -142,9 +144,12 @@
   .app.play .felt.bfx .prop .spot { min-height: calc(44px / var(--felt-k, 1)); height: auto; }
 }
 @media (min-width: 1366px) {
-  .app.play .pager { grid-template-columns: 1fr 1fr 1fr; }
-  .app.play .pager .page.side { display: block; }
+  .app.play .pager,
+  .app.play #stage[data-page="0"] .pager { grid-template-columns: 1fr 1fr 1fr; }
+  .app.play .pager .page.side,
+  .app.play #stage[data-page="0"] .pager .page:nth-child(2) { display: block; }
 }
+.sr, .pointword { left: -9999px; top: -9999px; }
 @media (min-width: 768px) and (min-height: 900px) and (orientation: portrait) {
   .tc-app.ipad-port {
     grid-template-rows: auto minmax(0,3fr) minmax(0,2fr) auto auto auto;

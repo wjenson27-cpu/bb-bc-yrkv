@@ -11,7 +11,7 @@ import * as Et from "./etiquette.mjs";
 import * as PC from "./point-celebration.mjs";
 import * as PT from "./point-tier.mjs";
 import { cancelMoments, showPSO } from "./pso.mjs";
-import { SETS, orient, cssMatrix, turn, axisTotals } from "./tc-dice.mjs";
+import { SETS, orient, cssMatrix, turn, rotateDie, matchSetKey, axisTotals } from "./tc-dice.mjs";
 import { resolveSwipe } from "./swipe.mjs";
 import * as Badges from "./badges.mjs";
 import * as IAP from "./iap.mjs";
@@ -84,6 +84,14 @@ let queuedTip = "";
 let payNote = "";
 let setFaces = [orient(3, 5), orient(3, 1)];
 let showingRoll = false;
+const BOWL_DICE = [orient(5, 1), orient(3, 2), orient(2, 6), orient(6, 4), orient(4, 5)];
+let bowlPicked = [];
+let bowlSwept = false;
+let bowlSweeping = false;
+let sweepTimer = 0;
+let holdFelt = false;
+let holdFeltTimer = 0;
+let lastRotDir = ["", ""];
 let lingo = LC.freshLingo();
 let swallowLingo = false;
 let lingoOrigin = null;
@@ -195,7 +203,8 @@ function feltHTML() {
   };
   const hop = (a, b, id, pay, amt) => "<button class='spot' data-act='spot' data-kind='" + id + "'><span class='pd'><img src='" + A + "dice/faces/face-" + a + ".svg' alt=''><img src='" + A + "dice/faces/face-" + b + ".svg' alt=''></span><span class='sub'>" + pay + "</span>" + betHTML(amt) + "</button>";
   const lamps = (ns, on) => "<span class='lamps'>" + ns.map((n) => "<i class='" + (on[n] ? "on" : "") + "'></i>").join("") + "</span>";
-  return "<div class='tc-felt' id='felt'>" + R5.quickHTML() +
+  const feltDice = lastFaces ? "<div class='tc-felt-dice' aria-hidden='true' data-d1='" + lastFaces.d1 + "' data-d2='" + lastFaces.d2 + "'>" + cubeHTML(orient(lastFaces.d1, legalFront(lastFaces.d1)), "sm") + cubeHTML(orient(lastFaces.d2, legalFront(lastFaces.d2)), "sm b") + "</div>" : "";
+  return "<div class='tc-felt' id='felt'><div class='tc-felt-wall' aria-hidden='true'></div>" + feltDice + R5.quickHTML() +
     "<div class='ats'>" +
     "<button class='spot' data-act='spot' data-kind='small'><span class='lb'>SMALL</span>" + betHTML(b.small) + lamps([2, 3, 4, 5, 6], game.progress.small || {}) + "<span class='sub'>31 FOR 1</span></button>" +
     "<button class='spot' data-act='spot' data-kind='all'><span class='lb'>ALL</span>" + betHTML(b.all) + lamps([2, 3, 4, 5, 6, 8, 9, 10, 11, 12], game.progress.all || {}) + "<span class='sub'>156 FOR 1</span></button>" +
@@ -268,31 +277,66 @@ function sideHTML() {
     hops.map(([a, b]) => "<button class='hop" + (a === b ? " hard" : "") + "' data-act='spot' data-kind='hop:" + a + "-" + b + "'><span><img src='" + A + "dice/faces/face-" + a + ".svg' alt=''><img src='" + A + "dice/faces/face-" + b + ".svg' alt=''></span><small>" + (a === b ? "30" : "15") + " TO 1</small></button>").join("") +
     "</div></section></div>";
 }
-function cubeHTML(o, cls) {
+function cubeHTML(o, cls, dir) {
+  const full = orient(o.top, o.front) || o;
   const faces = [1, 2, 3, 4, 5, 6].map((f) => "<i class='f f" + f + "' style='background-image:url(" + A + "dice/faces/face-" + f + ".svg)'></i>").join("");
-  return "<div class='tc-cube " + (cls || "") + "' data-top='" + o.top + "' data-front='" + o.front + "'><div class='c' style='transform:var(--view) " + cssMatrix(o.top, o.front) + "'>" + faces + "</div></div>";
+  return "<div class='tc-cube " + (cls || "") + "' data-top='" + full.top + "' data-front='" + full.front + "' data-right='" + (full.right || "") + "' data-left='" + (full.left || "") + "' data-back='" + (full.back || "") + "' data-bottom='" + (full.bottom || "") + "'" + (dir ? " data-dir='" + dir + "'" : "") + "><div class='c' style='transform:var(--view) " + cssMatrix(full.top, full.front) + "'>" + faces + "</div></div>";
 }
 function pips(d1, d2, sz) {
   const tot = d1 + d2;
   return "<span class='pipro' role='img' aria-label='" + d1 + " and " + d2 + ", " + tot + "'><img src='" + A + "dice/faces/face-" + d1 + ".svg' width='" + sz + "' height='" + sz + "' alt=''><img src='" + A + "dice/faces/face-" + d2 + ".svg' width='" + sz + "' height='" + sz + "' alt=''><b class='tot" + (tot === 7 ? " seven" : "") + "'>" + tot + "</b></span>";
 }
 
+function stickHookSVG() {
+  return "<div class='tc-stick-hook" + (bowlSwept ? " active" : "") + (bowlSweeping ? " sweeping" : "") + "' aria-hidden='true'>" +
+    "<svg viewBox='0 0 220 52' fill='none' xmlns='http://www.w3.org/2000/svg'>" +
+    "<path d='M218 16 L46 16 C18 16 8 22 8 34 C8 44 20 48 38 46 L62 42' stroke='#8B5A2B' stroke-width='6.5' stroke-linecap='round'/>" +
+    "<path d='M218 16 L46 16 C18 16 8 22 8 34 C8 44 20 48 38 46 L62 42' stroke='#E2BC62' stroke-width='2.2' stroke-linecap='round' stroke-dasharray='10 6'/>" +
+    "<rect x='62' y='11.5' width='11' height='9' rx='2' fill='#FFE7A0' stroke='#6E5420' stroke-width='1.2'/>" +
+    "<circle cx='62' cy='42' r='3.5' fill='#FFE7A0'/>" +
+    "</svg></div>";
+}
+
+function setReadoutInnerHTML() {
+  const key = matchSetKey(setFaces);
+  const label = SETS[key] ? SETS[key].name : "Custom Set";
+  const axes = axisTotals({ dice: setFaces }).map((row) => row[1]).join(" · ");
+  return "<small>YOUR SET · " + label + "</small>" +
+    "<b>Top " + pips(setFaces[0].top, setFaces[1].top, 18) + " <span class='front-faces'>· Front " + setFaces[0].front + "–" + setFaces[1].front + "</span></b>" +
+    "<span>On axis: " + axes + "</span>";
+}
+
+function dieSlotHTML(i) {
+  return "<div class='die-slot' data-die='" + i + "'>" +
+    "<span class='d-dir up' data-dir='front' aria-hidden='true' title='Rotate front (up)'>▲</span>" +
+    "<span class='d-dir left' data-dir='left' aria-hidden='true' title='Rotate left'>◀</span>" +
+    cubeHTML(diceFaces[i], i ? "lg b" : "lg", lastRotDir[i]) +
+    "<span class='d-dir right' data-dir='right' aria-hidden='true' title='Rotate right'>▶</span>" +
+    "<span class='d-dir down' data-dir='back' aria-hidden='true' title='Rotate back (down)'>▼</span>" +
+    "</div>";
+}
+
 function shooterHTML() {
-  const set = SETS[settings.set] || SETS["3V"];
-  const bowl = [orient(5, 1), orient(3, 2), orient(2, 6), orient(6, 4), orient(4, 5)];
-  const axes = axisTotals(set).map((row) => row[1]).join(" · ");
   const last = lastFaces ? "<div class='result'><small>LAST ROLL</small>" + pips(lastFaces.d1, lastFaces.d2, 32) + rollCallHTML() + "</div>" : "<div class='result'><small>LAST ROLL</small><span>No roll yet</span></div>";
+  const bowlBtns = BOWL_DICE.map((o, i) => {
+    const isPicked = bowlPicked.indexOf(i) >= 0;
+    const isSwept = bowlSwept && !isPicked;
+    const cls = "pick" + (isPicked ? " on" : "") + (bowlSwept && isPicked ? " kept" : "") + (isSwept ? " swept" : "");
+    return "<button type='button' class='" + cls + "' data-act='pick' data-i='" + i + "' data-kept='" + (bowlSwept && isPicked ? "1" : "0") + "' data-swept='" + (isSwept ? "1" : "0") + "' aria-pressed='" + isPicked + "'" + (isSwept ? " disabled aria-hidden='true' tabindex='-1'" : "") + ">" + cubeHTML(o, "sm") + "</button>";
+  }).join("");
+  const callBtn = bowlSwept ? "<button type='button' class='call-dice' data-act='call-dice' aria-label='Call 5 dice'>5 DICE</button>" : "";
+  const miniDice = lastFaces ? "<div class='tc-table-dice' aria-hidden='true'>" + cubeHTML(orient(lastFaces.d1, legalFront(lastFaces.d1)), "sm") + cubeHTML(orient(lastFaces.d2, legalFront(lastFaces.d2)), "sm b") + "</div>" : "";
   return "<div class='tc-shooter'>" +
-    "<div class='table'><div class='wall'></div><div class='tlabel'>BOTH DICE MUST HIT THE BACK WALL</div>" + fireRail("s") +
+    "<div class='table'><div class='wall'></div><div class='mini-felt' aria-hidden='true'><span class='mf-nums'><i></i><i></i><i></i><i></i><i></i><i></i></span><span class='mf-band'></span><span class='mf-pass'></span></div>" + miniDice + "<div class='tlabel'>BOTH DICE MUST HIT THE BACK WALL</div>" + fireRail("s") +
     "<div class='lockcap'>" + (game.fireOpen ? "OPEN · BEFORE THE FIRST ROLL" : "LOCKED · " + (game.firePoints || []).length + " OF 6") + "</div></div>" +
-    "<div class='bowl' aria-label='Pick 2 of 5'>" + bowl.map((o, i) => "<button class='pick" + (i < 2 ? " on" : "") + "' data-act='pick' data-i='" + i + "'>" + cubeHTML(o, "sm") + "</button>").join("") + "</div>" +
+    "<div class='bowl" + (bowlSwept ? " swept" : "") + (bowlSweeping ? " sweeping" : "") + "' data-swept='" + (bowlSwept ? "1" : "0") + "' data-picked='" + bowlPicked.join(",") + "' aria-label='Pick 2 of 5'>" + bowlBtns + stickHookSVG() + callBtn + "</div>" +
     "<div class='sets' role='radiogroup'>" + Object.keys(SETS).map((k) => {
       const s = SETS[k];
       return "<button data-act='set' data-set='" + k + "' class='" + (settings.set === k ? "on" : "") + "'><b>" + s.name + "</b><small>" + (s.aka || "for practice") + "</small></button>";
     }).join("") + "</div>" +
-    "<div class='setview'><div class='pair'>" + cubeHTML(diceFaces[0], "lg") + cubeHTML(diceFaces[1], "lg b") + "</div>" +
-    "<div class='gest'><span>↑↓ drag to flip</span><span>↔ drag to spin</span><span>tap = quarter turn</span></div>" +
-    "<div class='readout'><small>YOUR SET · " + set.name + "</small><b>Top " + pips(setFaces[0].top, setFaces[1].top, 18) + "</b><span>On axis: " + axes + "</span></div></div>" +
+    "<div class='setview'><div class='pair'>" + dieSlotHTML(0) + dieSlotHTML(1) + "</div>" +
+    "<div class='gest'><span>↕ drag front / back</span><span>↔ drag left / right</span><span>tap = 90° turn</span></div>" +
+    "<div class='readout'>" + setReadoutInnerHTML() + "</div></div>" +
     last +
     "<div class='meter'><small>THROW POWER</small><div class='bar'><i style='left:" + throwPower + "%'></i></div><small class='r'>" + (throwPower < 18 ? "SOFT · NO ROLL" : throwPower < 45 ? "EASY" : throwPower < 75 ? "MEDIUM" : "HARD") + "</small></div>" +
     "<p class='note'>Set dice are practice only. The throw does not change the roll. A soft toss is a no-roll and draws nothing.</p>" +
@@ -413,8 +457,8 @@ function menuHTML() {
     "<p>" + TR.RULE0_LINE + "</p><h2>Dealer Billy</h2><p class='muted'>Billy's Table Tip</p>" +
     etiquetteCard() +
     "<div class='acts' style='display:flex;gap:8px'>" +
-    (etiquetteAt > 0 ? "<button data-act='etiq-prev' style='height:44px'>Back</button>" : "") +
-    (last ? "<button data-act='etiquette-done' style='height:44px'>Got it</button>" : "<button data-act='etiq-next' style='height:44px'>Next</button>") +
+    (etiquetteAt > 0 ? "<button data-act='etiq-prev' style='height:44px;min-width:44px;padding:0 12px'>Back</button>" : "") +
+    (last ? "<button data-act='etiquette-done' style='height:44px;min-width:44px;padding:0 12px'>Got it</button>" : "<button data-act='etiq-next' style='height:44px;min-width:44px;padding:0 12px'>Next</button>") +
     "</div><p>" + Et.ETIQUETTE_FOOTER + "</p></div>";
 }
 function fairHTML() {
@@ -450,7 +494,7 @@ function stageHTML() {
       : "";
     return back + hintSpots(sideHTML());
   }
-  if (page === 2 && !ipadLayout(innerWidth, innerHeight)) return shooterHTML();
+  if (page === 2 && !ipadLayout(innerWidth, innerHeight)) return hintSpots(feltHTML()) + shooterHTML();
   const edge = ipadLayout(innerWidth, innerHeight)
     ? "<button class='tc-edge' data-act='page' data-page='0'>SIDE BETS</button>"
     : "";
@@ -484,6 +528,8 @@ function render() {
   const ipad = ipadLayout(innerWidth, innerHeight);
   app.classList.toggle("ipad-land", ipad && innerWidth > innerHeight);
   app.classList.toggle("ipad-port", ipad && innerHeight >= innerWidth);
+  app.classList.toggle("shooter-page", page === 2 && !ipad && screen === "play" && !menu);
+  app.classList.toggle("rolling-felt", (rolling || holdFelt) && page === 2 && !ipad && screen === "play" && !menu);
   app.dataset.ipad = ipad ? "1" : "";
   const actShoot = shootAct({ yourDice: R5.active(), screen, menu, page, ipad });
   const shoot = actShoot === "throw"
@@ -510,6 +556,10 @@ function render() {
     rotateGateHTML();
   LC.markSpots(app);
   fitTable();
+  if (lingoHl && tutorLine && screen === "play" && !menu) {
+    const hlEl = document.querySelector(lingoHl);
+    if (hlEl) hlEl.classList.add("lingo-hl");
+  }
   armToastHide();
 }
 
@@ -612,7 +662,7 @@ function fitTable() {
   const numsH = rows[1] - 3.2;
   const faceH = Math.max(8, numsH - strip * 2 - lay);
   const floor = feltLand ? 16 : (w < 360 ? 22 : 28);
-  let digit = Math.min(34 * k, Math.max(floor, (faceH - 15) / 0.86));
+  let digit = Math.min((feltLand ? 30 : 34) * k, Math.max(floor, (faceH - (feltLand ? 17 : 15)) / 0.86));
   if (!feltLand && w >= 360 && w <= 430) {
     const want = w < 370 ? 33.7 : w < 385 ? 35.2 : w <= 400 ? 35.8 : w <= 420 ? 36.1 : 38.1;
     if (digit < want && (faceH - 15) / 0.86 >= want) digit = want;
@@ -700,6 +750,79 @@ function checkSession() {
 
 function legalFront(top) {
   return top === 1 || top === 6 ? 2 : 1;
+}
+function sweepUnpickedDice(pairIndices) {
+  if (pairIndices && pairIndices.length === 2) bowlPicked = pairIndices.slice();
+  else if (bowlPicked.length < 2) bowlPicked = [0, 1];
+  bowlSwept = true;
+  bowlSweeping = true;
+  clearTimeout(sweepTimer);
+  sweepTimer = setTimeout(() => { bowlSweeping = false; }, 650);
+}
+function pickBowlDie(i) {
+  if (i < 0 || i >= BOWL_DICE.length) return;
+  if (bowlSwept) {
+    bowlSwept = false;
+    bowlSweeping = false;
+    bowlPicked = [i];
+    render();
+    return;
+  }
+  const at = bowlPicked.indexOf(i);
+  if (at >= 0) {
+    bowlPicked.splice(at, 1);
+    render();
+    return;
+  }
+  bowlPicked.push(i);
+  if (bowlPicked.length >= 2) {
+    const [a, b] = bowlPicked.slice(0, 2);
+    setFaces = [orient(BOWL_DICE[a].top, BOWL_DICE[a].front), orient(BOWL_DICE[b].top, BOWL_DICE[b].front)];
+    diceFaces = setFaces.map((d) => Object.assign({}, d));
+    showingRoll = false;
+    settings.set = matchSetKey(setFaces);
+    sweepUnpickedDice([a, b]);
+  }
+  render();
+}
+function syncShooterSetDOM() {
+  const cubes = [...document.querySelectorAll(".setview .pair .tc-cube")];
+  if (cubes.length !== 2) return false;
+  cubes.forEach((cube, i) => {
+    const full = orient(diceFaces[i].top, diceFaces[i].front) || diceFaces[i];
+    cube.dataset.top = String(full.top);
+    cube.dataset.front = String(full.front);
+    cube.dataset.right = String(full.right || "");
+    cube.dataset.left = String(full.left || "");
+    cube.dataset.back = String(full.back || "");
+    cube.dataset.bottom = String(full.bottom || "");
+    if (lastRotDir[i]) cube.dataset.dir = lastRotDir[i];
+    const c = cube.querySelector(".c");
+    if (c) c.style.transform = "var(--view) " + cssMatrix(full.top, full.front);
+  });
+  const ro = document.querySelector(".tc-shooter .readout");
+  if (ro) ro.innerHTML = setReadoutInnerHTML();
+  document.querySelectorAll(".tc-shooter .sets button[data-set]").forEach((btn) => {
+    btn.classList.toggle("on", btn.dataset.set === settings.set);
+  });
+  return true;
+}
+function rotateShooterDie(index, dir, inPlace) {
+  if (index !== 0 && index !== 1) return;
+  if (showingRoll) {
+    diceFaces = setFaces.map((d) => Object.assign({}, d));
+    showingRoll = false;
+  }
+  const next = rotateDie(diceFaces[index], dir);
+  if (!next) return;
+  diceFaces[index] = next;
+  setFaces[index] = Object.assign({}, next);
+  lastRotDir[index] = dir;
+  settings.set = matchSetKey(setFaces);
+  const sweptBefore = bowlSwept;
+  if (!bowlSwept) sweepUnpickedDice(bowlPicked.length === 2 ? bowlPicked : [0, 1]);
+  if (inPlace && sweptBefore && syncShooterSetDOM()) return;
+  render();
 }
 function applySet(name) {
   const set = SETS[name] || SETS["3V"];
@@ -806,7 +929,7 @@ function doRoll() {
     offer = (rail[100] > 20 ? rail[100] + " × $1" : rail[500] + " × $5") + " on the rail. Color up?";
   }
   const sevenOut = settled.result === "seven-out" && phaseBefore === "point";
-  if (sevenOut) maybeNudge("new_shooter");
+  if (sevenOut) { maybeNudge("new_shooter"); bowlSwept = false; bowlSweeping = false; bowlPicked = []; }
   if (!sevenOut) checkSession();
   toastText = sevenOut ? "" : settled.narrative;
   const feltFrom = document.querySelector(".numbox.point, .spot.pass");
@@ -894,14 +1017,27 @@ function doRoll() {
   };
   if (entered || page === 0) { applyRoll(); return; }
   const speed = (TEST_BUILD && window.__tcRollSpeed) || settings.rollSpeed || "normal";
+  const effSpeed = RS.capSpeed(speed, page === 2);
+  const showTableFlight = page === 2 && !ipadLayout(innerWidth, innerHeight) && effSpeed !== "instant" && !reducedMQ.matches;
+  if (showTableFlight) {
+    render();
+  }
   import("./throw.mjs").then((T) => T.throwDice({
     d1: dice.d1,
     d2: dice.d2,
-    speed: RS.capSpeed(speed, page === 2),
+    set: setFaces,
+    speed: effSpeed,
     reduced: reducedMQ.matches,
     haptic: throwHaptic,
-    onSettle: applyRoll,
-  })).catch(() => applyRoll());
+    onSettle: () => {
+      if (showTableFlight) {
+        holdFelt = true;
+        clearTimeout(holdFeltTimer);
+        holdFeltTimer = setTimeout(() => { holdFelt = false; render(); }, 520);
+      }
+      applyRoll();
+    },
+  })).catch(() => { holdFelt = false; applyRoll(); });
 }
 
 function leave() {
@@ -940,29 +1076,41 @@ function finishEtiquette() {
 }
 
 let tutorLine = null;
+let lingoHl = "";
 function showOnBoard(id) {
   const term = Lg.termById(id, "table");
-  const target = LC.boardTarget(term, "table");
+  const target = LC.boardTarget(term, "table", "regular");
   lingo.sheet = null;
   lingo.peekId = null;
   lingo.confirm = false;
   screen = "play";
   menu = false;
-  if (!target.ok) { toastText = target.reason; render(); return; }
+  if (!target.ok) { lingoHl = ""; toastText = target.reason; render(); return; }
   const sel = LC.spotSelector(target.link, "table");
   const dest = pageForLink(target.link, "table");
   if (dest != null) page = dest;
   tutorLine = term ? { title: term.term, body: term.meaning } : null;
+  lingoHl = sel || "";
+  toastText = "";
+  clearTimeout(toastTimer);
   render();
-  const el = document.querySelector(sel);
-  document.querySelectorAll(".lingo-hl").forEach((n) => n.classList.remove("lingo-hl"));
-  if (el) {
-    el.classList.add("lingo-hl");
-    if (reducedMQ.matches) setTimeout(() => el.classList.remove("lingo-hl"), 1500);
-  } else toastText = target.reason || "That spot isn't on this board.";
-  render();
-  const again = document.querySelector(sel);
-  if (again) again.classList.add("lingo-hl");
+  const again = lingoHl ? document.querySelector(lingoHl) : null;
+  if (again) {
+    const scroller = again.closest(".tc-side");
+    if (scroller) {
+      const sr = scroller.getBoundingClientRect();
+      const er = again.getBoundingClientRect();
+      if (er.top < sr.top + 8 || er.bottom > sr.bottom - 140) {
+        scroller.scrollTop = Math.max(0, scroller.scrollTop + (er.top - sr.top) - 16);
+      }
+    }
+    again.classList.add("lingo-hl");
+    if (reducedMQ.matches) setTimeout(() => { lingoHl = ""; again.classList.remove("lingo-hl"); }, 1500);
+  } else {
+    lingoHl = "";
+    toastText = target.reason || "That spot isn't on this board.";
+    render();
+  }
 }
 function onClick(e) {
   if (swallowLingo) {
@@ -970,12 +1118,19 @@ function onClick(e) {
     const held = e.target.closest("[data-act='spot'], [data-act='num']");
     if (held) return;
   }
+  if (swallowDragClick) { swallowDragClick = false; return; }
+  if (holdFelt) { holdFelt = false; clearTimeout(holdFeltTimer); }
+  const dirSpan = e.target.closest(".die-slot [data-dir]");
+  if (dirSpan) {
+    const slot = dirSpan.closest(".die-slot");
+    if (slot) { rotateShooterDie(Number(slot.dataset.die), dirSpan.dataset.dir, true); return; }
+  }
   const t = e.target.closest("[data-act]");
   if (!t) return;
   const act = t.dataset.act;
   if (act === "r5-your-dice") { menu = false; screen = "play"; page = 2; }
   if (R5.handle(act, t)) return;
-  if (act === "tutor-dismiss") { tutorLine = null; render(); return; }
+  if (act === "tutor-dismiss") { tutorLine = null; lingoHl = ""; render(); return; }
   if ((act === "seed" || act === "color-setting" || act === "theme" || act === "csv-file" || act === "lingo-q") && e.type === "click") return;
   if (act === "hops") {
     const hops = document.getElementById("hops");
@@ -1246,9 +1401,21 @@ function onClick(e) {
   if (act === "sess-keep") { sessionPrompt = null; sessionHold = true; render(); return; }
   if (act === "sess-new") { sessionBase = E.netWorth(game); sessionPrompt = null; sessionHold = false; toastText = "New session from " + money(sessionBase) + "."; render(); return; }
   if (act === "leave") { leave(); return; }
+  if (act === "pick") {
+    pickBowlDie(Number(t.dataset.i));
+    return;
+  }
+  if (act === "call-dice") {
+    bowlSwept = false;
+    bowlSweeping = false;
+    bowlPicked = [];
+    render();
+    return;
+  }
   if (act === "set") {
     settings.set = t.dataset.set;
     applySet(settings.set);
+    if (!bowlSwept) sweepUnpickedDice(bowlPicked.length === 2 ? bowlPicked : [0, 1]);
     render();
     return;
   }
@@ -1268,20 +1435,31 @@ function onClick(e) {
 let touchX = 0;
 let touchY = 0;
 let touchDice = false;
-let flickArm = false;
-let diceIndex = -1;
+let dragDie = null;
+let swallowDragClick = false;
 app.addEventListener("pointerdown", (e) => {
   touchX = e.clientX;
   touchY = e.clientY;
-  const pair = e.target.closest(".pair");
-  const cube = e.target.closest(".tc-cube");
-  flickArm = !!pair;
-  diceIndex = -1;
-  if (pair && cube) {
-    diceIndex = Array.prototype.indexOf.call(pair.querySelectorAll(".tc-cube"), cube);
-    try { pair.setPointerCapture(e.pointerId); } catch { /* the pointer already ended */ }
+  const pair = e.target.closest(".setview .pair");
+  const slot = e.target.closest(".setview .die-slot");
+  const cube = e.target.closest(".setview .tc-cube");
+  dragDie = null;
+  if (pair && (slot || cube)) {
+    const idx = slot ? Number(slot.dataset.die) : Array.prototype.indexOf.call(pair.querySelectorAll(".tc-cube"), cube);
+    if (idx === 0 || idx === 1) {
+      dragDie = {
+        index: idx,
+        x0: e.clientX,
+        y0: e.clientY,
+        lx: e.clientX,
+        ly: e.clientY,
+        steps: 0,
+        dirEl: e.target.closest("[data-dir]"),
+      };
+      try { (slot || cube || pair).setPointerCapture(e.pointerId); } catch { /* the pointer already ended */ }
+    }
   }
-  touchDice = flickArm || !!e.target.closest(".meter");
+  touchDice = !!dragDie || !!e.target.closest(".setview, .bowl, .meter");
   const hold = e.target.closest("[data-act='num'], [data-act='spot']");
   if (hold && !e.target.closest(".tc-shoot, .tc-keys, [data-act='throw']")) {
     const x0 = e.clientX;
@@ -1333,6 +1511,29 @@ addEventListener("keydown", (e) => {
   LC.focusOrigin(back);
 });
 app.addEventListener("pointermove", (e) => {
+  if (dragDie) {
+    const dx = e.clientX - dragDie.lx;
+    const dy = e.clientY - dragDie.ly;
+    const STEP = 22;
+    if (Math.abs(dx) >= STEP || Math.abs(dy) >= STEP) {
+      const dir = Math.abs(dy) >= Math.abs(dx) ? (dy < 0 ? "front" : "back") : (dx < 0 ? "left" : "right");
+      dragDie.lx = e.clientX;
+      dragDie.ly = e.clientY;
+      dragDie.steps += 1;
+      rotateShooterDie(dragDie.index, dir, true);
+    } else {
+      const cubes = document.querySelectorAll(".setview .pair .tc-cube");
+      const cube = cubes[dragDie.index];
+      const c = cube && cube.querySelector(".c");
+      if (c) {
+        const face = diceFaces[dragDie.index];
+        const rx = Math.max(-22, Math.min(22, -dy * 0.9));
+        const ry = Math.max(-22, Math.min(22, dx * 0.9));
+        c.style.transform = "var(--view) rotateX(" + rx.toFixed(1) + "deg) rotateY(" + ry.toFixed(1) + "deg) " + cssMatrix(face.top, face.front);
+      }
+    }
+    return;
+  }
   const bar = e.target.closest && e.target.closest(".meter .bar");
   if (!bar || !touchDice) return;
   const r = bar.getBoundingClientRect();
@@ -1343,24 +1544,29 @@ app.addEventListener("pointermove", (e) => {
 app.addEventListener("pointerup", (e) => {
   const dx = e.clientX - touchX;
   const dy = e.clientY - touchY;
-  if (flickArm) {
-    const index = diceIndex;
-    flickArm = false;
-    if (index >= 0) {
-      if (showingRoll) {
-        diceFaces = setFaces.map((d) => Object.assign({}, d));
-        showingRoll = false;
+  if (dragDie) {
+    const d = dragDie;
+    dragDie = null;
+    if (d.steps === 0) {
+      if (Math.abs(dx) >= 18 || Math.abs(dy) >= 18) {
+        const dir = Math.abs(dy) >= Math.abs(dx) ? (dy < 0 ? "front" : "back") : (dx < 0 ? "left" : "right");
+        rotateShooterDie(d.index, dir, true);
+        swallowDragClick = true;
+        setTimeout(() => { swallowDragClick = false; }, 120);
+      } else if (d.dirEl && d.dirEl.dataset.dir) {
+        rotateShooterDie(d.index, d.dirEl.dataset.dir, true);
+        swallowDragClick = true;
+        setTimeout(() => { swallowDragClick = false; }, 120);
+      } else {
+        rotateShooterDie(d.index, "front", true);
+        swallowDragClick = true;
+        setTimeout(() => { swallowDragClick = false; }, 120);
       }
-      const step = (fn) => { diceFaces = diceFaces.map((face, i) => i === index ? fn(face) : face); };
-      if (Math.abs(dy) >= Math.abs(dx) && dy < -24) step(turn.flipUp);
-      else if (Math.abs(dy) >= Math.abs(dx) && dy > 24) step(turn.flipDown);
-      else if (dx < -24) step(turn.spinLeft);
-      else if (dx > 24) step(turn.spinRight);
-      else step(turn.flipUp);
-      setFaces = diceFaces.map((d) => Object.assign({}, d));
+    } else {
+      syncShooterSetDOM();
+      swallowDragClick = true;
+      setTimeout(() => { swallowDragClick = false; }, 120);
     }
-    if (dy < -80 && page === 2 && screen === "play") { doRoll(); return; }
-    render();
     return;
   }
   if (touchDice || Math.abs(dx) < 48 || screen !== "play" || menu) return;

@@ -518,25 +518,41 @@ function noteLingo(id) {
 function watchLingo(id) {
   LC.armDwell(lingo, id, noteLingo);
 }
+let lingoHl = "";
 function showOnBoard(id) {
   const term = Lg.termById(id, "bubble");
-  const target = LC.boardTarget(term, "bubble");
+  const target = LC.boardTarget(term, "bubble", game.mode);
   lingo.sheet = null;
   lingo.peekId = null;
   view = "play";
-  if (!target.ok) { toast(target.reason); paint(); return; }
+  if (!target.ok) { lingoHl = ""; toast(target.reason); paint(); return; }
   const sel = LC.spotSelector(target.link, "bubble");
   const dest = pageForLink(target.link, "bubble");
   if (dest != null) page = dest;
   else if (target.link !== "ui:rail") page = 1;
   lingoTutor = term;
+  lingoHl = sel || "";
+  const pagerEl = document.getElementById("pager");
+  if (pagerEl) pagerEl.style.transform = "";
   paint();
   snap();
-  const el = document.querySelector(sel);
+  const nodes = [...document.querySelectorAll(sel)];
+  const el = nodes.find((n) => n.getBoundingClientRect().width > 0) || nodes[0] || null;
   if (el) {
+    const scroller = el.closest(".page.side");
+    if (scroller) {
+      const sr = scroller.getBoundingClientRect();
+      const er = el.getBoundingClientRect();
+      if (er.top < sr.top + 8 || er.bottom > sr.bottom - 140) {
+        scroller.scrollTop = Math.max(0, scroller.scrollTop + (er.top - sr.top) - 16);
+      }
+    }
     el.classList.add("lingo-hl");
-    if (motionOff()) setTimeout(() => el.classList.remove("lingo-hl"), 1500);
-  } else toast(target.reason || "That spot isn't on this board.");
+    if (motionOff()) setTimeout(() => { lingoHl = ""; el.classList.remove("lingo-hl"); }, 1500);
+  } else {
+    lingoHl = "";
+    toast(target.reason || "That spot isn't on this board.");
+  }
   openTutor(0, "show");
 }
 function mountLingo() {
@@ -2544,6 +2560,8 @@ function closeOverlay() {
   const el = document.getElementById("overlay");
   coachOn = false;
   currentCoachTip = null;
+  lingoHl = "";
+  document.querySelectorAll(".lingo-hl").forEach((n) => n.classList.remove("lingo-hl"));
   document.body.classList.remove("bigwin", "has-coach");
   if (el) el.innerHTML = "";
   window.__take = null;
@@ -2662,6 +2680,11 @@ function paint() {
     document.getElementById("dock").innerHTML = dockHTML();
     snap();
     document.querySelectorAll(".page").forEach((p, i) => { if (scrolls[i]) p.scrollTop = scrolls[i]; });
+    if (lingoHl) {
+      const nodes = [...document.querySelectorAll(lingoHl)];
+      const hlEl = nodes.find((n) => n.getBoundingClientRect().width > 0) || nodes[0];
+      if (hlEl) hlEl.classList.add("lingo-hl");
+    }
     if (coachOn) {
       markSpotlight();
       refreshCoachKicker();

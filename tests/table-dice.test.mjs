@@ -126,3 +126,126 @@ test("ROLL and SHOOT white text clears 4.5:1", async (t) => {
     server.kill();
   }
 });
+
+test("stickman hook sweeps 3 unpicked dice, 4-way drag rotates dice, and throw rolls over felt", async (t) => {
+  if (!CHROME) { t.skip("system Chrome is not available"); return; }
+  let pw;
+  try { pw = await import("playwright-core"); } catch { t.skip("playwright-core is not available"); return; }
+  const server = await ensureStaticServer(root);
+  const browser = await pw.chromium.launch({ executablePath: CHROME, headless: true, args: ["--no-sandbox", "--disable-gpu"] });
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await page.goto("http://127.0.0.1:" + server.port + "/table/index.html", { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => window.__tcReady);
+    await page.locator("#felt [data-kind='pass']").click();
+    await page.locator("[data-act='go-shooter']").click();
+    await page.waitForSelector(".bowl .pick");
+
+    // 1. Pick 2 of 5 dice -> stickman hook sweeps the other 3 away
+    await page.locator(".bowl .pick[data-i='1']").click();
+    await page.locator(".bowl .pick[data-i='3']").click();
+    const bowl = await page.evaluate(() => ({
+      swept: document.querySelector(".bowl").dataset.swept,
+      picked: document.querySelector(".bowl").dataset.picked,
+      kept: document.querySelectorAll(".bowl .pick.kept").length,
+      sweptDice: document.querySelectorAll(".bowl .pick.swept").length,
+      hook: !!document.querySelector(".bowl .tc-stick-hook.active"),
+      callBtn: !!document.querySelector(".bowl [data-act='call-dice']"),
+    }));
+    assert.equal(bowl.swept, "1");
+    assert.equal(bowl.picked, "1,3");
+    assert.equal(bowl.kept, 2);
+    assert.equal(bowl.sweptDice, 3);
+    assert.equal(bowl.hook, true);
+    assert.equal(bowl.callBtn, true);
+
+    // Call 5 dice restores the 5 dice pool, then pick 0 and 2
+    await page.locator("[data-act='call-dice']").click();
+    assert.equal(await page.evaluate(() => document.querySelector(".bowl").dataset.swept), "0");
+    await page.locator(".bowl .pick[data-i='0']").click();
+    await page.locator(".bowl .pick[data-i='2']").click();
+    assert.equal(await page.evaluate(() => document.querySelector(".bowl").dataset.swept), "1");
+
+    // 2. Drag Die 0 in all 4 directions: left, right, front (up), back (down)
+    const box = await page.locator(".setview .die-slot[data-die='0'] .tc-cube").boundingBox();
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    const readDie0 = () => page.evaluate(() => {
+      const c = document.querySelectorAll(".setview .pair .tc-cube")[0];
+      return {
+        top: Number(c.dataset.top),
+        front: Number(c.dataset.front),
+        right: Number(c.dataset.right),
+        left: Number(c.dataset.left),
+        back: Number(c.dataset.back),
+        bottom: Number(c.dataset.bottom),
+        dir: c.dataset.dir || "",
+      };
+    });
+    const d0 = await readDie0();
+    assert.equal(d0.top + d0.bottom, 7);
+    assert.equal(d0.front + d0.back, 7);
+    assert.equal(d0.right + d0.left, 7);
+
+    // Drag Left
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx - 34, cy, { steps: 3 });
+    await page.mouse.up();
+    const dLeft = await readDie0();
+    assert.equal(dLeft.dir, "left");
+    assert.equal(dLeft.front, d0.right);
+
+    // Drag Right (returns to d0)
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 34, cy, { steps: 3 });
+    await page.mouse.up();
+    const dRight = await readDie0();
+    assert.equal(dRight.dir, "right");
+    assert.equal(dRight.front, d0.front);
+
+    // Drag Front (Up) — must rotate forward and NOT trigger a throw
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx, cy - 34, { steps: 3 });
+    await page.mouse.up();
+    const dFront = await readDie0();
+    assert.equal(dFront.dir, "front");
+    assert.equal(dFront.top, d0.front);
+    assert.equal(dFront.front, d0.bottom);
+
+    // Drag Back (Down) — returns to d0
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx, cy + 34, { steps: 3 });
+    await page.mouse.up();
+    const dBack = await readDie0();
+    assert.equal(dBack.dir, "back");
+    assert.equal(dBack.top, d0.top);
+    assert.equal(dBack.front, d0.front);
+
+    // 3. Throw rolls the 2 dice over the #felt table layout and lands with engine faces
+    await page.evaluate(() => {
+      const seq = [4, 2];
+      window.__tcRng = () => (seq.shift() - 0.5) / 6;
+      window.__tcRollSpeed = "fast";
+    });
+    await page.locator("[data-act='throw']").click();
+    await page.waitForFunction(() => window.__ttLast && window.__ttLast.kind === "felt");
+    await page.waitForFunction(() => {
+      const fd = document.querySelector("#felt .tc-felt-dice");
+      return fd && fd.dataset.d1 === "4" && fd.dataset.d2 === "2";
+    });
+    const feltRoll = await page.evaluate(() => ({
+      kind: window.__ttLast.kind,
+      d1: Number(document.querySelector("#felt .tc-felt-dice").dataset.d1),
+      d2: Number(document.querySelector("#felt .tc-felt-dice").dataset.d2),
+    }));
+    assert.equal(feltRoll.kind, "felt");
+    assert.deepEqual([feltRoll.d1, feltRoll.d2], [4, 2]);
+  } finally {
+    await browser.close();
+    server.kill();
+  }
+});

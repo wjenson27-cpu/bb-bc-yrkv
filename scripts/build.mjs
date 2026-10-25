@@ -2,7 +2,8 @@
  * Production bundle. Rewrites the test-build flag and strips every
  * TEST_HOOK block so localhost cannot reach a roll hook.
  */
-import { mkdirSync, readFileSync, writeFileSync, cpSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, cpSync, rmSync, existsSync } from "node:fs";
+import { BADGES } from "../js/badges.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -47,4 +48,11 @@ if (!/TEST_BUILD = false/.test(flags)) throw new Error("flag not stripped");
 if (/__bb/.test(ui)) throw new Error("hook left in ui");
 if (/Math\.random\(/.test(engine)) throw new Error("Math.random left in engine");
 if (/setItem\(KEY/.test(iap) || /TEST-ONLY STUB/.test(iap)) throw new Error("iap stub left in dist");
+for (const b of BADGES) {
+  for (const suf of ["", "-locked", "-hidden", "-small", "-locked-small", "-hidden-small"]) {
+    if (!existsSync(join(dist, "assets/badges", b.id + suf + ".svg"))) {
+      throw new Error("missing badge SVG in dist: " + b.id + suf + ".svg");
+    }
+  }
+}
 console.log("dist ready");
