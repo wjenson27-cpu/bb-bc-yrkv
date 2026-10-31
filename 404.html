@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Billy Bubs has moved</title>
+<script>
+function billyBubsTarget(pathname) {
+  var bubble = "https://wjenson27-cpu.github.io/billybubs-casino/bubble-craps/";
+  var table = "https://wjenson27-cpu.github.io/billybubs-casino/table-craps/";
+  var lobby = "https://wjenson27-cpu.github.io/billybubs-casino/";
+  var path = String(pathname || "/");
+  try { path = decodeURIComponent(path); } catch (err) {}
+  var base = "/bb-bc-yrkv";
+  if (path === base || path.indexOf(base + "/") === 0) path = path.slice(base.length) || "/";
+  if (!path || path.charAt(0) !== "/") path = "/" + (path || "");
+  if (path.length > 1 && path.charAt(path.length - 1) === "/") path = path.slice(0, -1);
+  if (path.slice(-11) === "/index.html") path = path.slice(0, -11) || "/";
+  if (path === "/index.html" || path === "") path = "/";
+  function under(dir) {
+    return path === dir || path.indexOf(dir + "/") === 0;
+  }
+  if (path === "/table.html" || under("/table")) return table;
+  if (path === "/reference/billy-bubs-practice/table.html" || under("/reference/billy-bubs-practice/table")) return table;
+  if (path === "/" || under("/reference/billy-bubs-practice")) return bubble;
+  if (under("/docs/round5b/handoff/round5/proto")) return lobby;
+  return lobby;
+}
+var dest = billyBubsTarget(location.pathname) + location.search + location.hash;
+document.write('<meta http-equiv="refresh" content="0; url=' + dest.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;") + '">');
+location.replace(dest);
+</script>
+<noscript><meta http-equiv="refresh" content="0; url=https://wjenson27-cpu.github.io/billybubs-casino/"></noscript>
+</head>
+<body>
+<p>This page has moved. <a href="https://wjenson27-cpu.github.io/billybubs-casino/">Continue to Billy Bubs Casino</a>.</p>
+<script>
+var next = billyBubsTarget(location.pathname);
+var link = document.querySelector("a");
+link.href = next + location.search + location.hash;
+link.textContent = next.indexOf("/bubble-craps/") !== -1
+  ? "Continue to Billy Bubs Bubble Craps"
+  : next.indexOf("/table-craps/") !== -1
+    ? "Continue to Billy Bubs Table Craps"
+    : "Continue to Billy Bubs Casino";
+</script>
+</body>
+</html>
